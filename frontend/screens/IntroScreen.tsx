@@ -22,33 +22,46 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Intro'>;
 const slides = [
   {
     id: '1',
-    title: 'Welcome to Vidyarthi',
-    description: 'Your complete education management solution',
-    image: require('../assets/images/intro1.jpg'), // Replace with your actual image
-    color: '#4E54C8',
+    title: 'Welcome to the future of student management',
+    description: 'Access your courses and assignments from anywhere, anytime. Our platform is designed to work seamlessly across all your devices.',
+    image: require('../assets/images/intro1.png'), // Replace with your actual image
+    color: '#0d80f2',
   },
   {
     id: '2',
     title: 'Learn Anywhere',
-    description: 'Access your courses and assignments from anywhere, anytime',
+    description: 'Access your courses and assignments from anywhere, anytime. Our platform is designed to work seamlessly across all your devices.',
     image: require('../assets/images/intro2.jpg'), // Replace with your actual image
-    color: '#1CB5E0',
+    color: '#0d80f2',
   },
   {
     id: '3',
     title: 'Track Progress',
-    description: 'Monitor your academic journey with detailed analytics',
+    description: 'Monitor your academic journey with detailed analytics and personalized insights to help you achieve your educational goals.',
     image: require('../assets/images/intro3.jpg'), // Replace with your actual image
-    color: '#3A4276',
+    color: '#0d80f2',
   },
   {
     id: '4',
     title: 'Get Started',
-    description: 'Join our community of learners and educators today',
+    description: 'Join our community of learners and educators today and discover a new way to manage your educational experience.',
     image: require('../assets/images/intro4.jpg'), // Replace with your actual image
-    color: '#6C63FF',
+    color: '#0d80f2',
   },
 ];
+
+// Brand configuration
+const BRAND = {
+  name: "Vidyarthi",
+  tagline: "Elevate Your Learning Journey",
+  primaryColor: '#0d80f2',
+  secondaryColor: '#f8fafc',
+  fontFamily: {
+    regular: 'System',
+    medium: 'System',
+    bold: 'System',
+  }
+};
 
 const IntroScreen: React.FC<Props> = ({ navigation }) => {
   // Hide the header
@@ -134,6 +147,18 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
     navigation.replace('Login');
   };
 
+  // Handle next slide
+  const handleNext = () => {
+    if (currentIndex < slides.length - 1) {
+      flatListRef.current?.scrollToIndex({
+        index: currentIndex + 1,
+        animated: true,
+      });
+    } else {
+      handleGetStarted();
+    }
+  };
+
   // Render splash screen
   if (showSplash) {
     return (
@@ -153,7 +178,8 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
             style={styles.splashLogo}
             resizeMode="contain"
           />
-          <Text style={styles.splashText}>Vidyarthi</Text>
+          <Text style={styles.splashText}>{BRAND.name}</Text>
+          <Text style={styles.splashTagline}>{BRAND.tagline}</Text>
         </Animated.View>
       </View>
     );
@@ -162,12 +188,16 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
   // Render slide item
   const renderSlideItem = ({ item, index }: { item: typeof slides[0], index: number }) => {
     return (
-      <View style={[styles.slide, { backgroundColor: '#FFFFFF' }]}>
+      <View style={[styles.slide, { backgroundColor: BRAND.secondaryColor }]}>
         <View style={styles.slideImageContainer}>
-          <Image source={item.image} style={styles.slideImage} resizeMode="contain" />
+          <Image 
+            source={item.image} 
+            style={styles.slideImage} 
+            resizeMode="cover" 
+          />
         </View>
         <View style={styles.slideTextContainer}>
-          <Text style={[styles.slideTitle, { color: item.color }]}>{item.title}</Text>
+          <Text style={styles.slideTitle}>{item.title}</Text>
           <Text style={styles.slideDescription}>{item.description}</Text>
         </View>
       </View>
@@ -179,43 +209,13 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
     return (
       <View style={styles.dotContainer}>
         {slides.map((_, index) => {
-          const inputRange = [
-            (index - 1) * width,
-            index * width,
-            (index + 1) * width,
-          ];
-
-          const dotWidth = scrollX.interpolate({
-            inputRange,
-            outputRange: [8, 16, 8],
-            extrapolate: 'clamp',
-          });
-
-          const opacity = scrollX.interpolate({
-            inputRange,
-            outputRange: [0.3, 1, 0.3],
-            extrapolate: 'clamp',
-          });
-
-          const backgroundColor = scrollX.interpolate({
-            inputRange,
-            outputRange: [
-              '#B0B7C3',
-              slides[index].color,
-              '#B0B7C3',
-            ],
-            extrapolate: 'clamp',
-          });
-
           return (
-            <Animated.View
+            <View
               key={index.toString()}
               style={[
                 styles.dot,
                 {
-                  width: dotWidth,
-                  opacity,
-                  backgroundColor,
+                  backgroundColor: currentIndex === index ? BRAND.primaryColor : '#cedbe8',
                 },
               ]}
             />
@@ -227,7 +227,17 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar hidden />
+      <StatusBar barStyle="dark-content" backgroundColor={BRAND.secondaryColor} />
+      
+      {/* Fixed brand header that stays constant */}
+      <View style={styles.fixedBrandHeader}>
+        <Image 
+          source={require('../assets/images/logo.png')} 
+          style={styles.headerLogo} 
+          resizeMode="contain" 
+        />
+        <Text style={styles.headerBrandName}>{BRAND.name}</Text>
+      </View>
 
       {/* Carousel */}
       <Animated.FlatList
@@ -237,6 +247,7 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
         keyExtractor={(item) => item.id}
         horizontal
         pagingEnabled
+        bounces={false}
         showsHorizontalScrollIndicator={false}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { x: scrollX } } }],
@@ -251,28 +262,16 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
         {/* Dot Indicators */}
         {renderDotIndicator()}
 
-        {/* Get Started Button (only on last slide) */}
-        {currentIndex === slides.length - 1 ? (
-          <TouchableOpacity
-            style={[styles.getStartedButton, { backgroundColor: slides[currentIndex].color }]}
-            onPress={handleGetStarted}
-          >
-            <Text style={styles.getStartedText}>Get Started</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={styles.skipButton}
-            onPress={() => {
-              flatListRef.current?.scrollToIndex({
-                index: slides.length - 1,
-                animated: true,
-              });
-              setAutoScroll(false);
-            }}
-          >
-            <Text style={styles.skipText}>Skip</Text>
-          </TouchableOpacity>
-        )}
+        {/* Next Button */}
+        <TouchableOpacity
+          style={[styles.nextButton, { backgroundColor: BRAND.primaryColor }]}
+          onPress={handleNext}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.nextButtonText}>
+            {currentIndex === slides.length - 1 ? 'Get Started' : 'Next'}
+          </Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -281,13 +280,13 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#f8fafc', // slate-50 equivalent
   },
   splashContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8F9FC',
+    backgroundColor: '#f8fafc',
   },
   splashContent: {
     alignItems: 'center',
@@ -300,79 +299,119 @@ const styles = StyleSheet.create({
   splashText: {
     fontSize: 32,
     fontWeight: '700',
-    color: '#3A4276',
+    color: 'black', // Primary color
+    letterSpacing: 1, // Elegant spacing
+  },
+  splashTagline: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#64748b', // Subtle secondary color
+    marginTop: 8,
+    letterSpacing: 0.5,
+  },
+  fixedBrandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    marginBottom: 10,
+    zIndex: 10, // Ensure it stays on top
+  },
+  headerLogo: {
+    width: 32,
+    height: 32,
+    marginRight: 8,
+  },
+  headerBrandName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: 'black',
+    letterSpacing: 0.5,
   },
   slide: {
     width,
-    height,
+    height: '100%',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 40,
+    justifyContent: 'flex-start', // Start from top
+    paddingTop: 10, // Reduced because we now have a fixed header
   },
   slideImageContainer: {
-    flex: 0.6,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  slideImage: {
-    width: width * 0.8,
-    height: width * 0.8,
-  },
-  slideTextContainer: {
-    flex: 0.4,
-    alignItems: 'center',
-  },
-  slideTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  slideDescription: {
-    fontSize: 16,
-    color: '#8A94A6',
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  bottomContainer: {
-    position: 'absolute',
-    bottom: 50,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  dotContainer: {
-    flexDirection: 'row',
-    marginBottom: 40,
-  },
-  dot: {
-    height: 8,
-    borderRadius: 4,
-    marginHorizontal: 4,
-  },
-  getStartedButton: {
-    paddingVertical: 16,
-    paddingHorizontal: 48,
-    borderRadius: 30,
-    elevation: 4,
+    width: '92%',
+    height: height * 0.45,
+    overflow: 'hidden',
+    borderRadius: 16, // Rounded corners for image container
+    marginBottom: 24,
+    // Add subtle shadow for elegance
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 12,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  getStartedText: {
+  slideImage: {
+    width: '100%',
+    height: '100%',
+  },
+  slideTextContainer: {
+    width: '90%',
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  slideTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 12,
+    color: '#0d141c',
+    letterSpacing: 0.5, // Elegant spacing
+  },
+  slideDescription: {
+    fontSize: 16,
+    color: '#64748b', // Subtle text color for descriptions
+    textAlign: 'center',
+    lineHeight: 24,
+    paddingHorizontal: 8,
+    letterSpacing: 0.3, // Subtle letter spacing
+  },
+  bottomContainer: {
+    position: 'absolute',
+    bottom: 50, // Increased to avoid home indicator on iPhone 15
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  dotContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  dot: {
+    height: 8,
+    width: 8,
+    borderRadius: 4,
+    marginHorizontal: 4,
+  },
+  nextButton: {
+    backgroundColor: '#0d80f2',
+    paddingVertical: 16,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  nextButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-  },
-  skipButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  skipText: {
-    color: '#8A94A6',
-    fontSize: 16,
-    fontWeight: '500',
+    letterSpacing: 0.5, // Elegant spacing
   },
 });
 
