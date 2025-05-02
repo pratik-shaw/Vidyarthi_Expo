@@ -144,7 +144,7 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
 
   // Handle navigation to login screen
   const handleGetStarted = () => {
-    navigation.replace('Login');
+    navigation.replace('RoleSelection');
   };
 
   // Handle next slide

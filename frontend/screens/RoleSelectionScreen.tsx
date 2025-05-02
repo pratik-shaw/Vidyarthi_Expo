@@ -14,11 +14,10 @@ import { RootStackParamList } from '../App';
 import React, { useEffect } from 'react';
 import { Feather, FontAwesome5, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ColorValue } from 'react-native';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
+type Props = NativeStackScreenProps<RootStackParamList, 'RoleSelection'>;
 
-const LoginScreen: React.FC<Props> = ({ navigation }) => {
+const RoleSelectionScreen: React.FC<Props> = ({ navigation }) => {
   // Hide the header
   React.useLayoutEffect(() => {
     navigation.setOptions({
@@ -47,7 +46,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const renderRoleCard = (
     title: string, 
     description: string,
-    destination: 'Admin' | 'Student' | 'Teacher', 
+    destination: 'AdminLogin' | 'StudentLogin' | 'TeacherLogin', 
     gradientColors: [string, string], 
     delay: number,
     icon: React.ReactNode
@@ -102,7 +101,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
           </View>
           
           <View style={styles.roleArrowContainer}>
-                          <LinearGradient
+            <LinearGradient
               colors={gradientColors as readonly [string, string]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -122,8 +121,6 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
       <StatusBar hidden={true} />
       
       <View style={styles.container}>
-
-        
         <View style={styles.header}>
           <Animated.View 
             style={[
@@ -151,8 +148,8 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
               }
             ]}
           >
-            <Text style={styles.title}>Welcome to your</Text>
-            <Text style={styles.subtitle}>Education Management System</Text>
+            <Text style={styles.title}>Choose your</Text>
+            <Text style={styles.subtitle}>Role to Continue</Text>
           </Animated.View>
         </View>
 
@@ -165,7 +162,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
           {renderRoleCard(
             'Student', 
             'Access courses, assignments, and grades',
-            'Student', 
+            'StudentLogin', 
             ['#4E54C8', '#8F94FB'], 
             300,
             <FontAwesome5 name="user-graduate" size={20} color="#FFFFFF" />
@@ -174,7 +171,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
           {renderRoleCard(
             'Teacher', 
             'Manage classes, assignments, and student progress',
-            'Teacher', 
+            'TeacherLogin', 
             ['#1CB5E0', '#38EF7D'], 
             450,
             <FontAwesome5 name="chalkboard-teacher" size={20} color="#FFFFFF" />
@@ -183,7 +180,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
           {renderRoleCard(
             'Administrator', 
             'Control system settings and user permissions',
-            'Admin', 
+            'AdminLogin', 
             ['#3A4276', '#5B6286'], 
             600,
             <FontAwesome5 name="user-shield" size={20} color="#FFFFFF" />
@@ -214,7 +211,6 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
-
   header: {
     paddingTop: 40,
     paddingBottom: 30,
@@ -346,4 +342,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default LoginScreen;
+export default RoleSelectionScreen;
