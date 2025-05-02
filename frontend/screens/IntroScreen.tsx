@@ -24,7 +24,7 @@ const slides = [
     id: '1',
     title: 'Welcome to the future of student management',
     description: 'Access your courses and assignments from anywhere, anytime. Our platform is designed to work seamlessly across all your devices.',
-    image: require('../assets/images/intro1.png'), // Replace with your actual image
+    image: require('../assets/images/intro1.jpg'), // Replace with your actual image
     color: '#0d80f2',
   },
   {
