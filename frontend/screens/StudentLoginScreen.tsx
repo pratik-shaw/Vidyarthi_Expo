@@ -80,7 +80,7 @@ import {
               <View style={styles.header}>
                 <TouchableOpacity 
                   style={styles.backButton}
-                  onPress={() => navigation.goBack()}
+                  onPress={() => navigation.navigate('RoleSelection')}
                 >
                   <Ionicons name="arrow-back" size={24} color="#3A4276" />
                 </TouchableOpacity>
