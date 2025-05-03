@@ -59,7 +59,7 @@ const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
 
   // Login function
   const handleLogin = () => {
-    console.log('Student login with:', { name, className, section, email, schoolCode, uniqueId, password });
+    console.log('Student login with:', { name, className, section, email, schoolCode, uniqueId, password }), navigation.navigate('StudentHome');
     // Add login logic here
   };
 
