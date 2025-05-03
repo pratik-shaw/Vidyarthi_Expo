@@ -1,325 +1,325 @@
 import { 
-    View, 
-    Text, 
-    TouchableOpacity, 
-    StyleSheet, 
-    StatusBar,
-    Animated,
-    Platform,
-    SafeAreaView,
-    Image,
-    TextInput,
-    ScrollView,
-    KeyboardAvoidingView,
-    Alert
-  } from 'react-native';
-  import { NativeStackScreenProps } from '@react-navigation/native-stack';
-  import { RootStackParamList } from '../App';
-  import React, { useEffect, useState } from 'react';
-  import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
-  import { LinearGradient } from 'expo-linear-gradient';
-  
-  type Props = NativeStackScreenProps<RootStackParamList, 'StudentSignup'>;
-  
-  const StudentSignupScreen: React.FC<Props> = ({ navigation }) => {
-    // Hide the header
-    React.useLayoutEffect(() => {
-      navigation.setOptions({
-        headerShown: false,
-      });
-    }, [navigation]);
-  
-    // Form state
-    const [name, setName] = useState('');
-    const [className, setClassName] = useState('');
-    const [section, setSection] = useState('');
-    const [email, setEmail] = useState('');
-    const [phoneNumber, setPhoneNumber] = useState('');
-    const [schoolCode, setSchoolCode] = useState('');
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
-    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-    const [acceptTerms, setAcceptTerms] = useState(false);
-  
-    // Animation states
-    const fadeAnim = new Animated.Value(0);
-    const slideAnim = new Animated.Value(30);
-  
-    useEffect(() => {
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 800,
-          useNativeDriver: true,
-        })
-      ]).start();
-    }, []);
-  
-    // Signup function
-    const handleSignup = () => {
-      // Validate form
-      if (!name || !className || !section || !schoolCode || !password || !confirmPassword) {
-        Alert.alert('Missing Fields', 'Please fill in all required fields');
-        return;
-      }
-  
-      if (password !== confirmPassword) {
-        Alert.alert('Password Mismatch', 'Passwords do not match');
-        return;
-      }
-  
-      if (!acceptTerms) {
-        Alert.alert('Terms & Conditions', 'Please accept the terms and conditions');
-        return;
-      }
-  
-      console.log('Student signup with:', { 
-        name, 
-        className, 
-        section, 
-        email, 
-        phoneNumber,
-        schoolCode, 
-        password,
-        confirmPassword
-      });
+  View, 
+  Text, 
+  TouchableOpacity, 
+  StyleSheet, 
+  StatusBar,
+  Animated,
+  Platform,
+  SafeAreaView,
+  Image,
+  TextInput,
+  ScrollView,
+  KeyboardAvoidingView,
+  Alert
+} from 'react-native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../App';
+import React, { useEffect, useState } from 'react';
+import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'StudentSignup'>;
+
+const StudentSignupScreen: React.FC<Props> = ({ navigation }) => {
+  // Hide the header
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerShown: false,
+    });
+  }, [navigation]);
+
+  // Form state
+  const [name, setName] = useState('');
+  const [className, setClassName] = useState('');
+  const [section, setSection] = useState('');
+  const [email, setEmail] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [schoolCode, setSchoolCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [acceptTerms, setAcceptTerms] = useState(false);
+
+  // Animation states
+  const fadeAnim = new Animated.Value(0);
+  const slideAnim = new Animated.Value(30);
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 800,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, []);
+
+  // Signup function
+  const handleSignup = () => {
+    // Validate form
+    if (!name || !className || !section || !schoolCode || !password || !confirmPassword) {
+      Alert.alert('Missing Fields', 'Please fill in all required fields');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert('Password Mismatch', 'Passwords do not match');
+      return;
+    }
+
+    if (!acceptTerms) {
+      Alert.alert('Terms & Conditions', 'Please accept the terms and conditions');
+      return;
+    }
+
+    console.log('Student signup with:', { 
+      name, 
+      className, 
+      section, 
+      email, 
+      phoneNumber,
+      schoolCode, 
+      password,
+      confirmPassword
+    });
+    
+    // Add signup logic here
+    // On successful signup, navigate to login
+    navigation.navigate('StudentLogin');
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar hidden={true} />
       
-      // Add signup logic here
-      // On successful signup, navigate to login
-      // navigation.navigate('StudentLogin');
-    };
-  
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar hidden={true} />
-        
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          showsVerticalScrollIndicator={false}
         >
-          <ScrollView
-            contentContainerStyle={styles.scrollContainer}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.container}>
-              {/* Header Section */}
-              <View style={styles.header}>
+          <View style={styles.container}>
+            {/* Header Section */}
+            <View style={styles.header}>
+              <TouchableOpacity 
+                style={styles.backButton}
+                onPress={() => navigation.goBack()}
+              >
+                <Ionicons name="arrow-back" size={24} color="#3A4276" />
+              </TouchableOpacity>
+              
+              <Animated.View 
+                style={[
+                  styles.logoContainer, 
+                  { 
+                    opacity: fadeAnim, 
+                    transform: [{ translateY: slideAnim }]
+                  }
+                ]}
+              >
+                <Image 
+                  source={require('../assets/images/logo.png')} 
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
+                <Text style={styles.appName}>Vidyarthi</Text>
+              </Animated.View>
+              
+              <Animated.View 
+                style={[
+                  styles.titleContainer,
+                  { 
+                    opacity: fadeAnim, 
+                    transform: [{ translateY: slideAnim }]
+                  }
+                ]}
+              >
+                <Text style={styles.title}>Student</Text>
+                <Text style={styles.subtitle}>Signup</Text>
+              </Animated.View>
+            </View>
+
+            {/* Form Section */}
+            <View style={styles.formContainer}>
+              <Text style={styles.formLabel}>Full Name <Text style={styles.required}>*</Text></Text>
+              <View style={styles.inputContainer}>
+                <FontAwesome5 name="user" size={16} color="#8A94A6" style={styles.inputIcon} />
+                <TextInput 
+                  style={styles.input}
+                  placeholder="Enter your full name"
+                  placeholderTextColor="#B0B7C3"
+                  value={name}
+                  onChangeText={setName}
+                />
+              </View>
+
+              <View style={styles.rowContainer}>
+                <View style={styles.halfColumn}>
+                  <Text style={styles.formLabel}>Class <Text style={styles.required}>*</Text></Text>
+                  <View style={styles.inputContainer}>
+                    <FontAwesome5 name="school" size={16} color="#8A94A6" style={styles.inputIcon} />
+                    <TextInput 
+                      style={styles.input}
+                      placeholder="Class"
+                      placeholderTextColor="#B0B7C3"
+                      value={className}
+                      onChangeText={setClassName}
+                    />
+                  </View>
+                </View>
+                
+                <View style={styles.halfColumn}>
+                  <Text style={styles.formLabel}>Section <Text style={styles.required}>*</Text></Text>
+                  <View style={styles.inputContainer}>
+                    <FontAwesome5 name="list-alt" size={16} color="#8A94A6" style={styles.inputIcon} />
+                    <TextInput 
+                      style={styles.input}
+                      placeholder="Section"
+                      placeholderTextColor="#B0B7C3"
+                      value={section}
+                      onChangeText={setSection}
+                    />
+                  </View>
+                </View>
+              </View>
+
+              <Text style={styles.formLabel}>Email</Text>
+              <View style={styles.inputContainer}>
+                <FontAwesome5 name="envelope" size={16} color="#8A94A6" style={styles.inputIcon} />
+                <TextInput 
+                  style={styles.input}
+                  placeholder="Enter your email"
+                  placeholderTextColor="#B0B7C3"
+                  keyboardType="email-address"
+                  value={email}
+                  onChangeText={setEmail}
+                />
+              </View>
+
+              <Text style={styles.formLabel}>Phone Number</Text>
+              <View style={styles.inputContainer}>
+                <FontAwesome5 name="phone" size={16} color="#8A94A6" style={styles.inputIcon} />
+                <TextInput 
+                  style={styles.input}
+                  placeholder="Enter phone number"
+                  placeholderTextColor="#B0B7C3"
+                  keyboardType="phone-pad"
+                  value={phoneNumber}
+                  onChangeText={setPhoneNumber}
+                />
+              </View>
+
+              <Text style={styles.formLabel}>School Code <Text style={styles.required}>*</Text></Text>
+              <View style={styles.inputContainer}>
+                <FontAwesome5 name="building" size={16} color="#8A94A6" style={styles.inputIcon} />
+                <TextInput 
+                  style={styles.input}
+                  placeholder="Enter school code"
+                  placeholderTextColor="#B0B7C3"
+                  value={schoolCode}
+                  onChangeText={setSchoolCode}
+                />
+              </View>
+
+              <Text style={styles.formLabel}>Password <Text style={styles.required}>*</Text></Text>
+              <View style={styles.inputContainer}>
+                <FontAwesome5 name="lock" size={16} color="#8A94A6" style={styles.inputIcon} />
+                <TextInput 
+                  style={styles.input}
+                  placeholder="Create password"
+                  placeholderTextColor="#B0B7C3"
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={setPassword}
+                />
                 <TouchableOpacity 
-                  style={styles.backButton}
-                  onPress={() => navigation.goBack()}
+                  style={styles.eyeIcon}
+                  onPress={() => setShowPassword(!showPassword)}
                 >
-                  <Ionicons name="arrow-back" size={24} color="#3A4276" />
+                  <Feather name={showPassword ? "eye" : "eye-off"} size={18} color="#8A94A6" />
                 </TouchableOpacity>
-                
-                <Animated.View 
-                  style={[
-                    styles.logoContainer, 
-                    { 
-                      opacity: fadeAnim, 
-                      transform: [{ translateY: slideAnim }]
-                    }
-                  ]}
-                >
-                  <Image 
-                    source={require('../assets/images/logo.png')} 
-                    style={styles.logoImage}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.appName}>Vidyarthi</Text>
-                </Animated.View>
-                
-                <Animated.View 
-                  style={[
-                    styles.titleContainer,
-                    { 
-                      opacity: fadeAnim, 
-                      transform: [{ translateY: slideAnim }]
-                    }
-                  ]}
-                >
-                  <Text style={styles.title}>Student</Text>
-                  <Text style={styles.subtitle}>Signup</Text>
-                </Animated.View>
               </View>
-  
-              {/* Form Section */}
-              <View style={styles.formContainer}>
-                <Text style={styles.formLabel}>Full Name <Text style={styles.required}>*</Text></Text>
-                <View style={styles.inputContainer}>
-                  <FontAwesome5 name="user" size={16} color="#8A94A6" style={styles.inputIcon} />
-                  <TextInput 
-                    style={styles.input}
-                    placeholder="Enter your full name"
-                    placeholderTextColor="#B0B7C3"
-                    value={name}
-                    onChangeText={setName}
-                  />
-                </View>
-  
-                <View style={styles.rowContainer}>
-                  <View style={styles.halfColumn}>
-                    <Text style={styles.formLabel}>Class <Text style={styles.required}>*</Text></Text>
-                    <View style={styles.inputContainer}>
-                      <FontAwesome5 name="school" size={16} color="#8A94A6" style={styles.inputIcon} />
-                      <TextInput 
-                        style={styles.input}
-                        placeholder="Class"
-                        placeholderTextColor="#B0B7C3"
-                        value={className}
-                        onChangeText={setClassName}
-                      />
-                    </View>
-                  </View>
-                  
-                  <View style={styles.halfColumn}>
-                    <Text style={styles.formLabel}>Section <Text style={styles.required}>*</Text></Text>
-                    <View style={styles.inputContainer}>
-                      <FontAwesome5 name="list-alt" size={16} color="#8A94A6" style={styles.inputIcon} />
-                      <TextInput 
-                        style={styles.input}
-                        placeholder="Section"
-                        placeholderTextColor="#B0B7C3"
-                        value={section}
-                        onChangeText={setSection}
-                      />
-                    </View>
-                  </View>
-                </View>
-  
-                <Text style={styles.formLabel}>Email</Text>
-                <View style={styles.inputContainer}>
-                  <FontAwesome5 name="envelope" size={16} color="#8A94A6" style={styles.inputIcon} />
-                  <TextInput 
-                    style={styles.input}
-                    placeholder="Enter your email"
-                    placeholderTextColor="#B0B7C3"
-                    keyboardType="email-address"
-                    value={email}
-                    onChangeText={setEmail}
-                  />
-                </View>
-  
-                <Text style={styles.formLabel}>Phone Number</Text>
-                <View style={styles.inputContainer}>
-                  <FontAwesome5 name="phone" size={16} color="#8A94A6" style={styles.inputIcon} />
-                  <TextInput 
-                    style={styles.input}
-                    placeholder="Enter phone number"
-                    placeholderTextColor="#B0B7C3"
-                    keyboardType="phone-pad"
-                    value={phoneNumber}
-                    onChangeText={setPhoneNumber}
-                  />
-                </View>
-  
-                <Text style={styles.formLabel}>School Code <Text style={styles.required}>*</Text></Text>
-                <View style={styles.inputContainer}>
-                  <FontAwesome5 name="building" size={16} color="#8A94A6" style={styles.inputIcon} />
-                  <TextInput 
-                    style={styles.input}
-                    placeholder="Enter school code"
-                    placeholderTextColor="#B0B7C3"
-                    value={schoolCode}
-                    onChangeText={setSchoolCode}
-                  />
-                </View>
-  
-                <Text style={styles.formLabel}>Password <Text style={styles.required}>*</Text></Text>
-                <View style={styles.inputContainer}>
-                  <FontAwesome5 name="lock" size={16} color="#8A94A6" style={styles.inputIcon} />
-                  <TextInput 
-                    style={styles.input}
-                    placeholder="Create password"
-                    placeholderTextColor="#B0B7C3"
-                    secureTextEntry={!showPassword}
-                    value={password}
-                    onChangeText={setPassword}
-                  />
-                  <TouchableOpacity 
-                    style={styles.eyeIcon}
-                    onPress={() => setShowPassword(!showPassword)}
-                  >
-                    <Feather name={showPassword ? "eye" : "eye-off"} size={18} color="#8A94A6" />
-                  </TouchableOpacity>
-                </View>
-  
-                <Text style={styles.formLabel}>Confirm Password <Text style={styles.required}>*</Text></Text>
-                <View style={styles.inputContainer}>
-                  <FontAwesome5 name="lock" size={16} color="#8A94A6" style={styles.inputIcon} />
-                  <TextInput 
-                    style={styles.input}
-                    placeholder="Confirm password"
-                    placeholderTextColor="#B0B7C3"
-                    secureTextEntry={!showConfirmPassword}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                  />
-                  <TouchableOpacity 
-                    style={styles.eyeIcon}
-                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                  >
-                    <Feather name={showConfirmPassword ? "eye" : "eye-off"} size={18} color="#8A94A6" />
-                  </TouchableOpacity>
-                </View>
-  
-                <View style={styles.termsContainer}>
-                  <TouchableOpacity 
-                    style={styles.checkbox}
-                    onPress={() => setAcceptTerms(!acceptTerms)}
-                  >
-                    {acceptTerms ? (
-                      <Ionicons name="checkmark-circle" size={20} color="#4E54C8" />
-                    ) : (
-                      <Ionicons name="ellipse-outline" size={20} color="#8A94A6" />
-                    )}
-                  </TouchableOpacity>
-                  <Text style={styles.termsText}>
-                    I accept the <Text style={styles.termsLink}>Terms of Service</Text> and <Text style={styles.termsLink}>Privacy Policy</Text>
-                  </Text>
-                </View>
-  
-                <TouchableOpacity
-                  style={styles.signupButton}
-                  onPress={handleSignup}
+
+              <Text style={styles.formLabel}>Confirm Password <Text style={styles.required}>*</Text></Text>
+              <View style={styles.inputContainer}>
+                <FontAwesome5 name="lock" size={16} color="#8A94A6" style={styles.inputIcon} />
+                <TextInput 
+                  style={styles.input}
+                  placeholder="Confirm password"
+                  placeholderTextColor="#B0B7C3"
+                  secureTextEntry={!showConfirmPassword}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                />
+                <TouchableOpacity 
+                  style={styles.eyeIcon}
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
                 >
-                  <LinearGradient
-                    colors={['#4E54C8', '#8F94FB']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.signupGradient}
-                  >
-                    <Text style={styles.signupButtonText}>Create Account</Text>
-                  </LinearGradient>
+                  <Feather name={showConfirmPassword ? "eye" : "eye-off"} size={18} color="#8A94A6" />
                 </TouchableOpacity>
-  
-                <View style={styles.loginContainer}>
-                  <Text style={styles.loginText}>Already have an account? </Text>
-                  <TouchableOpacity onPress={() => navigation.navigate('StudentLogin')}>
-                    <Text style={styles.loginLink}>Login</Text>
-                  </TouchableOpacity>
-                </View>
               </View>
-  
-              {/* Footer */}
-              <View style={styles.footer}>
-                <TouchableOpacity style={styles.helpButton}>
-                  <Feather name="help-circle" size={16} color="#8A94A6" style={styles.helpIcon} />
-                  <Text style={styles.footerText}>Need help? Contact support</Text>
+
+              <View style={styles.termsContainer}>
+                <TouchableOpacity 
+                  style={styles.checkbox}
+                  onPress={() => setAcceptTerms(!acceptTerms)}
+                >
+                  {acceptTerms ? (
+                    <Ionicons name="checkmark-circle" size={20} color="#4E54C8" />
+                  ) : (
+                    <Ionicons name="ellipse-outline" size={20} color="#8A94A6" />
+                  )}
                 </TouchableOpacity>
-                <Text style={styles.version}>Version 2.4.1</Text>
+                <Text style={styles.termsText}>
+                  I accept the <Text style={styles.termsLink}>Terms of Service</Text> and <Text style={styles.termsLink}>Privacy Policy</Text>
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.signupButton}
+                onPress={handleSignup}
+              >
+                <LinearGradient
+                  colors={['#4E54C8', '#8F94FB']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.signupGradient}
+                >
+                  <Text style={styles.signupButtonText}>Create Account</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <View style={styles.loginContainer}>
+                <Text style={styles.loginText}>Already have an account? </Text>
+                <TouchableOpacity onPress={() => navigation.navigate('StudentLogin')}>
+                  <Text style={styles.loginLink}>Login</Text>
+                </TouchableOpacity>
               </View>
             </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    );
-  };
+
+            {/* Footer */}
+            <View style={styles.footer}>
+              <TouchableOpacity style={styles.helpButton}>
+                <Feather name="help-circle" size={16} color="#8A94A6" style={styles.helpIcon} />
+                <Text style={styles.footerText}>Need help? Contact support</Text>
+              </TouchableOpacity>
+              <Text style={styles.version}>Version 2.4.1</Text>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+};
   
   const styles = StyleSheet.create({
     safeArea: {

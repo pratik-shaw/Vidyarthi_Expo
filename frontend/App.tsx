@@ -8,6 +8,7 @@ import AdminScreen from './screens/AdminScreen';
 import IntroScreen from './screens/IntroScreen';
 import StudentSignupScreen from './screens/StudentSignupScreen';
 import TeacherSignupScreen from './screens/TeacherSignupScreen';
+import AdminSignupScreen from './screens/AdminSignupScreen';
 
 // Import the login screens directly with full path
 import StudentLoginScreen from './screens/StudentLoginScreen';
@@ -26,6 +27,7 @@ export type RootStackParamList = {
   Admin: undefined;
   StudentSignup: undefined;
   TeacherSignup: undefined; 
+  AdminSignup: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -41,7 +43,10 @@ export default function App() {
         <Stack.Screen name="AdminLogin" component={AdminLoginScreen} />
         <Stack.Screen name="StudentSignup" component={StudentSignupScreen} />
         <Stack.Screen name="TeacherSignup" component={TeacherSignupScreen} />
+        <Stack.Screen name="AdminSignup" component={AdminSignupScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
+
+// signup screen for the admin is left to be created 
