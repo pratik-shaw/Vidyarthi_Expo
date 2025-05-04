@@ -49,6 +49,9 @@ const StudentHomeScreen: React.FC = () => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const headerOpacity = useRef(new Animated.Value(0)).current;
+  
+  // Track if animation has already played
+  const animationPlayed = useRef(false);
 
   // Disable back navigation on this screen - this works globally for the screen
   useFocusEffect(
@@ -77,25 +80,23 @@ const StudentHomeScreen: React.FC = () => {
     });
   }, [navigation]);
 
-  // Animation handling - Initial setup
+  // Animation handling - Initial setup - only play animation once when component mounts
   useEffect(() => {
-    // Initial animation setup
-    resetAnimations();
-    startAnimations();
-  }, []); // Only run once on mount
-
-  // Handle focus changes - reset and restart animations when returning to screen
-  useFocusEffect(
-    React.useCallback(() => {
-      // When screen is focused (including returning from other screens)
+    if (!animationPlayed.current) {
+      // Initial animation setup
       resetAnimations();
       startAnimations();
-      
-      return () => {
-        // Optional cleanup if needed
-      };
-    }, [])
-  );
+      // Mark animation as played
+      animationPlayed.current = true;
+    } else {
+      // If animation has already played, set values to final state
+      fadeAnim.setValue(1);
+      slideAnim.setValue(0);
+      headerOpacity.setValue(1);
+    }
+  }, []); // Only run once on mount
+
+  // Remove the useFocusEffect that was restarting animations on each screen focus
 
   const resetAnimations = () => {
     // Reset animation values
