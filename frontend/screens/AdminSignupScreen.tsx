@@ -1,388 +1,481 @@
 import {
-    View,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    StyleSheet,
-    StatusBar,
-    Animated,
-    Platform,
-    SafeAreaView,
-    Image,
-    KeyboardAvoidingView,
-    ScrollView,
-    Alert
-  } from 'react-native';
-  import { NativeStackScreenProps } from '@react-navigation/native-stack';
-  import { RootStackParamList } from '../App';
-  import React, { useEffect, useState, useRef } from 'react';
-  import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
-  import { LinearGradient } from 'expo-linear-gradient';
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  StatusBar,
+  Animated,
+  Platform,
+  SafeAreaView,
+  Image,
+  KeyboardAvoidingView,
+  ScrollView,
+  Alert,
+  ActivityIndicator
+} from 'react-native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../App';
+import React, { useEffect, useState, useRef } from 'react';
+import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo'; // You'll need to install this package
+
+// API URL with configurable timeout
+const API_URL = 'http://192.168.29.148:5000/api'; // Change this to your server IP/domain
+const API_TIMEOUT = 15000; // 15 seconds timeout
+
+// Create an axios instance with timeout configuration
+const apiClient = axios.create({
+  baseURL: API_URL,
+  timeout: API_TIMEOUT,
+});
+
+type Props = NativeStackScreenProps<RootStackParamList, 'AdminSignup'>;
+
+const AdminSignupScreen: React.FC<Props> = ({ navigation }) => {
+  // State for form inputs
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [schoolCode, setSchoolCode] = useState('');
+  const [schoolName, setSchoolName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   
-  type Props = NativeStackScreenProps<RootStackParamList, 'AdminSignup'>;
-  
-  const AdminSignupScreen: React.FC<Props> = ({ navigation }) => {
-    // State for form inputs
-    const [fullName, setFullName] = useState('');
-    const [email, setEmail] = useState('');
-    const [schoolCode, setSchoolCode] = useState('');
-    const [schoolName, setSchoolName] = useState('');
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [otp, setOtp] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
-    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-    const [isOtpSent, setIsOtpSent] = useState(false);
-    const [acceptedTerms, setAcceptedTerms] = useState(false);
-  
-    // Refs for input fields (for focus management)
-    const fullNameRef = useRef<TextInput>(null);
-    const emailRef = useRef<TextInput>(null);
-    const schoolCodeRef = useRef<TextInput>(null);
-    const schoolNameRef = useRef<TextInput>(null);
-    const passwordRef = useRef<TextInput>(null);
-    const confirmPasswordRef = useRef<TextInput>(null);
-    const otpRef = useRef<TextInput>(null);
-  
-    // Animation values
-    const fadeAnim = new Animated.Value(0);
-    const slideAnim = new Animated.Value(30);
-  
-    // Hide the header
-    React.useLayoutEffect(() => {
-      navigation.setOptions({
-        headerShown: false,
+  // Loading state
+  const [isLoading, setIsLoading] = useState(false);
+  // Network status
+  const [isConnected, setIsConnected] = useState(true);
+
+  // Refs for input fields (for focus management)
+  const fullNameRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const schoolCodeRef = useRef<TextInput>(null);
+  const schoolNameRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+  const confirmPasswordRef = useRef<TextInput>(null);
+
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+
+  // Hide the header
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerShown: false,
+    });
+  }, [navigation]);
+
+  // Check network connectivity
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsConnected(state.isConnected ?? false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Run entry animations the first time the component renders
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 800,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, [fadeAnim, slideAnim]);
+
+  // Form validation
+  const isFormValid = () => {
+    if (!fullName || !email || !schoolCode || !schoolName || !password || !confirmPassword) return false;
+    if (password !== confirmPassword) return false;
+    if (!acceptedTerms) return false;
+    if (!isEmailValid()) return false;
+    if (!isPasswordValid()) return false;
+    return true;
+  };
+
+  // Password validation check
+  const isPasswordValid = () => {
+    return password.length >= 8;
+  };
+
+  // Email validation check
+  const isEmailValid = () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  // Show detailed error if API call fails
+  const handleApiError = (error: any) => {
+    console.error("Signup error:", error);
+    
+    if (!isConnected) {
+      Alert.alert(
+        "Network Error", 
+        "You appear to be offline. Please check your internet connection and try again."
+      );
+      return;
+    }
+    
+    if (axios.isAxiosError(error)) {
+      if (error.code === 'ECONNABORTED') {
+        Alert.alert(
+          "Connection Timeout", 
+          "The server took too long to respond. Please check your API URL and try again. Make sure your server is running at " + API_URL
+        );
+      } else if (error.response) {
+        // Server responded with error status code
+        Alert.alert(
+          "Registration Failed", 
+          error.response.data?.message || `Server error (${error.response.status}). Please try again.`
+        );
+      } else if (error.request) {
+        // Request made but no response received
+        Alert.alert(
+          "Server Unreachable", 
+          `Could not reach the server at ${API_URL}. Please verify the API URL is correct and the server is running.`
+        );
+      } else {
+        Alert.alert(
+          "Request Error", 
+          "An error occurred while setting up the request. Please try again."
+        );
+      }
+    } else {
+      Alert.alert(
+        "Unknown Error", 
+        "An unexpected error occurred. Please try again later."
+      );
+    }
+  };
+
+  // Handle signup
+  const handleSignup = async () => {
+    if (!isFormValid()) {
+      let errorMessage = "Please fill all required fields";
+      
+      if (!isEmailValid()) {
+        errorMessage = "Please enter a valid email address";
+      } else if (!isPasswordValid()) {
+        errorMessage = "Password must be at least 8 characters long";
+      } else if (password !== confirmPassword) {
+        errorMessage = "Passwords do not match";
+      } else if (!acceptedTerms) {
+        errorMessage = "You must accept the Terms of Service";
+      }
+      
+      Alert.alert("Error", errorMessage);
+      return;
+    }
+
+    if (!isConnected) {
+      Alert.alert("Network Error", "You appear to be offline. Please check your internet connection and try again.");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // Check API endpoint first with a lightweight request
+      try {
+        await apiClient.get('/health-check', { timeout: 5000 });
+      } catch (healthCheckError) {
+        console.error("Health check failed:", healthCheckError);
+        // Continue with registration attempt anyway
+      }
+
+      // Call the API to register admin
+      const response = await apiClient.post('/admin/register', {
+        name: fullName,
+        email,
+        password,
+        schoolName,
+        schoolCode
       });
-    }, [navigation]);
-  
-    // Run entry animations
-    useEffect(() => {
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 800,
-          useNativeDriver: true,
-        })
-      ]).start();
-    }, []);
-  
-    // Form validation
-    const isFormValid = () => {
-      if (!fullName || !email || !schoolCode || !schoolName || !password || !confirmPassword) return false;
-      if (password !== confirmPassword) return false;
-      if (isOtpSent && !otp) return false;
-      if (!acceptedTerms) return false;
-      return true;
-    };
-  
-    // Password validation check
-    const isPasswordValid = () => {
-      return password.length >= 8;
-    };
-  
-    // Email validation check
-    const isEmailValid = () => {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      return emailRegex.test(email);
-    };
-  
-    // Handle send OTP
-    const handleSendOtp = () => {
-      if (!email || !isEmailValid()) {
-        Alert.alert("Error", "Please enter a valid email address to receive OTP");
-        return;
-      }
-      // Simulate OTP send
-      setIsOtpSent(true);
-      Alert.alert("Success", "OTP has been sent to your email");
-    };
-  
-    // Handle signup
-    const handleSignup = () => {
-      if (!isFormValid()) {
-        Alert.alert("Error", "Please fill all required fields");
-        return;
-      }
-  
-      if (password !== confirmPassword) {
-        Alert.alert("Error", "Passwords do not match");
-        return;
-      }
-  
-      if (!isPasswordValid()) {
-        Alert.alert("Error", "Password must be at least 8 characters long");
-        return;
-      }
-  
-      // Signup logic would go here
-      Alert.alert("Success", "Account created successfully! Please check your email to verify your account.");
-      navigation.navigate('AdminLogin');
-    };
-  
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar hidden={true} />
+
+      // If registration is successful, save the token to AsyncStorage
+      if (response.data && response.data.token) {
+        await AsyncStorage.setItem('token', response.data.token);
         
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
+        // Save the user role
+        await AsyncStorage.setItem('userRole', 'admin');
+        
+        Alert.alert(
+          "Success", 
+          "Account created successfully!",
+          [
+            { 
+              text: "OK", 
+              onPress: () => navigation.navigate('AdminLogin') 
+            }
+          ]
+        );
+      }
+    } catch (error) {
+      handleApiError(error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar hidden={true} />
+      
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          showsVerticalScrollIndicator={false}
         >
-          <ScrollView
-            contentContainerStyle={styles.scrollContainer}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.container}>
-              {/* Header Section */}
-              <View style={styles.header}>
-                <TouchableOpacity 
-                  style={styles.backButton}
-                  onPress={() => navigation.goBack()}
-                >
-                  <Ionicons name="arrow-back" size={24} color="#3A4276" />
-                </TouchableOpacity>
-                
-                <Animated.View 
-                  style={[
-                    styles.logoContainer, 
-                    { 
-                      opacity: fadeAnim, 
-                      transform: [{ translateY: slideAnim }]
-                    }
-                  ]}
-                >
-                  <Image 
-                    source={require('../assets/images/logo.png')} 
-                    style={styles.logoImage}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.appName}>Vidyarthi</Text>
-                </Animated.View>
-                
-                <Animated.View 
-                  style={[
-                    styles.titleContainer,
-                    { 
-                      opacity: fadeAnim, 
-                      transform: [{ translateY: slideAnim }]
-                    }
-                  ]}
-                >
-                  <Text style={styles.title}>Administrator</Text>
-                  <Text style={styles.subtitle}>Sign Up</Text>
-                </Animated.View>
+          <View style={styles.container}>
+            {/* Header Section */}
+            <View style={styles.header}>
+              <TouchableOpacity 
+                style={styles.backButton}
+                onPress={() => navigation.goBack()}
+              >
+                <Ionicons name="arrow-back" size={24} color="#3A4276" />
+              </TouchableOpacity>
+              
+              <Animated.View 
+                style={[
+                  styles.logoContainer, 
+                  { 
+                    opacity: fadeAnim, 
+                    transform: [{ translateY: slideAnim }]
+                  }
+                ]}
+              >
+                <Image 
+                  source={require('../assets/images/logo.png')} 
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
+                <Text style={styles.appName}>Vidyarthi</Text>
+              </Animated.View>
+              
+              <Animated.View 
+                style={[
+                  styles.titleContainer,
+                  { 
+                    opacity: fadeAnim, 
+                    transform: [{ translateY: slideAnim }]
+                  }
+                ]}
+              >
+                <Text style={styles.title}>Administrator</Text>
+                <Text style={styles.subtitle}>Sign Up</Text>
+              </Animated.View>
+            </View>
+
+            {/* Form Section */}
+            <View style={styles.formContainer}>
+              <Text style={styles.formLabel}>Full Name</Text>
+              <View style={styles.inputContainer}>
+                <FontAwesome5 name="user" size={16} color="#8A94A6" style={styles.inputIcon} />
+                <TextInput 
+                  ref={fullNameRef}
+                  style={styles.input}
+                  placeholder="Enter your full name"
+                  placeholderTextColor="#B0B7C3"
+                  value={fullName}
+                  onChangeText={setFullName}
+                  onSubmitEditing={() => emailRef.current?.focus()}
+                  returnKeyType="next"
+                  editable={!isLoading}
+                  autoComplete="name"
+                />
               </View>
-  
-              {/* Form Section */}
-              <View style={styles.formContainer}>
-                <Text style={styles.formLabel}>Full Name</Text>
-                <View style={styles.inputContainer}>
-                  <FontAwesome5 name="user" size={16} color="#8A94A6" style={styles.inputIcon} />
-                  <TextInput 
-                    ref={fullNameRef}
-                    style={styles.input}
-                    placeholder="Enter your full name"
-                    placeholderTextColor="#B0B7C3"
-                    value={fullName}
-                    onChangeText={setFullName}
-                    onSubmitEditing={() => emailRef.current?.focus()}
-                    returnKeyType="next"
-                  />
-                </View>
-  
-                <Text style={styles.formLabel}>Email Address</Text>
-                <View style={styles.inputContainer}>
-                  <FontAwesome5 name="envelope" size={16} color="#8A94A6" style={styles.inputIcon} />
-                  <TextInput 
-                    ref={emailRef}
-                    style={styles.input}
-                    placeholder="Enter your email"
-                    placeholderTextColor="#B0B7C3"
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    value={email}
-                    onChangeText={setEmail}
-                    onSubmitEditing={() => schoolCodeRef.current?.focus()}
-                    returnKeyType="next"
-                  />
-                </View>
-  
-                <Text style={styles.formLabel}>School Code</Text>
-                <View style={styles.inputContainer}>
-                  <FontAwesome5 name="building" size={16} color="#8A94A6" style={styles.inputIcon} />
-                  <TextInput 
-                    ref={schoolCodeRef}
-                    style={styles.input}
-                    placeholder="Enter school code"
-                    placeholderTextColor="#B0B7C3"
-                    value={schoolCode}
-                    onChangeText={setSchoolCode}
-                    onSubmitEditing={() => schoolNameRef.current?.focus()}
-                    returnKeyType="next"
-                  />
-                </View>
-  
-                <Text style={styles.formLabel}>School Name</Text>
-                <View style={styles.inputContainer}>
-                  <FontAwesome5 name="school" size={16} color="#8A94A6" style={styles.inputIcon} />
-                  <TextInput
-                    ref={schoolNameRef}
-                    style={styles.input}
-                    placeholder="Enter school name"
-                    placeholderTextColor="#B0B7C3"
-                    value={schoolName}
-                    onChangeText={setSchoolName}
-                    onSubmitEditing={() => passwordRef.current?.focus()}
-                    returnKeyType="next"
-                  />
-                </View>
-  
-                <Text style={styles.formLabel}>Password</Text>
-                <View style={styles.inputContainer}>
-                  <FontAwesome5 name="lock" size={16} color="#8A94A6" style={styles.inputIcon} />
-                  <TextInput 
-                    ref={passwordRef}
-                    style={styles.input}
-                    placeholder="Create a password (min 8 characters)"
-                    placeholderTextColor="#B0B7C3"
-                    secureTextEntry={!showPassword}
-                    value={password}
-                    onChangeText={setPassword}
-                    onSubmitEditing={() => confirmPasswordRef.current?.focus()}
-                    returnKeyType="next"
-                  />
-                  <TouchableOpacity 
-                    style={styles.eyeIcon}
-                    onPress={() => setShowPassword(!showPassword)}
-                  >
-                    <Feather name={showPassword ? "eye" : "eye-off"} size={18} color="#8A94A6" />
-                  </TouchableOpacity>
-                </View>
-  
-                <Text style={styles.formLabel}>Confirm Password</Text>
-                <View style={styles.inputContainer}>
-                  <FontAwesome5 name="lock" size={16} color="#8A94A6" style={styles.inputIcon} />
-                  <TextInput 
-                    ref={confirmPasswordRef}
-                    style={styles.input}
-                    placeholder="Confirm your password"
-                    placeholderTextColor="#B0B7C3"
-                    secureTextEntry={!showConfirmPassword}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    returnKeyType={isOtpSent ? "next" : "done"}
-                    onSubmitEditing={() => {
-                      if (isOtpSent) {
-                        otpRef.current?.focus();
-                      }
-                    }}
-                  />
-                  <TouchableOpacity 
-                    style={styles.eyeIcon}
-                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                  >
-                    <Feather name={showConfirmPassword ? "eye" : "eye-off"} size={18} color="#8A94A6" />
-                  </TouchableOpacity>
-                </View>
-  
-                {/* OTP Section */}
-                {isOtpSent ? (
-                  <>
-                    <Text style={styles.formLabel}>OTP Code</Text>
-                    <View style={styles.inputContainer}>
-                      <FontAwesome5 name="key" size={16} color="#8A94A6" style={styles.inputIcon} />
-                      <TextInput
-                        ref={otpRef}
-                        style={styles.input}
-                        placeholder="Enter OTP sent to your email"
-                        placeholderTextColor="#B0B7C3"
-                        keyboardType="number-pad"
-                        value={otp}
-                        onChangeText={setOtp}
-                        returnKeyType="done"
-                      />
-                      <TouchableOpacity 
-                        style={styles.resendButton}
-                        onPress={handleSendOtp}
-                      >
-                        <Text style={styles.resendText}>Resend</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </>
-                ) : (
-                  <TouchableOpacity 
-                    style={styles.otpButton}
-                    onPress={handleSendOtp}
-                  >
-                    <FontAwesome5 name="shield-alt" size={16} color="#4E54C8" style={styles.otpIcon} />
-                    <Text style={styles.otpButtonText}>Send OTP for verification</Text>
-                  </TouchableOpacity>
-                )}
-  
-                {/* Terms and Conditions Checkbox */}
+
+              <Text style={styles.formLabel}>Email Address</Text>
+              <View style={styles.inputContainer}>
+                <FontAwesome5 name="envelope" size={16} color="#8A94A6" style={styles.inputIcon} />
+                <TextInput 
+                  ref={emailRef}
+                  style={styles.input}
+                  placeholder="Enter your email"
+                  placeholderTextColor="#B0B7C3"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  value={email}
+                  onChangeText={setEmail}
+                  onSubmitEditing={() => schoolCodeRef.current?.focus()}
+                  returnKeyType="next"
+                  editable={!isLoading}
+                  autoComplete="email"
+                  textContentType="emailAddress"
+                />
+              </View>
+
+              <Text style={styles.formLabel}>School Code</Text>
+              <View style={styles.inputContainer}>
+                <FontAwesome5 name="building" size={16} color="#8A94A6" style={styles.inputIcon} />
+                <TextInput 
+                  ref={schoolCodeRef}
+                  style={styles.input}
+                  placeholder="Enter school code"
+                  placeholderTextColor="#B0B7C3"
+                  value={schoolCode}
+                  onChangeText={setSchoolCode}
+                  onSubmitEditing={() => schoolNameRef.current?.focus()}
+                  returnKeyType="next"
+                  editable={!isLoading}
+                  autoComplete="off"
+                />
+              </View>
+
+              <Text style={styles.formLabel}>School Name</Text>
+              <View style={styles.inputContainer}>
+                <FontAwesome5 name="school" size={16} color="#8A94A6" style={styles.inputIcon} />
+                <TextInput
+                  ref={schoolNameRef}
+                  style={styles.input}
+                  placeholder="Enter school name"
+                  placeholderTextColor="#B0B7C3"
+                  value={schoolName}
+                  onChangeText={setSchoolName}
+                  onSubmitEditing={() => passwordRef.current?.focus()}
+                  returnKeyType="next"
+                  editable={!isLoading}
+                  autoComplete="off"
+                />
+              </View>
+
+              <Text style={styles.formLabel}>Password</Text>
+              <View style={styles.inputContainer}>
+                <FontAwesome5 name="lock" size={16} color="#8A94A6" style={styles.inputIcon} />
+                <TextInput 
+                  ref={passwordRef}
+                  style={styles.input}
+                  placeholder="Create a password (min 8 characters)"
+                  placeholderTextColor="#B0B7C3"
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={setPassword}
+                  onSubmitEditing={() => confirmPasswordRef.current?.focus()}
+                  returnKeyType="next"
+                  editable={!isLoading}
+                  autoComplete="off"
+                  textContentType="oneTimeCode" // This prevents iOS from suggesting auto-fill
+                />
                 <TouchableOpacity 
-                  style={styles.termsContainer}
-                  onPress={() => setAcceptedTerms(!acceptedTerms)}
+                  style={styles.eyeIcon}
+                  onPress={() => setShowPassword(!showPassword)}
+                  disabled={isLoading}
                 >
-                  <View style={styles.checkbox}>
-                    {acceptedTerms && (
-                      <Ionicons name="checkmark" size={16} color="#4E54C8" />
-                    )}
-                  </View>
-                  <Text style={styles.termsText}>
-                    I agree to the <Text style={styles.termsLink}>Terms of Service</Text> and <Text style={styles.termsLink}>Privacy Policy</Text>
-                  </Text>
+                  <Feather name={showPassword ? "eye" : "eye-off"} size={18} color="#8A94A6" />
                 </TouchableOpacity>
-  
-                <TouchableOpacity
-                  style={[
-                    styles.signupButton,
-                    !isFormValid() && styles.signupButtonDisabled
-                  ]}
-                  onPress={handleSignup}
-                  disabled={!isFormValid()}
+              </View>
+
+              <Text style={styles.formLabel}>Confirm Password</Text>
+              <View style={styles.inputContainer}>
+                <FontAwesome5 name="lock" size={16} color="#8A94A6" style={styles.inputIcon} />
+                <TextInput 
+                  ref={confirmPasswordRef}
+                  style={styles.input}
+                  placeholder="Confirm your password"
+                  placeholderTextColor="#B0B7C3"
+                  secureTextEntry={!showConfirmPassword}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  returnKeyType="done"
+                  editable={!isLoading}
+                  autoComplete="off"
+                  textContentType="oneTimeCode" // This prevents iOS from suggesting auto-fill
+                />
+                <TouchableOpacity 
+                  style={styles.eyeIcon}
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  disabled={isLoading}
                 >
-                  <LinearGradient
-                    colors={['#4E54C8', '#8F94FB']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.signupGradient}
-                  >
+                  <Feather name={showConfirmPassword ? "eye" : "eye-off"} size={18} color="#8A94A6" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Terms and Conditions Checkbox */}
+              <TouchableOpacity 
+                style={styles.termsContainer}
+                onPress={() => setAcceptedTerms(!acceptedTerms)}
+                disabled={isLoading}
+              >
+                <View style={styles.checkbox}>
+                  {acceptedTerms && (
+                    <Ionicons name="checkmark" size={16} color="#4E54C8" />
+                  )}
+                </View>
+                <Text style={styles.termsText}>
+                  I agree to the <Text style={styles.termsLink}>Terms of Service</Text> and <Text style={styles.termsLink}>Privacy Policy</Text>
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.signupButton,
+                  (!isFormValid() || isLoading) && styles.signupButtonDisabled
+                ]}
+                onPress={handleSignup}
+                disabled={!isFormValid() || isLoading}
+              >
+                <LinearGradient
+                  colors={['#4E54C8', '#8F94FB']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.signupGradient}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
                     <Text style={styles.signupButtonText}>Create Account</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-  
-                <View style={styles.loginContainer}>
-                  <Text style={styles.loginText}>
-                    Already have an account? 
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <View style={styles.loginContainer}>
+                <Text style={styles.loginText}>
+                  Already have an account? 
+                </Text>
+                <TouchableOpacity 
+                  onPress={() => navigation.navigate('AdminLogin')}
+                  disabled={isLoading}
+                >
+                  <Text style={styles.loginLink}>
+                    Login
                   </Text>
-                  <TouchableOpacity onPress={() => navigation.navigate('AdminLogin')}>
-                    <Text style={styles.loginLink}>
-                      Login
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-  
-              {/* Footer */}
-              <View style={styles.footer}>
-                <TouchableOpacity style={styles.helpButton}>
-                  <Feather name="help-circle" size={16} color="#8A94A6" style={styles.helpIcon} />
-                  <Text style={styles.footerText}>Need help? Contact support</Text>
                 </TouchableOpacity>
-                <Text style={styles.version}>Version 2.4.1</Text>
               </View>
             </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    );
-  };
-  
+
+            {/* Footer */}
+            <View style={styles.footer}>
+              <TouchableOpacity style={styles.helpButton}>
+                <Feather name="help-circle" size={16} color="#8A94A6" style={styles.helpIcon} />
+                <Text style={styles.footerText}>Need help? Contact support</Text>
+              </TouchableOpacity>
+              <Text style={styles.version}>Version 2.4.1</Text>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+};
   const styles = StyleSheet.create({
     safeArea: {
       flex: 1,
@@ -602,3 +695,4 @@ import {
   });
   
   export default AdminSignupScreen;
+
