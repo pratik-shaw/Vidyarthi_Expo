@@ -21,7 +21,7 @@ import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import NetInfo from '@react-native-community/netinfo'; // You'll need to install this package
+import NetInfo from '@react-native-community/netinfo';
 
 // API URL with configurable timeout
 const API_URL = 'http://192.168.29.148:5000/api'; // Change this to your server IP/domain
@@ -163,6 +163,17 @@ const AdminSignupScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
+  // Clear AsyncStorage for debugging if needed
+  const clearStorageAndRetry = async () => {
+    try {
+      await AsyncStorage.multiRemove(['token', 'userRole', 'adminData']);
+      console.log('AsyncStorage cleared');
+      Alert.alert('Storage Cleared', 'Please try again');
+    } catch (error) {
+      console.error('Error clearing storage:', error);
+    }
+  };
+
   // Handle signup
   const handleSignup = async () => {
     if (!isFormValid()) {
@@ -190,13 +201,10 @@ const AdminSignupScreen: React.FC<Props> = ({ navigation }) => {
     setIsLoading(true);
 
     try {
-      // Check API endpoint first with a lightweight request
-      try {
-        await apiClient.get('/health-check', { timeout: 5000 });
-      } catch (healthCheckError) {
-        console.error("Health check failed:", healthCheckError);
-        // Continue with registration attempt anyway
-      }
+      console.log('Attempting registration with:', { fullName, email, schoolCode, schoolName });
+      
+      // Remove health check attempt since endpoint doesn't exist
+      // Directly proceed to registration
 
       // Call the API to register admin
       const response = await apiClient.post('/admin/register', {
@@ -207,16 +215,52 @@ const AdminSignupScreen: React.FC<Props> = ({ navigation }) => {
         schoolCode
       });
 
-      // If registration is successful, save the token to AsyncStorage
+      console.log('Registration response received:', {
+        status: response.status,
+        hasToken: !!response.data?.token,
+      });
+
+      // If registration is successful, save the token to AsyncStorage (optional, can navigate to Login instead)
       if (response.data && response.data.token) {
-        await AsyncStorage.setItem('token', response.data.token);
-        
-        // Save the user role
-        await AsyncStorage.setItem('userRole', 'admin');
-        
+        try {
+          // Clear any existing data first
+          await AsyncStorage.multiRemove(['token', 'userRole', 'adminData']);
+          
+          // Save the token
+          await AsyncStorage.setItem('token', response.data.token);
+          console.log('Token saved to AsyncStorage');
+          
+          // Save the user role
+          await AsyncStorage.setItem('userRole', 'admin');
+          console.log('User role saved to AsyncStorage');
+          
+          Alert.alert(
+            "Success", 
+            "Account created successfully!",
+            [
+              { 
+                text: "OK", 
+                onPress: () => navigation.navigate('AdminLogin') 
+              }
+            ]
+          );
+        } catch (storageError) {
+          console.error('Error saving auth data:', storageError);
+          Alert.alert(
+            "Storage Error", 
+            "Failed to save login information. You can still log in with your new account.",
+            [
+              { text: "OK", onPress: () => navigation.navigate('AdminLogin') },
+              { text: "Clear Storage & Retry", onPress: clearStorageAndRetry }
+            ]
+          );
+        }
+      } else {
+        // Even if no token is returned, the account might have been created
+        console.log('Registration successful, but no token returned');
         Alert.alert(
           "Success", 
-          "Account created successfully!",
+          "Account created successfully. Please login with your new credentials.",
           [
             { 
               text: "OK", 
@@ -464,7 +508,16 @@ const AdminSignupScreen: React.FC<Props> = ({ navigation }) => {
 
             {/* Footer */}
             <View style={styles.footer}>
-              <TouchableOpacity style={styles.helpButton}>
+              <TouchableOpacity 
+                style={styles.helpButton}
+                onPress={() => {
+                  Alert.alert(
+                    "Support",
+                    "Contact admin@vidyarthi.app for assistance",
+                    [{ text: "OK" }]
+                  );
+                }}
+              >
                 <Feather name="help-circle" size={16} color="#8A94A6" style={styles.helpIcon} />
                 <Text style={styles.footerText}>Need help? Contact support</Text>
               </TouchableOpacity>
