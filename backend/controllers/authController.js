@@ -6,6 +6,7 @@ const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
 const School = require('../models/School');
 const Class = require('../models/Class');
+require('dotenv').config();
 
 // Admin Registration
 exports.registerAdmin = async (req, res) => {
@@ -76,22 +77,29 @@ exports.registerAdmin = async (req, res) => {
 
 // Admin Login
 exports.loginAdmin = async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, schoolCode } = req.body;
 
   try {
-    // Check for admin
-    const admin = await Admin.findOne({ email });
+    // Validate input
+    if (!email || !password || !schoolCode) {
+      return res.status(400).json({ message: 'Please provide email, password and school code' });
+    }
+
+    // Find admin by email and school code
+    const admin = await Admin.findOne({ email, schoolCode });
+    
     if (!admin) {
-      return res.status(400).json({ msg: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     // Check password
     const isMatch = await bcrypt.compare(password, admin.password);
+    
     if (!isMatch) {
-      return res.status(400).json({ msg: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Return token
+    // Create payload for JWT
     const payload = {
       user: {
         id: admin._id,
@@ -99,20 +107,52 @@ exports.loginAdmin = async (req, res) => {
       }
     };
 
+    // Sign token
     jwt.sign(
       payload,
       process.env.JWT_SECRET,
-      { expiresIn: '7d' },
+      { expiresIn: '1d' },
       (err, token) => {
         if (err) throw err;
-        res.json({ token });
+        
+        // Return token and admin data (excluding password)
+        const adminData = {
+          _id: admin._id,
+          name: admin.name,
+          email: admin.email,
+          schoolCode: admin.schoolCode,
+          schoolId: admin.schoolId
+        };
+        
+        res.json({
+          token,
+          admin: adminData
+        });
       }
     );
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    console.error('Login error:', err.message);
+    res.status(500).json({ message: 'Server error' });
   }
 };
+
+// Validate admin token endpoint
+exports.validateToken = async (req, res) => {
+  try {
+    // req.user is set by the auth middleware
+    const admin = await Admin.findById(req.user.id).select('-password');
+    
+    if (!admin) {
+      return res.status(404).json({ message: 'Admin not found' });
+    }
+    
+    res.json({ valid: true, admin });
+  } catch (err) {
+    console.error('Token validation error:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 
 // Teacher Registration
 exports.registerTeacher = async (req, res) => {

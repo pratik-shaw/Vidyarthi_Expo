@@ -6,9 +6,12 @@ const authController = require('../controllers/authController');
 const adminController = require('../controllers/adminController');
 const classController = require('../controllers/classController');
 
-// Auth routes - make sure these controllers exist
+// Auth routes
 router.post('/register', authController.registerAdmin);
 router.post('/login', authController.loginAdmin);
+
+// Token validation route
+router.get('/validate', auth, authController.validateToken);
 
 // Protected routes
 router.get('/profile', auth, adminController.getProfile);

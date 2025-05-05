@@ -11,13 +11,45 @@ import {
   Image,
   KeyboardAvoidingView,
   ScrollView,
-  Alert
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
 import React, { useEffect, useState, useRef } from 'react';
 import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+
+// API URL with configurable timeout
+const API_URL = 'http://192.168.29.148:5000/api'; // Change this to your server IP/domain
+const API_TIMEOUT = 15000; // 15 seconds timeout
+
+// Create an axios instance with timeout configuration
+const apiClient = axios.create({
+  baseURL: API_URL,
+  timeout: API_TIMEOUT,
+});
+
+// Add an interceptor to inject the token for authenticated requests
+apiClient.interceptors.request.use(
+  async (config) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch (error) {
+      console.error('Error getting token for request:', error);
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AdminLogin'>;
 
@@ -26,19 +58,19 @@ const AdminLoginScreen: React.FC<Props> = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [schoolCode, setSchoolCode] = useState('');
   const [password, setPassword] = useState('');
-  const [otp, setOtp] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [isOtpSent, setIsOtpSent] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  // Network status
+  const [isConnected, setIsConnected] = useState(true);
 
   // Refs for input fields (for focus management)
   const emailRef = useRef<TextInput>(null);
   const schoolCodeRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
-  const otpRef = useRef<TextInput>(null);
 
   // Animation values
-  const fadeAnim = new Animated.Value(0);
-  const slideAnim = new Animated.Value(30);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
 
   // Hide the header
   React.useLayoutEffect(() => {
@@ -46,6 +78,62 @@ const AdminLoginScreen: React.FC<Props> = ({ navigation }) => {
       headerShown: false,
     });
   }, [navigation]);
+
+  // Check for existing authentication on component mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        // First, check for token and userRole
+        const token = await AsyncStorage.getItem('token');
+        const userRole = await AsyncStorage.getItem('userRole');
+        
+        console.log('Auth check - Token:', token ? 'exists' : 'not found');
+        console.log('Auth check - User role:', userRole || 'not found');
+        
+        // Only proceed if both token and correct userRole exist
+        if (token && userRole === 'admin') {
+          try {
+            // Validate the token by making a request to the validation endpoint
+            const validationResponse = await apiClient.get('/admin/validate');
+            if (validationResponse.status === 200) {
+              console.log('Token validated, navigating to AdminHome');
+              
+              // If admin data was returned with validation, save it
+              if (validationResponse.data && validationResponse.data.admin) {
+                await AsyncStorage.setItem('adminData', JSON.stringify(validationResponse.data.admin));
+                console.log('Admin data saved from validation response');
+              }
+              
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'AdminHome' }],
+              });
+            }
+          } catch (validationError) {
+            console.error('Token validation error:', validationError);
+            // If token is invalid, clear storage
+            await AsyncStorage.multiRemove(['token', 'userRole', 'adminData']);
+            console.log('Invalid token - storage cleared');
+          }
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+      }
+    };
+    
+    checkAuth();
+  }, [navigation]);
+
+  // Check network connectivity
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsConnected(state.isConnected ?? false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   // Run entry animations
   useEffect(() => {
@@ -61,42 +149,199 @@ const AdminLoginScreen: React.FC<Props> = ({ navigation }) => {
         useNativeDriver: true,
       })
     ]).start();
-  }, []);
+  }, [fadeAnim, slideAnim]);
 
   // Form validation
   const isFormValid = () => {
     if (!email || !schoolCode || !password) return false;
-    if (isOtpSent && !otp) return false;
+    if (!isEmailValid()) return false;
     return true;
   };
 
-  // Handle send OTP
-  const handleSendOtp = () => {
-    if (!email || !schoolCode) {
-      Alert.alert("Error", "Please enter email and school code to receive OTP");
+  // Email validation check
+  const isEmailValid = () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  // Show detailed error if API call fails
+  const handleApiError = (error: any) => {
+    console.error("Login error:", error);
+    
+    if (!isConnected) {
+      Alert.alert(
+        "Network Error", 
+        "You appear to be offline. Please check your internet connection and try again."
+      );
       return;
     }
-    // Simulate OTP send
-    setIsOtpSent(true);
-    Alert.alert("Success", "OTP has been sent to your email");
+    
+    if (axios.isAxiosError(error)) {
+      if (error.code === 'ECONNABORTED') {
+        Alert.alert(
+          "Connection Timeout", 
+          "The server took too long to respond. Please check your API URL and try again. Make sure your server is running at " + API_URL
+        );
+      } else if (error.response) {
+        // Server responded with error status code
+        if (error.response.status === 401) {
+          Alert.alert(
+            "Login Failed", 
+            "Invalid credentials. Please check your email, school code, and password."
+          );
+        } else {
+          Alert.alert(
+            "Login Failed", 
+            error.response.data?.message || `Server error (${error.response.status}). Please try again.`
+          );
+        }
+      } else if (error.request) {
+        // Request made but no response received
+        Alert.alert(
+          "Server Unreachable", 
+          `Could not reach the server at ${API_URL}. Please verify the API URL is correct and the server is running.`
+        );
+      } else {
+        Alert.alert(
+          "Request Error", 
+          "An error occurred while setting up the request. Please try again."
+        );
+      }
+    } else {
+      Alert.alert(
+        "Unknown Error", 
+        "An unexpected error occurred. Please try again later."
+      );
+    }
+  };
+
+  // Clear AsyncStorage for debugging if needed
+  const clearStorageAndRetry = async () => {
+    try {
+      await AsyncStorage.multiRemove(['token', 'userRole', 'adminData']);
+      console.log('AsyncStorage cleared');
+      Alert.alert('Storage Cleared', 'Please try logging in again');
+    } catch (error) {
+      console.error('Error clearing storage:', error);
+    }
   };
 
   // Handle login
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!isFormValid()) {
-      Alert.alert("Error", "Please fill all required fields");
+      let errorMessage = "Please fill all required fields";
+      
+      if (!isEmailValid()) {
+        errorMessage = "Please enter a valid email address";
+      }
+      
+      Alert.alert("Error", errorMessage);
       return;
     }
 
-    // Login logic would go here
-    Alert.alert("Success", "Logged in successfully");
-    // Navigate to admin dashboard (You'll need to create this screen)
-    // navigation.navigate('AdminDashboard');
+    if (!isConnected) {
+      Alert.alert("Network Error", "You appear to be offline. Please check your internet connection and try again.");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      console.log('Attempting login with:', { email, schoolCode });
+      
+      // Make the login request
+      const response = await apiClient.post('/admin/login', {
+        email,
+        password,
+        schoolCode
+      });
+
+      console.log('Login response received:', {
+        status: response.status,
+        hasToken: !!response.data?.token,
+        hasAdminData: !!response.data?.admin
+      });
+
+      // If login is successful, save the token to AsyncStorage
+      if (response.data && response.data.token) {
+        try {
+          // Clear any existing data first
+          await AsyncStorage.multiRemove(['token', 'userRole', 'adminData']);
+          
+          // Save the token first
+          await AsyncStorage.setItem('token', response.data.token);
+          console.log('Token saved to AsyncStorage');
+          
+          // Save the user role
+          await AsyncStorage.setItem('userRole', 'admin');
+          console.log('User role saved to AsyncStorage');
+          
+          // Save admin data if it's provided in the login response
+          if (response.data.admin) {
+            await AsyncStorage.setItem('adminData', JSON.stringify(response.data.admin));
+            console.log('Admin data saved from login response');
+          }
+          
+          // Navigate to AdminHome
+          console.log('Navigating to AdminHome screen');
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'AdminHome' }],
+          });
+        } catch (storageError) {
+          console.error('Error saving auth data:', storageError);
+          Alert.alert(
+            "Storage Error", 
+            "Failed to save login information. Please try again.",
+            [
+              { text: "OK" },
+              { text: "Clear Storage & Retry", onPress: clearStorageAndRetry }
+            ]
+          );
+        }
+      } else {
+        console.warn('Login response missing token:', response.data);
+        Alert.alert(
+          "Login Error", 
+          "Server response is missing authentication token."
+        );
+      }
+    } catch (error) {
+      handleApiError(error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Navigate to signup screen
   const navigateToSignup = () => {
     navigation.navigate('AdminSignup');
+  };
+
+  // Handle forgot password
+  const handleForgotPassword = () => {
+    // You can implement forgot password functionality here
+    // For now, just show an alert
+    Alert.alert(
+      "Reset Password", 
+      "Please contact your system administrator to reset your password.",
+      [{ text: "OK" }]
+    );
+  };
+
+  // Debug function to check navigation state
+  const debugNavigation = () => {
+    const navState = navigation.getState();
+    console.log('Navigation state:', JSON.stringify(navState, null, 2));
+    Alert.alert(
+      "Debug Options",
+      "Choose an action:",
+      [
+        { text: "Clear Auth Data", onPress: clearStorageAndRetry },
+        { text: "Check Navigation", onPress: () => Alert.alert("Nav Routes", `Routes: ${navState.routes.map(r => r.name).join(', ')}`) },
+        { text: "Cancel", style: "cancel" }
+      ]
+    );
   };
 
   return (
@@ -117,6 +362,7 @@ const AdminLoginScreen: React.FC<Props> = ({ navigation }) => {
               <TouchableOpacity 
                 style={styles.backButton}
                 onPress={() => navigation.goBack()}
+                disabled={isLoading}
               >
                 <Ionicons name="arrow-back" size={24} color="#3A4276" />
               </TouchableOpacity>
@@ -168,6 +414,9 @@ const AdminLoginScreen: React.FC<Props> = ({ navigation }) => {
                   onChangeText={setEmail}
                   onSubmitEditing={() => schoolCodeRef.current?.focus()}
                   returnKeyType="next"
+                  editable={!isLoading}
+                  autoComplete="email"
+                  textContentType="emailAddress"
                 />
               </View>
 
@@ -183,6 +432,8 @@ const AdminLoginScreen: React.FC<Props> = ({ navigation }) => {
                   onChangeText={setSchoolCode}
                   onSubmitEditing={() => passwordRef.current?.focus()}
                   returnKeyType="next"
+                  editable={!isLoading}
+                  autoComplete="off"
                 />
               </View>
 
@@ -197,58 +448,24 @@ const AdminLoginScreen: React.FC<Props> = ({ navigation }) => {
                   secureTextEntry={!showPassword}
                   value={password}
                   onChangeText={setPassword}
-                  returnKeyType={isOtpSent ? "next" : "done"}
-                  onSubmitEditing={() => {
-                    if (isOtpSent) {
-                      otpRef.current?.focus();
-                    }
-                  }}
+                  returnKeyType="done"
+                  editable={!isLoading}
+                  autoComplete="password"
+                  textContentType="password"
                 />
                 <TouchableOpacity 
                   style={styles.eyeIcon}
                   onPress={() => setShowPassword(!showPassword)}
+                  disabled={isLoading}
                 >
                   <Feather name={showPassword ? "eye" : "eye-off"} size={18} color="#8A94A6" />
                 </TouchableOpacity>
               </View>
 
-              {/* OTP Section */}
-              {isOtpSent ? (
-                <>
-                  <Text style={styles.formLabel}>OTP Code</Text>
-                  <View style={styles.inputContainer}>
-                    <FontAwesome5 name="key" size={16} color="#8A94A6" style={styles.inputIcon} />
-                    <TextInput
-                      ref={otpRef}
-                      style={styles.input}
-                      placeholder="Enter OTP sent to your email"
-                      placeholderTextColor="#B0B7C3"
-                      keyboardType="number-pad"
-                      value={otp}
-                      onChangeText={setOtp}
-                      returnKeyType="done"
-                    />
-                    <TouchableOpacity 
-                      style={styles.resendButton}
-                      onPress={handleSendOtp}
-                    >
-                      <Text style={styles.resendText}>Resend</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              ) : (
-                <TouchableOpacity 
-                  style={styles.otpButton}
-                  onPress={handleSendOtp}
-                >
-                  <FontAwesome5 name="shield-alt" size={16} color="#4E54C8" style={styles.otpIcon} />
-                  <Text style={styles.otpButtonText}>Send OTP for verification</Text>
-                </TouchableOpacity>
-              )}
-
               <TouchableOpacity 
                 style={styles.forgotPassword}
-                onPress={() => console.log('Forgot password')}
+                onPress={handleForgotPassword}
+                disabled={isLoading}
               >
                 <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
               </TouchableOpacity>
@@ -256,10 +473,10 @@ const AdminLoginScreen: React.FC<Props> = ({ navigation }) => {
               <TouchableOpacity
                 style={[
                   styles.loginButton,
-                  !isFormValid() && styles.loginButtonDisabled
+                  (!isFormValid() || isLoading) && styles.loginButtonDisabled
                 ]}
                 onPress={handleLogin}
-                disabled={!isFormValid()}
+                disabled={!isFormValid() || isLoading}
               >
                 <LinearGradient
                   colors={['#4E54C8', '#8F94FB']}
@@ -267,7 +484,11 @@ const AdminLoginScreen: React.FC<Props> = ({ navigation }) => {
                   end={{ x: 1, y: 0 }}
                   style={styles.loginGradient}
                 >
-                  <Text style={styles.loginButtonText}>Login</Text>
+                  {isLoading ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.loginButtonText}>Login</Text>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
 
@@ -275,7 +496,10 @@ const AdminLoginScreen: React.FC<Props> = ({ navigation }) => {
                 <Text style={styles.createAccountText}>
                   Don't have an account? 
                 </Text>
-                <TouchableOpacity onPress={navigateToSignup}>
+                <TouchableOpacity 
+                  onPress={navigateToSignup}
+                  disabled={isLoading}
+                >
                   <Text style={styles.createAccountLink}>
                     Create new
                   </Text>
@@ -285,7 +509,10 @@ const AdminLoginScreen: React.FC<Props> = ({ navigation }) => {
 
             {/* Footer */}
             <View style={styles.footer}>
-              <TouchableOpacity style={styles.helpButton}>
+              <TouchableOpacity 
+                style={styles.helpButton}
+                onPress={debugNavigation}
+              >
                 <Feather name="help-circle" size={16} color="#8A94A6" style={styles.helpIcon} />
                 <Text style={styles.footerText}>Need help? Contact support</Text>
               </TouchableOpacity>
@@ -403,35 +630,6 @@ const styles = StyleSheet.create({
     color: '#4E54C8',
     fontWeight: '600',
   },
-  otpButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(78, 84, 200, 0.1)',
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  otpIcon: {
-    marginRight: 8,
-  },
-  otpButtonText: {
-    fontSize: 14,
-    color: '#4E54C8',
-    fontWeight: '600',
-  },
-  resendButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: 'rgba(78, 84, 200, 0.1)',
-  },
-  resendText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#4E54C8',
-  },
   loginButton: {
     marginVertical: 10,
     height: 56,
@@ -469,6 +667,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#4E54C8',
     fontWeight: '600',
+    marginLeft: 4,
   },
   helpButton: {
     flexDirection: 'row',
