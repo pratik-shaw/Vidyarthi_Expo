@@ -1,51 +1,62 @@
 // models/Student.js
 const mongoose = require('mongoose');
-const studentSchema = new mongoose.Schema({
+const Schema = mongoose.Schema;
+
+const StudentSchema = new Schema({
   name: {
     type: String,
     required: true
   },
-  phone: {
-    type: String
-  },
-  email: { 
-    type: String, 
+  email: {
+    type: String,
     required: true,
-    unique: true 
+    unique: true
+  },
+  phone: {
+    type: String,
+    default: ''
   },
   studentId: {
     type: String,
-    required: true
+    required: true,
+    unique: true
   },
   uniqueId: {
     type: String,
     required: true,
     unique: true
   },
+  schoolId: {
+    type: Schema.Types.ObjectId,
+    ref: 'School',
+    required: true
+  },
+  classId: {
+    type: Schema.Types.ObjectId,
+    ref: 'Class',
+    // Not required during registration - will be set when student chooses a class
+    required: false
+  },
+  className: {
+    type: String,
+    default: ''
+  },
+  section: {
+    type: String,
+    default: ''
+  },
   password: {
     type: String,
     required: true
   },
-  schoolCode: {
-    type: String,
-    required: true
+  isActive: {
+    type: Boolean,
+    default: true
   },
-  class: {
-    type: String
-  },
-  section: {
-    type: String
-  },
-  classId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'Class' 
-  },
-  schoolId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'School' 
+  createdAt: {
+    type: Date,
+    default: Date.now
   }
-}, {
-  timestamps: true
 });
 
-module.exports = mongoose.model('Student', studentSchema);
+module.exports = mongoose.model('Student', StudentSchema);

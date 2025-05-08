@@ -373,3 +373,102 @@ exports.loginStudent = async (req, res) => {
     res.status(500).send('Server error');
   }
 };
+
+// Register student
+exports.registerStudent = async (req, res) => {
+  console.log('Register student request body:', req.body);
+  
+  try {
+    const { 
+      name, 
+      email, 
+      phone, 
+      studentId, 
+      uniqueId, 
+      schoolCode, 
+      password,
+      className,
+      section 
+    } = req.body;
+
+    // Validate required fields
+    if (!name || !email || !password || !schoolCode) {
+      return res.status(400).json({ 
+        message: 'Please provide all required fields: name, email, password, and schoolCode' 
+      });
+    }
+
+    // Check if school exists
+    const school = await School.findOne({ code: schoolCode });
+    if (!school) {
+      return res.status(400).json({ message: 'Invalid school code' });
+    }
+
+    // Check if student with email already exists
+    let student = await Student.findOne({ email });
+    if (student) {
+      return res.status(400).json({ message: 'Student with this email already exists' });
+    }
+
+    // Create new student without requiring classId
+    student = new Student({
+      name,
+      email,
+      phone: phone || '',
+      studentId: studentId || `STD${Date.now()}`,
+      uniqueId: uniqueId || `STD${Date.now()}`,
+      schoolId: school._id,
+      password,
+      // Store className and section if provided, but classId will be assigned later
+      className: className || '',
+      section: section || ''
+      // classId is not required during registration
+
+      // change the uniqueId generation logic as per your requirement with using the schoolCode+idno of student school
+    });
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    student.password = await bcrypt.hash(password, salt);
+
+    await student.save();
+
+    // Create JWT token
+    const payload = {
+      user: {
+        id: student.id,
+        type: 'student'
+      }
+    };
+
+    jwt.sign(
+      payload,
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' },
+      (err, token) => {
+        if (err) throw err;
+        res.status(201).json({
+          token,
+          student: {
+            id: student.id,
+            name: student.name,
+            email: student.email,
+            studentId: student.studentId
+          }
+        });
+      }
+    );
+  } catch (err) {
+    console.error('Register student error:', err.message);
+    
+    // Check for MongoDB duplicate key error
+    if (err.code === 11000) {
+      let fieldName = Object.keys(err.keyPattern)[0];
+      return res.status(400).json({ 
+        message: `A student with this ${fieldName} already exists.` 
+      });
+    }
+    
+    res.status(500).json({ message: 'Server error' });
+  }
+};
