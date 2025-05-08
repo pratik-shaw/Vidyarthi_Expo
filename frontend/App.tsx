@@ -9,6 +9,7 @@ import IntroScreen from './screens/IntroScreen';
 import StudentSignupScreen from './screens/StudentSignupScreen';
 import TeacherSignupScreen from './screens/TeacherSignupScreen';
 import AdminSignupScreen from './screens/AdminSignupScreen';
+import AdminClassesScreen from './screens/AdminClassesScreen';
 
 // Import the login screens directly with full path
 import StudentLoginScreen from './screens/StudentLoginScreen';
@@ -56,6 +57,7 @@ export type RootStackParamList = {
   StudentSubmission: undefined;
 
   AdminHome: undefined;
+  AdminClasses: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -90,7 +92,18 @@ export default function App() {
         <Stack.Screen name="StudentSubmission" component={StudentSubmissionScreen} />
 
         <Stack.Screen name="AdminHome" component={AdminHomeScreen} />
+        <Stack.Screen name="AdminClasses" component={AdminClassesScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
+
+// MAIN CHANGES AFTER LOGIN AND SIGNUP OF USER MODELS 
+
+// if the user is logged in, show the home screen after the splash screen
+// if the user is not logged in, show the role selection screen after the splash screen
+// user can be a student, teacher or admin
+// if the user is a student and logged in, show the student home screen
+// if the user is a teacher and logged in, show the teacher home screen
+// if the user is an admin and logged in, show the admin home screen
+// fetch the user data from the backend using the user token and redirect to their respective home screens

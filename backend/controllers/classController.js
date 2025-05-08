@@ -9,12 +9,12 @@ const Admin = require('../models/Admin');
 exports.createClass = async (req, res) => {
   try {
     const { name, section } = req.body;
-    
+
     // Verify user is an admin
     if (req.user.role !== 'admin') {
       return res.status(403).json({ msg: 'Not authorized' });
     }
-    
+
     const admin = await Admin.findById(req.user.id);
     if (!admin) {
       return res.status(404).json({ msg: 'Admin not found' });
@@ -41,49 +41,126 @@ exports.createClass = async (req, res) => {
   }
 };
 
-// Assign teacher to class (admin only)
-exports.assignTeacher = async (req, res) => {
+// Update a class (admin only)
+exports.updateClass = async (req, res) => {
   try {
-    const { classId, teacherId } = req.body;
-    
+    const { name, section } = req.body;
+    const { id } = req.params;
+
     // Verify user is an admin
     if (req.user.role !== 'admin') {
       return res.status(403).json({ msg: 'Not authorized' });
     }
-    
+
     const admin = await Admin.findById(req.user.id);
-    
+    if (!admin) {
+      return res.status(404).json({ msg: 'Admin not found' });
+    }
+
+    // Find class and ensure it belongs to admin's school
+    const classObj = await Class.findOne({ _id: id, schoolId: admin.schoolId });
+    if (!classObj) {
+      return res.status(404).json({ msg: 'Class not found or not authorized' });
+    }
+
+    // Update class fields
+    if (name) classObj.name = name;
+    if (section) classObj.section = section;
+
+    await classObj.save();
+    res.json(classObj);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+};
+
+// Delete a class (admin only)
+exports.deleteClass = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verify user is an admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ msg: 'Not authorized' });
+    }
+
+    const admin = await Admin.findById(req.user.id);
+    if (!admin) {
+      return res.status(404).json({ msg: 'Admin not found' });
+    }
+
+    // Find class and ensure it belongs to admin's school
+    const classObj = await Class.findOne({ _id: id, schoolId: admin.schoolId });
+    if (!classObj) {
+      return res.status(404).json({ msg: 'Class not found or not authorized' });
+    }
+
+    // Remove class reference from school
+    await School.findByIdAndUpdate(
+      admin.schoolId,
+      { $pull: { classIds: id } }
+    );
+
+    // Remove class reference from all associated teachers
+    await Teacher.updateMany(
+      { classIds: id },
+      { $pull: { classIds: id } }
+    );
+
+    // Remove class reference from all associated students
+    await Student.updateMany(
+      { classIds: id },
+      { $pull: { classIds: id } }
+    );
+
+    // Delete the class
+    await Class.findByIdAndDelete(id);
+
+    res.json({ msg: 'Class deleted successfully' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+};
+
+// Assign teacher to class (admin only)
+exports.assignTeacher = async (req, res) => {
+  try {
+    const { classId, teacherId } = req.body;
+
+    // Verify user is an admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ msg: 'Not authorized' });
+    }
+
+    const admin = await Admin.findById(req.user.id);
+
     // Find class and teacher, ensure they belong to admin's school
-    const classObj = await Class.findOne({ 
-      _id: classId,
-      schoolId: admin.schoolId
-    });
-    
+    // Fixed: *id -> _id
+    const classObj = await Class.findOne({ _id: classId, schoolId: admin.schoolId });
     if (!classObj) {
       return res.status(404).json({ msg: 'Class not found' });
     }
-    
-    const teacher = await Teacher.findOne({
-      _id: teacherId,
-      schoolId: admin.schoolId
-    });
-    
+
+    // Fixed: *id -> _id
+    const teacher = await Teacher.findOne({ _id: teacherId, schoolId: admin.schoolId });
     if (!teacher) {
       return res.status(404).json({ msg: 'Teacher not found' });
     }
-    
+
     // Update class with teacher ID
     if (!classObj.teacherIds.includes(teacherId)) {
       classObj.teacherIds.push(teacherId);
       await classObj.save();
     }
-    
+
     // Update teacher with class ID
     if (!teacher.classIds.includes(classId)) {
       teacher.classIds.push(classId);
       await teacher.save();
     }
-    
+
     res.json({ msg: 'Teacher assigned to class successfully' });
   } catch (err) {
     console.error(err.message);

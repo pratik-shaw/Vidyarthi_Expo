@@ -18,10 +18,14 @@ router.get('/profile', auth, adminController.getProfile);
 router.get('/school', auth, adminController.getSchool);
 router.get('/teachers', auth, adminController.getTeachers);
 router.get('/students', auth, adminController.getStudents);
+
+// Classes routes
 router.get('/classes', auth, adminController.getClasses);
+router.post('/classes', auth, classController.createClass);
+router.put('/classes/:id', auth, classController.updateClass); // Changed to use classController
+router.delete('/classes/:id', auth, classController.deleteClass); // Changed to use classController
 
 // Class management
-router.post('/class', auth, classController.createClass);
-router.post('/class/assign-teacher', auth, classController.assignTeacher);
+router.post('/classes/assign-teacher', auth, classController.assignTeacher);
 
 module.exports = router;
