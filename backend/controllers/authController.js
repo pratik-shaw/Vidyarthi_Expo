@@ -257,20 +257,30 @@ exports.loginTeacher = async (req, res) => {
 
 // Student Login
 exports.loginStudent = async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, schoolCode } = req.body;
 
   try {
+    // Validate required fields
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Please provide email and password' });
+    }
+
     // Check for student
     const student = await Student.findOne({ email });
     if (!student) {
-      return res.status(400).json({ msg: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     // Check password
     const isMatch = await bcrypt.compare(password, student.password);
     if (!isMatch) {
-      return res.status(400).json({ msg: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
+
+    // Check school code
+    if (schoolCode && student.schoolCode && student.schoolCode !== schoolCode) {
+  return res.status(401).json({ message: 'Invalid school code' });
+}
 
     // Return token
     const payload = {
@@ -286,11 +296,25 @@ exports.loginStudent = async (req, res) => {
       { expiresIn: '7d' },
       (err, token) => {
         if (err) throw err;
-        res.json({ token });
+        
+        // Return basic student info with token
+        const studentData = {
+          id: student._id,
+          name: student.name,
+          email: student.email,
+          schoolCode: student.schoolCode,
+          schoolId: student.schoolId,
+          hasClass: Boolean(student.classId)  // Indicates if student already has a class
+        };
+        
+        res.json({ 
+          token,
+          student: studentData
+        });
       }
     );
   } catch (err) {
-    console.error(err.message);
+    console.error('Student login error:', err.message);
     res.status(500).send('Server error');
   }
 };

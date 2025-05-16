@@ -1,26 +1,95 @@
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
   StatusBar,
   Animated,
   Platform,
   SafeAreaView,
   Image,
-  TextInput,
+  KeyboardAvoidingView,
   ScrollView,
-  KeyboardAvoidingView
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+import ClassSelectionModal from '../components/ClassSelectionModal';
+
+// API URL with configurable timeout
+const API_URL = 'http://192.168.29.148:5000'; // Change this to your server IP/domain
+const API_TIMEOUT = 15000; // 15 seconds timeout
+
+// Create an axios instance with timeout configuration
+const apiClient = axios.create({
+  baseURL: API_URL,
+  timeout: API_TIMEOUT,
+});
+
+// Add an interceptor to inject the token for authenticated requests
+apiClient.interceptors.request.use(
+  async (config) => {
+    try {
+      const token = await AsyncStorage.getItem('studentToken');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch (error) {
+      console.error('Error getting token for request:', error);
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StudentLogin'>;
 
+interface ClassOption {
+  _id: string;
+  name: string;
+  section: string;
+}
+
 const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
+  // Form state
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [schoolCode, setSchoolCode] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  
+  // Loading state
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // Class selection modal state
+  const [showClassModal, setShowClassModal] = useState(false);
+  const [availableClasses, setAvailableClasses] = useState<ClassOption[]>([]);
+  
+  // Student state
+  const [studentData, setStudentData] = useState<any>(null);
+  const [token, setToken] = useState<string | null>(null);
+
+  // Network status
+  const [isConnected, setIsConnected] = useState(true);
+
+  // Refs for input fields (for focus management)
+  const emailRef = useRef<TextInput>(null);
+  const schoolCodeRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+
+  // Animation states
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+
   // Hide the header
   React.useLayoutEffect(() => {
     navigation.setOptions({
@@ -28,20 +97,102 @@ const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
     });
   }, [navigation]);
 
-  // Form state
-  const [name, setName] = useState('');
-  const [className, setClassName] = useState('');
-  const [section, setSection] = useState('');
-  const [email, setEmail] = useState('');
-  const [schoolCode, setSchoolCode] = useState('');
-  const [uniqueId, setUniqueId] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  // Check if the user is already logged in
+  useEffect(() => {
+    const checkLoginStatus = async () => {
+  try {
+    console.log('Checking student login status...');
+    const storedToken = await AsyncStorage.getItem('studentToken');
+    if (storedToken) {
+      setToken(storedToken);
+      console.log('Student token found, validating...');
+      
+      try {
+        // Updated validation endpoint - make sure this matches your backend API route
+        const validationResponse = await apiClient.get('/api/student/validate', {
+          headers: { Authorization: `Bearer ${storedToken}` }
+        });
+        
+        if (validationResponse.status === 200) {
+          console.log('Token validated successfully');
+          
+          // If student data was returned with validation, save it
+          if (validationResponse.data && validationResponse.data.student) {
+            await AsyncStorage.setItem('studentData', JSON.stringify(validationResponse.data.student));
+            setStudentData(validationResponse.data.student);
+            
+            console.log('Checking if student has a class assigned');
+            // Check if student already has a class assigned
+            if (validationResponse.data.student.hasClass) {
+              console.log('Student has class, navigating to home');
+              navigation.replace('StudentHome');
+            } else {
+              console.log('Student needs to select class');
+              // Make sure to use the school code from the validation response
+              const schoolCode = validationResponse.data.student.schoolCode;
+              if (schoolCode) {
+                // Fetch available classes for the student's school
+                fetchAvailableClasses(schoolCode, storedToken);
+              } else {
+                console.error('School code missing in student data');
+                Alert.alert('Error', 'Could not determine your school. Please log in again.');
+                await AsyncStorage.multiRemove(['studentToken', 'studentData']);
+                setToken(null);
+                setStudentData(null);
+              }
+            }
+          }
+        }
+      } catch (validationError) {
+        console.error('Token validation error:', validationError);
+        
+        // Check if we can recover the stored student data before clearing
+        try {
+          const storedStudentData = await AsyncStorage.getItem('studentData');
+          if (storedStudentData) {
+            const studentInfo = JSON.parse(storedStudentData);
+            setStudentData(studentInfo);
+            
+            // If the student already has a class, we can try to continue
+            if (studentInfo.hasClass) {
+              console.log('Using stored student data to continue');
+              navigation.replace('StudentHome');
+              return; // Skip clearing storage
+            }
+          }
+        } catch (recoveryError) {
+          console.error('Failed to recover student data:', recoveryError);
+        }
+        
+        // Clear storage only if we couldn't recover
+        await AsyncStorage.multiRemove(['studentToken', 'studentData']);
+        setToken(null);
+        setStudentData(null);
+        console.log('Invalid token - storage cleared');
+      }
+    } else {
+      console.log('No student token found');
+    }
+  } catch (error) {
+    console.error('Error checking login status:', error);
+  }
+};
 
-  // Animation states
-  const fadeAnim = new Animated.Value(0);
-  const slideAnim = new Animated.Value(30);
+    checkLoginStatus();
+  }, [navigation]);
 
+  // Check network connectivity
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsConnected(state.isConnected ?? false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Run entry animations
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -55,12 +206,247 @@ const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
         useNativeDriver: true,
       })
     ]).start();
-  }, []);
+  }, [fadeAnim, slideAnim]);
+
+  // Form validation
+  const isFormValid = () => {
+    if (!email || !schoolCode || !password) return false;
+    if (!isEmailValid()) return false;
+    return true;
+  };
+
+  // Email validation check
+  const isEmailValid = () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  // Show detailed error if API call fails
+  const handleApiError = (error: any) => {
+    console.error("Login error:", error);
+    
+    if (!isConnected) {
+      Alert.alert(
+        "Network Error", 
+        "You appear to be offline. Please check your internet connection and try again."
+      );
+      return;
+    }
+    
+    if (axios.isAxiosError(error)) {
+      if (error.code === 'ECONNABORTED') {
+        Alert.alert(
+          "Connection Timeout", 
+          "The server took too long to respond. Please check your API URL and try again. Make sure your server is running at " + API_URL
+        );
+      } else if (error.response) {
+        // Server responded with error status code
+        if (error.response.status === 401) {
+          Alert.alert(
+            "Login Failed", 
+            "Invalid credentials. Please check your email, school code, and password."
+          );
+        } else {
+          Alert.alert(
+            "Login Failed", 
+            error.response.data?.message || `Server error (${error.response.status}). Please try again.`
+          );
+        }
+      } else if (error.request) {
+        // Request made but no response received
+        Alert.alert(
+          "Server Unreachable", 
+          `Could not reach the server at ${API_URL}. Please verify the API URL is correct and the server is running.`
+        );
+      } else {
+        Alert.alert(
+          "Request Error", 
+          "An error occurred while setting up the request. Please try again."
+        );
+      }
+    } else {
+      Alert.alert(
+        "Unknown Error", 
+        "An unexpected error occurred. Please try again later."
+      );
+    }
+  };
+
+  // Clear AsyncStorage for debugging if needed
+  const clearStorageAndRetry = async () => {
+    try {
+      await AsyncStorage.multiRemove(['studentToken', 'studentData']);
+      console.log('AsyncStorage cleared');
+      Alert.alert('Storage Cleared', 'Please try logging in again');
+    } catch (error) {
+      console.error('Error clearing storage:', error);
+    }
+  };
 
   // Login function
-  const handleLogin = () => {
-    console.log('Student login with:', { name, className, section, email, schoolCode, uniqueId, password }), navigation.navigate('StudentHome');
-    // Add login logic here
+   const handleLogin = async () => {
+  if (!isFormValid()) {
+    let errorMessage = "Please fill all required fields";
+    
+    if (!isEmailValid()) {
+      errorMessage = "Please enter a valid email address";
+    }
+    
+    Alert.alert("Error", errorMessage);
+    return;
+  }
+
+  if (!isConnected) {
+    Alert.alert("Network Error", "You appear to be offline. Please check your internet connection and try again.");
+    return;
+  }
+
+  setIsLoading(true);
+
+  try {
+    const formattedSchoolCode = schoolCode.trim();
+    
+    const response = await apiClient.post('/api/student/login', {
+      email,
+      password,
+      schoolCode: formattedSchoolCode
+    });
+    
+    console.log('Login successful');
+    
+    // Save token and student data to AsyncStorage
+    if (response.data && response.data.token) {
+      const newToken = response.data.token;
+      setToken(newToken);
+      await AsyncStorage.setItem('studentToken', newToken);
+      console.log('Student token saved to AsyncStorage');
+      
+      // Save student data if available
+      if (response.data.student) {
+        const studentInfo = response.data.student;
+        setStudentData(studentInfo);
+        await AsyncStorage.setItem('studentData', JSON.stringify(studentInfo));
+        console.log('Student data saved to AsyncStorage');
+        
+        // Check if student needs to select a class
+        if (studentInfo.hasClass) {
+          console.log('Student has class assigned, navigating to home screen');
+          navigation.replace('StudentHome');
+        } else {
+          console.log('Student needs to select class');
+          // Pass the formattedSchoolCode from the request instead of relying on student data
+          fetchAvailableClasses(formattedSchoolCode, newToken);
+        }
+      } else {
+        console.warn('Student data not included in login response');
+        navigation.replace('StudentHome'); // Navigate anyway as fallback
+      }
+    } else {
+      console.error('Token not found in login response');
+      Alert.alert('Login Error', 'Invalid server response. Please try again later.');
+    }
+    
+  } catch (error) {
+    console.error("Login attempt failed with formatted school code");
+    handleApiError(error);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+  // Fetch available classes
+  const fetchAvailableClasses = async (schoolCode: string, authToken: string) => {
+    setIsLoading(true);
+    try {
+      console.log(`Fetching available classes for school code: ${schoolCode}`);
+      const response = await apiClient.get(
+        `/api/student/available-classes/${schoolCode}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${authToken}`
+          }
+        }
+      );
+      
+      if (response.data && Array.isArray(response.data)) {
+        console.log(`Found ${response.data.length} classes`);
+        setAvailableClasses(response.data);
+        setShowClassModal(true);
+      } else {
+        console.warn('Unexpected response format from available-classes endpoint');
+        Alert.alert("Error", "Could not retrieve available classes. Please contact support.");
+      }
+    } catch (error) {
+      console.error('Error fetching available classes:', error);
+      handleApiError(error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle class selection
+  const handleClassSelection = async (classId: string) => {
+    if (!token) {
+      console.error('No token available for class selection');
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      console.log(`Selecting class with id: ${classId}`);
+      const response = await apiClient.post(
+        '/api/student/select-class',
+        { classId },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      
+      if (response.data && response.data.classDetails) {
+        console.log('Class selected successfully:', response.data.classDetails);
+        
+        // Update student data with class information
+        if (studentData) {
+          const updatedStudentData = {
+            ...studentData,
+            hasClass: true,
+            classId: response.data.classDetails.id
+          };
+          await AsyncStorage.setItem('studentData', JSON.stringify(updatedStudentData));
+          console.log('Updated student data saved');
+        }
+        
+        // Close modal and navigate to home screen
+        setShowClassModal(false);
+        navigation.replace('StudentHome');
+      } else {
+        console.warn('Unexpected response format from select-class endpoint');
+        Alert.alert("Error", "Could not complete class selection. Please try again.");
+      }
+    } catch (error) {
+      console.error('Error selecting class:', error);
+      handleApiError(error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Debug function to check app state
+  const debugAppState = () => {
+    const navState = navigation.getState();
+    console.log('Navigation state:', JSON.stringify(navState, null, 2));
+    Alert.alert(
+      "Debug Options",
+      "Choose an action:",
+      [
+        { text: "Clear Auth Data", onPress: clearStorageAndRetry },
+        { text: "Check Navigation", onPress: () => Alert.alert("Nav Routes", `Routes: ${navState.routes.map(r => r.name).join(', ')}`) },
+        { text: "Check Network", onPress: () => Alert.alert("Network Status", `Connected: ${isConnected}`) },
+        { text: "Cancel", style: "cancel" }
+      ]
+    );
   };
 
   return (
@@ -81,6 +467,7 @@ const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
               <TouchableOpacity 
                 style={styles.backButton}
                 onPress={() => navigation.navigate('RoleSelection')}
+                disabled={isLoading}
               >
                 <Ionicons name="arrow-back" size={24} color="#3A4276" />
               </TouchableOpacity>
@@ -118,58 +505,23 @@ const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
 
             {/* Form Section */}
             <View style={styles.formContainer}>
-              <Text style={styles.formLabel}>Name</Text>
-              <View style={styles.inputContainer}>
-                <FontAwesome5 name="user" size={16} color="#8A94A6" style={styles.inputIcon} />
-                <TextInput 
-                  style={styles.input}
-                  placeholder="Enter your full name"
-                  placeholderTextColor="#B0B7C3"
-                  value={name}
-                  onChangeText={setName}
-                />
-              </View>
-
-              <View style={styles.rowContainer}>
-                <View style={styles.halfColumn}>
-                  <Text style={styles.formLabel}>Class</Text>
-                  <View style={styles.inputContainer}>
-                    <FontAwesome5 name="school" size={16} color="#8A94A6" style={styles.inputIcon} />
-                    <TextInput 
-                      style={styles.input}
-                      placeholder="Class"
-                      placeholderTextColor="#B0B7C3"
-                      value={className}
-                      onChangeText={setClassName}
-                    />
-                  </View>
-                </View>
-                
-                <View style={styles.halfColumn}>
-                  <Text style={styles.formLabel}>Section</Text>
-                  <View style={styles.inputContainer}>
-                    <FontAwesome5 name="list-alt" size={16} color="#8A94A6" style={styles.inputIcon} />
-                    <TextInput 
-                      style={styles.input}
-                      placeholder="Section"
-                      placeholderTextColor="#B0B7C3"
-                      value={section}
-                      onChangeText={setSection}
-                    />
-                  </View>
-                </View>
-              </View>
-
-              <Text style={styles.formLabel}>Email (optional)</Text>
+              <Text style={styles.formLabel}>Email</Text>
               <View style={styles.inputContainer}>
                 <FontAwesome5 name="envelope" size={16} color="#8A94A6" style={styles.inputIcon} />
                 <TextInput 
+                  ref={emailRef}
                   style={styles.input}
                   placeholder="Enter your email"
                   placeholderTextColor="#B0B7C3"
                   keyboardType="email-address"
+                  autoCapitalize="none"
                   value={email}
                   onChangeText={setEmail}
+                  onSubmitEditing={() => schoolCodeRef.current?.focus()}
+                  returnKeyType="next"
+                  editable={!isLoading}
+                  autoComplete="email"
+                  textContentType="emailAddress"
                 />
               </View>
 
@@ -177,23 +529,16 @@ const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
               <View style={styles.inputContainer}>
                 <FontAwesome5 name="building" size={16} color="#8A94A6" style={styles.inputIcon} />
                 <TextInput 
+                  ref={schoolCodeRef}
                   style={styles.input}
                   placeholder="Enter school code"
                   placeholderTextColor="#B0B7C3"
                   value={schoolCode}
                   onChangeText={setSchoolCode}
-                />
-              </View>
-
-              <Text style={styles.formLabel}>Unique ID</Text>
-              <View style={styles.inputContainer}>
-                <FontAwesome5 name="id-card" size={16} color="#8A94A6" style={styles.inputIcon} />
-                <TextInput 
-                  style={styles.input}
-                  placeholder="Enter your unique ID"
-                  placeholderTextColor="#B0B7C3"
-                  value={uniqueId}
-                  onChangeText={setUniqueId}
+                  onSubmitEditing={() => passwordRef.current?.focus()}
+                  returnKeyType="next"
+                  editable={!isLoading}
+                  autoComplete="off"
                 />
               </View>
 
@@ -201,16 +546,22 @@ const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
               <View style={styles.inputContainer}>
                 <FontAwesome5 name="lock" size={16} color="#8A94A6" style={styles.inputIcon} />
                 <TextInput 
+                  ref={passwordRef}
                   style={styles.input}
                   placeholder="Enter your password"
                   placeholderTextColor="#B0B7C3"
                   secureTextEntry={!showPassword}
                   value={password}
                   onChangeText={setPassword}
+                  returnKeyType="done"
+                  editable={!isLoading}
+                  autoComplete="password"
+                  textContentType="password"
                 />
                 <TouchableOpacity 
                   style={styles.eyeIcon}
                   onPress={() => setShowPassword(!showPassword)}
+                  disabled={isLoading}
                 >
                   <Feather name={showPassword ? "eye" : "eye-off"} size={18} color="#8A94A6" />
                 </TouchableOpacity>
@@ -218,14 +569,19 @@ const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
 
               <TouchableOpacity 
                 style={styles.forgotPassword}
-                onPress={() => console.log('Forgot password')}
+                onPress={() => Alert.alert("Reset Password", "Please contact your school administrator to reset your password.")}
+                disabled={isLoading}
               >
                 <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.loginButton}
+                style={[
+                  styles.loginButton, 
+                  (!isFormValid() || isLoading) && styles.disabledButton
+                ]}
                 onPress={handleLogin}
+                disabled={!isFormValid() || isLoading}
               >
                 <LinearGradient
                   colors={['#4E54C8', '#8F94FB']}
@@ -233,13 +589,20 @@ const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
                   end={{ x: 1, y: 0 }}
                   style={styles.loginGradient}
                 >
-                  <Text style={styles.loginButtonText}>Login</Text>
+                  {isLoading ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.loginButtonText}>Login</Text>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
 
               <View style={styles.createAccountContainer}>
                 <Text style={styles.createAccountText}>Don't have an account? </Text>
-                <TouchableOpacity onPress={() => navigation.navigate('StudentSignup')}>
+                <TouchableOpacity 
+                  onPress={() => navigation.navigate('StudentSignup')}
+                  disabled={isLoading}
+                >
                   <Text style={styles.createAccountLink}>Create new</Text>
                 </TouchableOpacity>
               </View>
@@ -247,7 +610,10 @@ const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
 
             {/* Footer */}
             <View style={styles.footer}>
-              <TouchableOpacity style={styles.helpButton}>
+              <TouchableOpacity 
+                style={styles.helpButton}
+                onPress={debugAppState}
+              >
                 <Feather name="help-circle" size={16} color="#8A94A6" style={styles.helpIcon} />
                 <Text style={styles.footerText}>Need help? Contact support</Text>
               </TouchableOpacity>
@@ -256,6 +622,15 @@ const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      
+      {/* Class Selection Modal */}
+      <ClassSelectionModal
+        visible={showClassModal}
+        classes={availableClasses}
+        onSelect={handleClassSelection}
+        onClose={() => setShowClassModal(false)}
+        isLoading={isLoading}
+      />
     </SafeAreaView>
   );
 };
@@ -356,13 +731,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#3A4276',
   },
-  rowContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  halfColumn: {
-    width: '48%',
-  },
   forgotPassword: {
     alignSelf: 'flex-end',
     marginBottom: 20,
@@ -382,6 +750,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
+  },
+  disabledButton: {
+    opacity: 0.7,
   },
   loginGradient: {
     flex: 1,
@@ -406,6 +777,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#4E54C8',
     fontWeight: '600',
+    marginLeft: 4,
   },
   helpButton: {
     flexDirection: 'row',
@@ -433,7 +805,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#B0B7C3',
     marginTop: 8,
-  },
+  }
 });
 
 export default StudentLoginScreen;
+
+// issues to be resolve :
+// validate token on login 
+// fetch correct student data after validation and login
+// when student login he selects his class on class selection the particular class id should be added in the classId in the student model 
+// when student registers hes added to the particular school model using the school code fetch 
