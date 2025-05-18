@@ -423,7 +423,7 @@ const StudentHomeScreen: React.FC = () => {
               await AsyncStorage.multiRemove(['studentToken', 'studentData']);
               
               // Navigate to login screen
-              navigation.replace('StudentLogin');
+              navigation.replace('RoleSelection');
             } catch (error) {
               console.error("Error during logout:", error);
               Alert.alert("Error", "Failed to log out. Please try again.");

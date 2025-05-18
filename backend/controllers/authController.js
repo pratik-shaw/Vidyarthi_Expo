@@ -153,6 +153,32 @@ exports.validateToken = async (req, res) => {
   }
 };
 
+exports.validateToken = async (req, res) => {
+  try {
+    // req.user is set by the auth middleware
+    const student = await Student.findById(req.user.id).select('-password');
+    
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+    
+    res.json({ 
+      valid: true, 
+      student: {
+        _id: student._id,
+        name: student.name,
+        email: student.email,
+        schoolCode: student.schoolCode,
+        hasClass: !!student.classId, // Boolean indicating if student has a class
+        classId: student.classId
+      } 
+    });
+  } catch (err) {
+    console.error('Student token validation error:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 
 // Teacher Registration
 exports.registerTeacher = async (req, res) => {
