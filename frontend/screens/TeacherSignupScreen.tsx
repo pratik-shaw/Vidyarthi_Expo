@@ -10,13 +10,20 @@ import {
   Image,
   TextInput,
   ScrollView,
-  KeyboardAvoidingView
+  KeyboardAvoidingView,
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
 import React, { useEffect, useState } from 'react';
 import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// API base URL - replace with your actual backend URL
+const API_URL = 'http://192.168.29.148:5000/api'; // Change this to your actual API URL
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSignup'>;
 
@@ -37,6 +44,8 @@ const TeacherSignupScreen: React.FC<Props> = ({ navigation }) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errors, setErrors] = useState<{[key: string]: string}>({});
 
   // Animation states
   const fadeAnim = new Animated.Value(0);
@@ -57,12 +66,91 @@ const TeacherSignupScreen: React.FC<Props> = ({ navigation }) => {
     ]).start();
   }, []);
 
+  // Validate form inputs
+  const validateForm = () => {
+    const newErrors: {[key: string]: string} = {};
+    
+    // Name validation
+    if (!name.trim()) newErrors.name = 'Name is required';
+    
+    // Email validation
+    if (!email.trim()) {
+      newErrors.email = 'Email is required';
+    } else if (!/\S+@\S+\.\S+/.test(email)) {
+      newErrors.email = 'Email is invalid';
+    }
+    
+    // School code validation
+    if (!schoolCode.trim()) newErrors.schoolCode = 'School code is required';
+    
+    // Unique code validation
+    if (!uniqueCode.trim()) newErrors.uniqueCode = 'Unique code is required';
+    
+    // Password validation
+    if (!password) {
+      newErrors.password = 'Password is required';
+    } else if (password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters';
+    }
+    
+    // Confirm password validation
+    if (password !== confirmPassword) {
+      newErrors.confirmPassword = 'Passwords do not match';
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   // Signup function
-  const handleSignup = () => {
-    console.log('Teacher signup with:', { name, email, schoolCode, uniqueCode, password, confirmPassword });
-    // Add signup logic here
-    // After successful signup, navigate to login
-    // navigation.navigate('TeacherLogin');
+  const handleSignup = async () => {
+    if (!validateForm()) return;
+    
+    setIsLoading(true);
+    
+    try {
+      const response = await axios.post(`${API_URL}/teacher/register`, {
+        name,
+        email,
+        schoolCode,
+        uniqueCode,
+        password
+      });
+      
+      // If registration is successful, store the token and navigate
+      if (response.data && response.data.token) {
+        await AsyncStorage.setItem('token', response.data.token);
+        await AsyncStorage.setItem('userType', 'teacher');
+        
+        // Clear form
+        setName('');
+        setEmail('');
+        setSchoolCode('');
+        setUniqueCode('');
+        setPassword('');
+        setConfirmPassword('');
+        
+        // Alert success and navigate to login (or dashboard if auto-login)
+        Alert.alert(
+          "Success",
+          "Your teacher account has been created successfully!",
+          [{ text: "OK", onPress: () => navigation.navigate('TeacherLogin') }]
+        );
+      }
+    } catch (error: unknown) {
+      console.error('Registration error:', error);
+      
+      let errorMessage = 'Registration failed. Please try again.';
+      
+      // Extract error message from response if available
+      if (axios.isAxiosError(error) && error.response?.data?.msg) {
+        errorMessage = error.response.data.msg;
+      }
+      
+      Alert.alert("Registration Failed", errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -121,7 +209,7 @@ const TeacherSignupScreen: React.FC<Props> = ({ navigation }) => {
             {/* Form Section */}
             <View style={styles.formContainer}>
               <Text style={styles.formLabel}>Name</Text>
-              <View style={styles.inputContainer}>
+              <View style={[styles.inputContainer, errors.name ? styles.inputError : null]}>
                 <FontAwesome5 name="user" size={16} color="#8A94A6" style={styles.inputIcon} />
                 <TextInput 
                   style={styles.input}
@@ -131,9 +219,10 @@ const TeacherSignupScreen: React.FC<Props> = ({ navigation }) => {
                   onChangeText={setName}
                 />
               </View>
+              {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
 
               <Text style={styles.formLabel}>Email</Text>
-              <View style={styles.inputContainer}>
+              <View style={[styles.inputContainer, errors.email ? styles.inputError : null]}>
                 <FontAwesome5 name="envelope" size={16} color="#8A94A6" style={styles.inputIcon} />
                 <TextInput 
                   style={styles.input}
@@ -142,11 +231,13 @@ const TeacherSignupScreen: React.FC<Props> = ({ navigation }) => {
                   keyboardType="email-address"
                   value={email}
                   onChangeText={setEmail}
+                  autoCapitalize="none"
                 />
               </View>
+              {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
 
               <Text style={styles.formLabel}>School Code</Text>
-              <View style={styles.inputContainer}>
+              <View style={[styles.inputContainer, errors.schoolCode ? styles.inputError : null]}>
                 <FontAwesome5 name="building" size={16} color="#8A94A6" style={styles.inputIcon} />
                 <TextInput 
                   style={styles.input}
@@ -156,9 +247,10 @@ const TeacherSignupScreen: React.FC<Props> = ({ navigation }) => {
                   onChangeText={setSchoolCode}
                 />
               </View>
+              {errors.schoolCode ? <Text style={styles.errorText}>{errors.schoolCode}</Text> : null}
 
               <Text style={styles.formLabel}>Unique Code</Text>
-              <View style={styles.inputContainer}>
+              <View style={[styles.inputContainer, errors.uniqueCode ? styles.inputError : null]}>
                 <FontAwesome5 name="key" size={16} color="#8A94A6" style={styles.inputIcon} />
                 <TextInput 
                   style={styles.input}
@@ -168,9 +260,10 @@ const TeacherSignupScreen: React.FC<Props> = ({ navigation }) => {
                   onChangeText={setUniqueCode}
                 />
               </View>
+              {errors.uniqueCode ? <Text style={styles.errorText}>{errors.uniqueCode}</Text> : null}
 
               <Text style={styles.formLabel}>Password</Text>
-              <View style={styles.inputContainer}>
+              <View style={[styles.inputContainer, errors.password ? styles.inputError : null]}>
                 <FontAwesome5 name="lock" size={16} color="#8A94A6" style={styles.inputIcon} />
                 <TextInput 
                   style={styles.input}
@@ -187,9 +280,10 @@ const TeacherSignupScreen: React.FC<Props> = ({ navigation }) => {
                   <Feather name={showPassword ? "eye" : "eye-off"} size={18} color="#8A94A6" />
                 </TouchableOpacity>
               </View>
+              {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
 
               <Text style={styles.formLabel}>Confirm Password</Text>
-              <View style={styles.inputContainer}>
+              <View style={[styles.inputContainer, errors.confirmPassword ? styles.inputError : null]}>
                 <FontAwesome5 name="lock" size={16} color="#8A94A6" style={styles.inputIcon} />
                 <TextInput 
                   style={styles.input}
@@ -206,10 +300,12 @@ const TeacherSignupScreen: React.FC<Props> = ({ navigation }) => {
                   <Feather name={showConfirmPassword ? "eye" : "eye-off"} size={18} color="#8A94A6" />
                 </TouchableOpacity>
               </View>
+              {errors.confirmPassword ? <Text style={styles.errorText}>{errors.confirmPassword}</Text> : null}
 
               <TouchableOpacity
                 style={styles.signupButton}
                 onPress={handleSignup}
+                disabled={isLoading}
               >
                 <LinearGradient
                   colors={['#1CB5E0', '#38EF7D']}
@@ -217,7 +313,11 @@ const TeacherSignupScreen: React.FC<Props> = ({ navigation }) => {
                   end={{ x: 1, y: 0 }}
                   style={styles.signupGradient}
                 >
-                  <Text style={styles.signupButtonText}>Create Account</Text>
+                  {isLoading ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.signupButtonText}>Create Account</Text>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
 
@@ -322,12 +422,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 14,
-    marginBottom: 16,
+    marginBottom: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 5,
     elevation: 2,
+  },
+  inputError: {
+    borderWidth: 1,
+    borderColor: '#FF3B30',
+  },
+  errorText: {
+    color: '#FF3B30',
+    fontSize: 12,
+    marginBottom: 8,
+    marginLeft: 4,
   },
   inputIcon: {
     marginRight: 12,
@@ -341,7 +451,7 @@ const styles = StyleSheet.create({
     color: '#3A4276',
   },
   signupButton: {
-    marginVertical: 10,
+    marginVertical: 20,
     height: 56,
     borderRadius: 16,
     overflow: 'hidden',
@@ -364,7 +474,7 @@ const styles = StyleSheet.create({
   loginContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 20,
+    marginTop: 10,
   },
   loginText: {
     fontSize: 14,
