@@ -811,7 +811,4 @@ const styles = StyleSheet.create({
 export default StudentLoginScreen;
 
 // issues to be resolve :
-// validate token on login 
-// fetch correct student data after validation and login
-// when student login he selects his class on class selection the particular class id should be added in the classId in the student model 
 // when student registers hes added to the particular school model using the school code fetch 

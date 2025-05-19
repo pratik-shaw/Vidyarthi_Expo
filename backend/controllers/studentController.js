@@ -11,15 +11,31 @@ exports.getProfile = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
+    // Find student and populate both class and school details
     const student = await Student.findById(req.user.id)
       .select('-password')
-      .populate('classId', 'name section');
+      .populate('classId', 'name section')
+      .populate('schoolId', 'name code');
 
     if (!student) {
       return res.status(404).json({ message: 'Student not found' });
     }
 
-    res.json(student);
+    // Format the response to include all requested fields
+    const studentProfile = {
+      _id: student._id,
+      name: student.name,
+      email: student.email,
+      phone: student.phone || '',
+      studentId: student.studentId || '',
+      uniqueId: student.uniqueId || '',
+      schoolCode: student.schoolId ? student.schoolId.code : '',
+      schoolId: student.schoolId ? student.schoolId._id : '',
+      className: student.classId ? student.classId.name : '',
+      section: student.classId ? student.classId.section : ''
+    };
+
+    res.json(studentProfile);
   } catch (err) {
     console.error('Error fetching student profile:', err.message);
     res.status(500).json({ message: 'Server error' });
