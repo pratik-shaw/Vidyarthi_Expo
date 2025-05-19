@@ -15,6 +15,8 @@ import AdminClassesScreen from './screens/AdminClassesScreen';
 import StudentLoginScreen from './screens/StudentLoginScreen';
 import TeacherLoginScreen from './screens/TeacherLoginScreen';
 import AdminLoginScreen from './screens/AdminLoginScreen';
+import TeacherHomeScreen from './screens/TeacherHomeScreen';
+
 
 // Import student screens
 import StudentHomeScreen from './screens/StudentHomeScreen';
@@ -58,6 +60,7 @@ export type RootStackParamList = {
 
   AdminHome: undefined;
   AdminClasses: undefined;
+  TeacherHome: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -90,6 +93,8 @@ export default function App() {
         <Stack.Screen name="StudentChatroom" component={StudentChatroomScreen} />
         <Stack.Screen name="StudentQuery" component={StudentQueryScreen} />
         <Stack.Screen name="StudentSubmission" component={StudentSubmissionScreen} />
+
+        <Stack.Screen name="TeacherHome" component={TeacherHomeScreen} />
 
         <Stack.Screen name="AdminHome" component={AdminHomeScreen} />
         <Stack.Screen name="AdminClasses" component={AdminClassesScreen} />

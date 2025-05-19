@@ -10,13 +10,19 @@ import {
   Image,
   TextInput,
   ScrollView,
-  KeyboardAvoidingView
+  KeyboardAvoidingView,
+  ActivityIndicator
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// API base URL - replace with your actual backend URL
+const API_URL = 'http://192.168.29.148:5000/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherLogin'>;
 
@@ -29,18 +35,62 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
   }, [navigation]);
 
   // Form state
-  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [schoolCode, setSchoolCode] = useState('');
-  const [uniqueCode, setUniqueCode] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingToken, setIsCheckingToken] = useState(true); // New state to track token validation
+  const [errorMessage, setErrorMessage] = useState('');
 
   // Animation states
   const fadeAnim = new Animated.Value(0);
   const slideAnim = new Animated.Value(30);
 
+  // Check for existing token and navigate if found
+  const checkExistingToken = useCallback(async () => {
+    setIsCheckingToken(true);
+    try {
+      const token = await AsyncStorage.getItem('teacherToken');
+      if (token) {
+        console.log('Found existing token, validating...');
+        try {
+          const response = await axios.get(`${API_URL}/teacher/validate-token`, {
+            headers: {
+              'x-auth-token': token
+            }
+          });
+          
+          if (response.data.valid) {
+            console.log('Token is valid, navigating to dashboard');
+            // Store the teacher data if it's in the response
+            if (response.data.teacher) {
+              await AsyncStorage.setItem('teacherData', JSON.stringify(response.data.teacher));
+            }
+            // Navigate to dashboard
+            navigation.replace('TeacherHome'); // Using replace to prevent going back to login
+            return; // Return early to prevent further execution
+          } else {
+            console.log('Token is invalid, remaining on login screen');
+            // Token is invalid, remove it
+            await AsyncStorage.removeItem('teacherToken');
+          }
+        } catch (error) {
+          console.log('Token validation failed:', error);
+          // Token validation failed, remove the token
+          await AsyncStorage.removeItem('teacherToken');
+        }
+      } else {
+        console.log('No token found, remaining on login screen');
+      }
+    } catch (error) {
+      console.log('Error checking token:', error);
+    } finally {
+      setIsCheckingToken(false);
+    }
+  }, [navigation]);
+
   useEffect(() => {
+    // Start animations
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -53,15 +103,74 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
         useNativeDriver: true,
       })
     ]).start();
-  }, []);
+
+    // Check for existing token
+    checkExistingToken();
+  }, [checkExistingToken]);
 
   // Login function
-  const handleLogin = () => {
-    console.log('Teacher login with:', { name, email, schoolCode, uniqueCode, password });
-    // For demonstration purposes, navigate to a hypothetical TeacherDashboard
-    // In a real app, you would validate credentials first
-    // navigation.navigate('TeacherDashboard');
+  const handleLogin = async () => {
+    // Form validation
+    if (!email.trim() || !password.trim()) {
+      setErrorMessage('Please enter both email and password');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage('');
+
+    try {
+      const response = await axios.post(`${API_URL}/teacher/login`, {
+        email,
+        password
+      });
+
+      // Store token and teacher data
+      const { token, teacher } = response.data;
+      await AsyncStorage.setItem('teacherToken', token);
+      await AsyncStorage.setItem('teacherData', JSON.stringify(teacher));
+
+      // Reset form
+      setEmail('');
+      setPassword('');
+      setIsLoading(false);
+
+      // Navigate to dashboard
+      navigation.replace('TeacherHome'); // Using replace to prevent going back to login
+      console.log('Login successful, navigated to dashboard');
+    } catch (error) {
+      setIsLoading(false);
+      
+      if (axios.isAxiosError(error)) {
+        if (error.response) {
+          // Server responded with an error status code
+          const responseData = error.response.data as { message?: string; msg?: string };
+          setErrorMessage(responseData.message || responseData.msg || 'Login failed');
+        } else if (error.request) {
+          // Request was made but no response received
+          setErrorMessage('Cannot connect to server. Please check your internet connection.');
+        } else {
+          // Something else happened while setting up the request
+          setErrorMessage('An unexpected error occurred. Please try again.');
+        }
+      } else {
+        // Handle non-axios errors
+        setErrorMessage('An unexpected error occurred. Please try again.');
+      }
+      
+      console.error('Login error:', error);
+    }
   };
+
+  // Show loading indicator while checking token
+  if (isCheckingToken) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#1CB5E0" />
+        <Text style={styles.loadingText}>Checking login status...</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -118,17 +227,11 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
 
             {/* Form Section */}
             <View style={styles.formContainer}>
-              <Text style={styles.formLabel}>Name</Text>
-              <View style={styles.inputContainer}>
-                <FontAwesome5 name="user" size={16} color="#8A94A6" style={styles.inputIcon} />
-                <TextInput 
-                  style={styles.input}
-                  placeholder="Enter your full name"
-                  placeholderTextColor="#B0B7C3"
-                  value={name}
-                  onChangeText={setName}
-                />
-              </View>
+              {errorMessage ? (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>{errorMessage}</Text>
+                </View>
+              ) : null}
 
               <Text style={styles.formLabel}>Email</Text>
               <View style={styles.inputContainer}>
@@ -139,31 +242,10 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
                   placeholderTextColor="#B0B7C3"
                   keyboardType="email-address"
                   value={email}
-                  onChangeText={setEmail}
-                />
-              </View>
-
-              <Text style={styles.formLabel}>School Code</Text>
-              <View style={styles.inputContainer}>
-                <FontAwesome5 name="building" size={16} color="#8A94A6" style={styles.inputIcon} />
-                <TextInput 
-                  style={styles.input}
-                  placeholder="Enter school code"
-                  placeholderTextColor="#B0B7C3"
-                  value={schoolCode}
-                  onChangeText={setSchoolCode}
-                />
-              </View>
-
-              <Text style={styles.formLabel}>Unique Code</Text>
-              <View style={styles.inputContainer}>
-                <FontAwesome5 name="key" size={16} color="#8A94A6" style={styles.inputIcon} />
-                <TextInput 
-                  style={styles.input}
-                  placeholder="Enter your unique code"
-                  placeholderTextColor="#B0B7C3"
-                  value={uniqueCode}
-                  onChangeText={setUniqueCode}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    setErrorMessage(''); // Clear error when user types
+                  }}
                 />
               </View>
 
@@ -176,7 +258,10 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
                   placeholderTextColor="#B0B7C3"
                   secureTextEntry={!showPassword}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    setErrorMessage(''); // Clear error when user types
+                  }}
                 />
                 <TouchableOpacity 
                   style={styles.eyeIcon}
@@ -188,14 +273,15 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
 
               <TouchableOpacity 
                 style={styles.forgotPassword}
-                onPress={() => console.log('Forgot password')}
+                //onPress={() => navigation.navigate('ForgotPassword')}
               >
                 <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.loginButton}
+                style={[styles.loginButton, isLoading && styles.disabledButton]}
                 onPress={handleLogin}
+                disabled={isLoading}
               >
                 <LinearGradient
                   colors={['#1CB5E0', '#38EF7D']}
@@ -203,7 +289,11 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
                   end={{ x: 1, y: 0 }}
                   style={styles.loginGradient}
                 >
-                  <Text style={styles.loginButtonText}>Login</Text>
+                  {isLoading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.loginButtonText}>Login</Text>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
 
@@ -217,7 +307,10 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
 
             {/* Footer */}
             <View style={styles.footer}>
-              <TouchableOpacity style={styles.helpButton}>
+              <TouchableOpacity 
+                style={styles.helpButton}
+                //onPress={() => navigation.navigate('Support')}
+              >
                 <Feather name="help-circle" size={16} color="#8A94A6" style={styles.helpIcon} />
                 <Text style={styles.footerText}>Need help? Contact support</Text>
               </TouchableOpacity>
@@ -234,6 +327,17 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#F8F9FC',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FC',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#3A4276',
   },
   scrollContainer: {
     flexGrow: 1,
@@ -295,6 +399,18 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 10,
   },
+  errorContainer: {
+    backgroundColor: 'rgba(255, 0, 0, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF3B30',
+  },
+  errorText: {
+    color: '#FF3B30',
+    fontSize: 14,
+  },
   formLabel: {
     fontSize: 14,
     fontWeight: '600',
@@ -345,6 +461,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
+  },
+  disabledButton: {
+    opacity: 0.7,
   },
   loginGradient: {
     flex: 1,

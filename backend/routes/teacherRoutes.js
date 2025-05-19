@@ -8,6 +8,7 @@ const teacherController = require('../controllers/teacherController');
 // Auth routes
 router.post('/register', authController.registerTeacher);
 router.post('/login', authController.loginTeacher);
+router.get('/validate-token', auth, authController.validateTeacherToken);
 
 // Protected routes
 router.get('/profile', auth, teacherController.getProfile);

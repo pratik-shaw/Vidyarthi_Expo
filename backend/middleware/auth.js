@@ -3,23 +3,28 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 module.exports = function(req, res, next) {
-  // Get token from header
-  const authHeader = req.header('Authorization');
+  // First check x-auth-token header (used by mobile app)
+  let token = req.header('x-auth-token');
   
-  // Check if no token
-  if (!authHeader) {
+  // If no token in x-auth-token, check Authorization header
+  if (!token) {
+    const authHeader = req.header('Authorization');
+    
+    if (authHeader) {
+      // Format should be "Bearer [token]"
+      const parts = authHeader.split(' ');
+      
+      if (parts.length === 2 && parts[0] === 'Bearer') {
+        token = parts[1];
+      }
+    }
+  }
+  
+  // If still no token found, return 401
+  if (!token) {
     return res.status(401).json({ message: 'No token, authorization denied' });
   }
 
-  // Format should be "Bearer [token]"
-  const parts = authHeader.split(' ');
-  
-  if (parts.length !== 2 || parts[0] !== 'Bearer') {
-    return res.status(401).json({ message: 'Token format invalid, use "Bearer [token]"' });
-  }
-
-  const token = parts[1];
-  
   try {
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);

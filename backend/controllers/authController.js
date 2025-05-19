@@ -179,6 +179,32 @@ exports.validateToken = async (req, res) => {
   }
 };
 
+exports.validateTeacherToken = async (req, res) => {
+  try {
+    // req.user is set by the auth middleware
+    const teacher = await Teacher.findById(req.user.id).select('-password');
+    
+    if (!teacher) {
+      return res.status(404).json({ message: 'Teacher not found' });
+    }
+    
+    res.json({ 
+      valid: true, 
+      teacher: {
+        _id: teacher._id,
+        name: teacher.name,
+        email: teacher.email,
+        schoolCode: teacher.schoolCode,
+        schoolId: teacher.schoolId,
+        classIds: teacher.classIds,
+        uniqueCode: teacher.uniqueCode
+      } 
+    });
+  } catch (err) {
+    console.error('Teacher token validation error:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
 
 // Teacher Registration
 exports.registerTeacher = async (req, res) => {
@@ -245,16 +271,21 @@ exports.loginTeacher = async (req, res) => {
   const { email, password } = req.body;
 
   try {
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Please provide email and password' });
+    }
+
     // Check for teacher
     const teacher = await Teacher.findOne({ email });
     if (!teacher) {
-      return res.status(400).json({ msg: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     // Check password
     const isMatch = await bcrypt.compare(password, teacher.password);
     if (!isMatch) {
-      return res.status(400).json({ msg: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     // Return token
@@ -271,12 +302,27 @@ exports.loginTeacher = async (req, res) => {
       { expiresIn: '7d' },
       (err, token) => {
         if (err) throw err;
-        res.json({ token });
+        
+        // Return basic teacher info with token
+        const teacherData = {
+          _id: teacher._id,
+          name: teacher.name,
+          email: teacher.email,
+          schoolCode: teacher.schoolCode,
+          schoolId: teacher.schoolId,
+          classIds: teacher.classIds,
+          uniqueCode: teacher.uniqueCode
+        };
+        
+        res.json({
+          token,
+          teacher: teacherData
+        });
       }
     );
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    console.error('Teacher login error:', err.message);
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
