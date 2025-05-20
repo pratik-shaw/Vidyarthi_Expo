@@ -11,7 +11,7 @@ router.post('/register', authController.registerAdmin);
 router.post('/login', authController.loginAdmin);
 
 // Token validation route
-router.get('/validate', auth, authController.validateToken);
+router.get('/validate', auth, authController.validateAdminToken);
 
 // Protected routes
 router.get('/profile', auth, adminController.getProfile);

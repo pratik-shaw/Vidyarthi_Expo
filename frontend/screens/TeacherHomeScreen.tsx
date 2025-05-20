@@ -275,10 +275,7 @@ const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
               setClasses([]);
               
               // Navigate to login and prevent going back
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'TeacherLogin' }],
-              });
+             navigation.navigate('RoleSelection');
             } catch (error) {
               console.error('Error during logout:', error);
               Alert.alert("Error", "Failed to logout. Please try again.");

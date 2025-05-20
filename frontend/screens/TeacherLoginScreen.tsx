@@ -1,32 +1,76 @@
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
   StatusBar,
   Animated,
   Platform,
   SafeAreaView,
   Image,
-  TextInput,
-  ScrollView,
   KeyboardAvoidingView,
+  ScrollView,
+  Alert,
   ActivityIndicator
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
-// API base URL - replace with your actual backend URL
-const API_URL = 'http://192.168.29.148:5000/api';
+// API URL with configurable timeout
+const API_URL = 'http://192.168.29.148:5000/api'; // Change this to your server IP/domain
+const API_TIMEOUT = 15000; // 15 seconds timeout
+
+// Create an axios instance with timeout configuration
+const apiClient = axios.create({
+  baseURL: API_URL,
+  timeout: API_TIMEOUT,
+});
+
+// Add an interceptor to inject the token for authenticated requests
+apiClient.interceptors.request.use(
+  async (config) => {
+    try {
+      const token = await AsyncStorage.getItem('teacherToken');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch (error) {
+      console.error('Error getting token for request:', error);
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherLogin'>;
 
 const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
+  // State for form inputs
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  // Network status
+  const [isConnected, setIsConnected] = useState(true);
+
+  // Refs for input fields (for focus management)
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+
   // Hide the header
   React.useLayoutEffect(() => {
     navigation.setOptions({
@@ -34,63 +78,64 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
     });
   }, [navigation]);
 
-  // Form state
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isCheckingToken, setIsCheckingToken] = useState(true); // New state to track token validation
-  const [errorMessage, setErrorMessage] = useState('');
-
-  // Animation states
-  const fadeAnim = new Animated.Value(0);
-  const slideAnim = new Animated.Value(30);
-
-  // Check for existing token and navigate if found
-  const checkExistingToken = useCallback(async () => {
-    setIsCheckingToken(true);
-    try {
-      const token = await AsyncStorage.getItem('teacherToken');
-      if (token) {
-        console.log('Found existing token, validating...');
-        try {
-          const response = await axios.get(`${API_URL}/teacher/validate-token`, {
-            headers: {
-              'x-auth-token': token
+  // Check for existing authentication on component mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        // First, check for token and userRole
+        const token = await AsyncStorage.getItem('teacherToken');
+        const userRole = await AsyncStorage.getItem('userRole');
+        
+        console.log('Auth check - Token:', token ? 'exists' : 'not found');
+        console.log('Auth check - User role:', userRole || 'not found');
+        
+        // Only proceed if both token and correct userRole exist
+        if (token && userRole === 'teacher') {
+          try {
+            // Validate the token by making a request to the validation endpoint
+            const validationResponse = await apiClient.get('/teacher/validate-token');
+            if (validationResponse.status === 200) {
+              console.log('Token validated, navigating to TeacherHome');
+              
+              // If teacher data was returned with validation, save it
+              if (validationResponse.data && validationResponse.data.teacher) {
+                await AsyncStorage.setItem('teacherData', JSON.stringify(validationResponse.data.teacher));
+                console.log('Teacher data saved from validation response');
+              }
+              
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'TeacherHome' }],
+              });
             }
-          });
-          
-          if (response.data.valid) {
-            console.log('Token is valid, navigating to dashboard');
-            // Store the teacher data if it's in the response
-            if (response.data.teacher) {
-              await AsyncStorage.setItem('teacherData', JSON.stringify(response.data.teacher));
-            }
-            // Navigate to dashboard
-            navigation.replace('TeacherHome'); // Using replace to prevent going back to login
-            return; // Return early to prevent further execution
-          } else {
-            console.log('Token is invalid, remaining on login screen');
-            // Token is invalid, remove it
-            await AsyncStorage.removeItem('teacherToken');
+          } catch (validationError) {
+            console.error('Token validation error:', validationError);
+            // If token is invalid, clear storage
+            await AsyncStorage.multiRemove(['teacherToken', 'userRole', 'teacherData']);
+            console.log('Invalid token - storage cleared');
           }
-        } catch (error) {
-          console.log('Token validation failed:', error);
-          // Token validation failed, remove the token
-          await AsyncStorage.removeItem('teacherToken');
         }
-      } else {
-        console.log('No token found, remaining on login screen');
+      } catch (error) {
+        console.error('Auth check error:', error);
       }
-    } catch (error) {
-      console.log('Error checking token:', error);
-    } finally {
-      setIsCheckingToken(false);
-    }
+    };
+    
+    checkAuth();
   }, [navigation]);
 
+  // Check network connectivity
   useEffect(() => {
-    // Start animations
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsConnected(state.isConnected ?? false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Run entry animations
+  useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -103,16 +148,77 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
         useNativeDriver: true,
       })
     ]).start();
+  }, [fadeAnim, slideAnim]);
 
-    // Check for existing token
-    checkExistingToken();
-  }, [checkExistingToken]);
+  // Form validation
+  const isFormValid = () => {
+    if (!email || !password) return false;
+    if (!isEmailValid()) return false;
+    return true;
+  };
 
-  // Login function
+  // Email validation check
+  const isEmailValid = () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  // Show detailed error if API call fails
+  const handleApiError = (error: any) => {
+    console.error("Login error:", error);
+    
+    if (!isConnected) {
+      setErrorMessage("You appear to be offline. Please check your internet connection and try again.");
+      return;
+    }
+    
+    if (axios.isAxiosError(error)) {
+      if (error.code === 'ECONNABORTED') {
+        setErrorMessage("The server took too long to respond. Please check your API URL and try again. Make sure your server is running.");
+      } else if (error.response) {
+        // Server responded with error status code
+        if (error.response.status === 401) {
+          setErrorMessage("Invalid credentials. Please check your email and password.");
+        } else {
+          setErrorMessage(error.response.data?.message || `Server error (${error.response.status}). Please try again.`);
+        }
+      } else if (error.request) {
+        // Request made but no response received
+        setErrorMessage(`Could not reach the server at ${API_URL}. Please verify the API URL is correct and the server is running.`);
+      } else {
+        setErrorMessage("An error occurred while setting up the request. Please try again.");
+      }
+    } else {
+      setErrorMessage("An unexpected error occurred. Please try again later.");
+    }
+  };
+
+  // Clear AsyncStorage for debugging if needed
+  const clearStorageAndRetry = async () => {
+    try {
+      await AsyncStorage.multiRemove(['teacherToken', 'userRole', 'teacherData']);
+      console.log('AsyncStorage cleared');
+      Alert.alert('Storage Cleared', 'Please try logging in again');
+    } catch (error) {
+      console.error('Error clearing storage:', error);
+    }
+  };
+
+  // Handle login
   const handleLogin = async () => {
-    // Form validation
-    if (!email.trim() || !password.trim()) {
-      setErrorMessage('Please enter both email and password');
+    if (!isFormValid()) {
+      let errorMsg = "Please fill all required fields";
+      
+      if (!isEmailValid()) {
+        errorMsg = "Please enter a valid email address";
+      }
+      
+      setErrorMessage(errorMsg);
+      return;
+    }
+
+    if (!isConnected) {
+      setErrorMessage("You appear to be offline. Please check your internet connection and try again.");
       return;
     }
 
@@ -120,57 +226,86 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
     setErrorMessage('');
 
     try {
-      const response = await axios.post(`${API_URL}/teacher/login`, {
+      console.log('Attempting login with:', { email });
+      
+      // Make the login request
+      const response = await apiClient.post('/teacher/login', {
         email,
         password
       });
 
-      // Store token and teacher data
-      const { token, teacher } = response.data;
-      await AsyncStorage.setItem('teacherToken', token);
-      await AsyncStorage.setItem('teacherData', JSON.stringify(teacher));
+      console.log('Login response received:', {
+        status: response.status,
+        hasToken: !!response.data?.token,
+        hasTeacherData: !!response.data?.teacher
+      });
 
-      // Reset form
-      setEmail('');
-      setPassword('');
-      setIsLoading(false);
-
-      // Navigate to dashboard
-      navigation.replace('TeacherHome'); // Using replace to prevent going back to login
-      console.log('Login successful, navigated to dashboard');
-    } catch (error) {
-      setIsLoading(false);
-      
-      if (axios.isAxiosError(error)) {
-        if (error.response) {
-          // Server responded with an error status code
-          const responseData = error.response.data as { message?: string; msg?: string };
-          setErrorMessage(responseData.message || responseData.msg || 'Login failed');
-        } else if (error.request) {
-          // Request was made but no response received
-          setErrorMessage('Cannot connect to server. Please check your internet connection.');
-        } else {
-          // Something else happened while setting up the request
-          setErrorMessage('An unexpected error occurred. Please try again.');
+      // If login is successful, save the token to AsyncStorage
+      if (response.data && response.data.token) {
+        try {
+          // Clear any existing data first
+          await AsyncStorage.multiRemove(['teacherToken', 'userRole', 'teacherData']);
+          
+          // Save the token first
+          await AsyncStorage.setItem('teacherToken', response.data.token);
+          console.log('Token saved to AsyncStorage');
+          
+          // Save the user role
+          await AsyncStorage.setItem('userRole', 'teacher');
+          console.log('User role saved to AsyncStorage');
+          
+          // Save teacher data if it's provided in the login response
+          if (response.data.teacher) {
+            await AsyncStorage.setItem('teacherData', JSON.stringify(response.data.teacher));
+            console.log('Teacher data saved from login response');
+          }
+          
+          // Navigate to TeacherHome
+          console.log('Navigating to TeacherHome screen');
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'TeacherHome' }],
+          });
+        } catch (storageError) {
+          console.error('Error saving auth data:', storageError);
+          setErrorMessage("Failed to save login information. Please try again.");
         }
       } else {
-        // Handle non-axios errors
-        setErrorMessage('An unexpected error occurred. Please try again.');
+        console.warn('Login response missing token:', response.data);
+        setErrorMessage("Server response is missing authentication token.");
       }
-      
-      console.error('Login error:', error);
+    } catch (error) {
+      handleApiError(error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Show loading indicator while checking token
-  if (isCheckingToken) {
-    return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#1CB5E0" />
-        <Text style={styles.loadingText}>Checking login status...</Text>
-      </SafeAreaView>
+  // Handle forgot password
+  const handleForgotPassword = () => {
+    // You can implement forgot password functionality here
+    // For now, just show an alert
+    Alert.alert(
+      "Reset Password", 
+      "Please contact your administrator to reset your password.",
+      [{ text: "OK" }]
     );
-  }
+  };
+
+  // Debug function to check navigation state
+  const debugNavigation = () => {
+    const navState = navigation.getState();
+    console.log('Navigation state:', JSON.stringify(navState, null, 2));
+    Alert.alert(
+      "Debug Options",
+      "Choose an action:",
+      [
+        { text: "Clear Auth Data", onPress: clearStorageAndRetry },
+        { text: "Check Navigation", onPress: () => Alert.alert("Nav Routes", `Routes: ${navState.routes.map(r => r.name).join(', ')}`) },
+        { text: "Cancel", style: "cancel" }
+      ]
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -190,6 +325,7 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
               <TouchableOpacity 
                 style={styles.backButton}
                 onPress={() => navigation.goBack()}
+                disabled={isLoading}
               >
                 <Ionicons name="arrow-back" size={24} color="#3A4276" />
               </TouchableOpacity>
@@ -233,19 +369,26 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
                 </View>
               ) : null}
 
-              <Text style={styles.formLabel}>Email</Text>
+              <Text style={styles.formLabel}>Email Address</Text>
               <View style={styles.inputContainer}>
                 <FontAwesome5 name="envelope" size={16} color="#8A94A6" style={styles.inputIcon} />
                 <TextInput 
+                  ref={emailRef}
                   style={styles.input}
                   placeholder="Enter your email"
                   placeholderTextColor="#B0B7C3"
                   keyboardType="email-address"
+                  autoCapitalize="none"
                   value={email}
                   onChangeText={(text) => {
                     setEmail(text);
                     setErrorMessage(''); // Clear error when user types
                   }}
+                  onSubmitEditing={() => passwordRef.current?.focus()}
+                  returnKeyType="next"
+                  editable={!isLoading}
+                  autoComplete="email"
+                  textContentType="emailAddress"
                 />
               </View>
 
@@ -253,6 +396,7 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
               <View style={styles.inputContainer}>
                 <FontAwesome5 name="lock" size={16} color="#8A94A6" style={styles.inputIcon} />
                 <TextInput 
+                  ref={passwordRef}
                   style={styles.input}
                   placeholder="Enter your password"
                   placeholderTextColor="#B0B7C3"
@@ -262,10 +406,15 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
                     setPassword(text);
                     setErrorMessage(''); // Clear error when user types
                   }}
+                  returnKeyType="done"
+                  editable={!isLoading}
+                  autoComplete="password"
+                  textContentType="password"
                 />
                 <TouchableOpacity 
                   style={styles.eyeIcon}
                   onPress={() => setShowPassword(!showPassword)}
+                  disabled={isLoading}
                 >
                   <Feather name={showPassword ? "eye" : "eye-off"} size={18} color="#8A94A6" />
                 </TouchableOpacity>
@@ -273,15 +422,19 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
 
               <TouchableOpacity 
                 style={styles.forgotPassword}
-                //onPress={() => navigation.navigate('ForgotPassword')}
+                onPress={handleForgotPassword}
+                disabled={isLoading}
               >
                 <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.loginButton, isLoading && styles.disabledButton]}
+                style={[
+                  styles.loginButton,
+                  (!isFormValid() || isLoading) && styles.loginButtonDisabled
+                ]}
                 onPress={handleLogin}
-                disabled={isLoading}
+                disabled={!isFormValid() || isLoading}
               >
                 <LinearGradient
                   colors={['#1CB5E0', '#38EF7D']}
@@ -290,7 +443,7 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
                   style={styles.loginGradient}
                 >
                   {isLoading ? (
-                    <ActivityIndicator color="#FFFFFF" />
+                    <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
                     <Text style={styles.loginButtonText}>Login</Text>
                   )}
@@ -298,9 +451,16 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
               </TouchableOpacity>
 
               <View style={styles.createAccountContainer}>
-                <Text style={styles.createAccountText}>Don't have an account? </Text>
-                <TouchableOpacity onPress={() => navigation.navigate('TeacherSignup')}>
-                  <Text style={styles.createAccountLink}>Create new</Text>
+                <Text style={styles.createAccountText}>
+                  Don't have an account? 
+                </Text>
+                <TouchableOpacity 
+                  onPress={() => navigation.navigate('TeacherSignup')}
+                  disabled={isLoading}
+                >
+                  <Text style={styles.createAccountLink}>
+                    Create new
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -309,7 +469,7 @@ const TeacherLoginScreen: React.FC<Props> = ({ navigation }) => {
             <View style={styles.footer}>
               <TouchableOpacity 
                 style={styles.helpButton}
-                //onPress={() => navigation.navigate('Support')}
+                onPress={debugNavigation}
               >
                 <Feather name="help-circle" size={16} color="#8A94A6" style={styles.helpIcon} />
                 <Text style={styles.footerText}>Need help? Contact support</Text>
@@ -327,17 +487,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#F8F9FC',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FC',
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#3A4276',
   },
   scrollContainer: {
     flexGrow: 1,
@@ -462,7 +611,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 5,
   },
-  disabledButton: {
+  loginButtonDisabled: {
     opacity: 0.7,
   },
   loginGradient: {
@@ -488,6 +637,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1CB5E0',
     fontWeight: '600',
+    marginLeft: 4,
   },
   helpButton: {
     flexDirection: 'row',

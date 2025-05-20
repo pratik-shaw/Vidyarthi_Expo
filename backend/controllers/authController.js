@@ -137,8 +137,13 @@ exports.loginAdmin = async (req, res) => {
 };
 
 // Validate admin token endpoint
-exports.validateToken = async (req, res) => {
+exports.validateAdminToken = async (req, res) => {
   try {
+    // Check that the user has the admin role
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized as admin' });
+    }
+  
     // req.user is set by the auth middleware
     const admin = await Admin.findById(req.user.id).select('-password');
     
@@ -148,7 +153,7 @@ exports.validateToken = async (req, res) => {
     
     res.json({ valid: true, admin });
   } catch (err) {
-    console.error('Token validation error:', err.message);
+    console.error('Admin token validation error:', err.message);
     res.status(500).json({ message: 'Server error' });
   }
 };
