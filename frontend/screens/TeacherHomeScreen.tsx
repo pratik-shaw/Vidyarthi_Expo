@@ -288,8 +288,8 @@ const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
 
   // Navigate to class details
   const handleClassPress = (classItem: Class) => {
-    navigation.navigate('ClassDetails', { classId: classItem._id, className: classItem.name });
-  };
+  navigation.navigate('TeacherClassDetails', { classId: classItem._id, className: classItem.name });
+};
 
   // Navigate to other screens
   const navigateToSettings = () => {
