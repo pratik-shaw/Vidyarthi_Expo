@@ -26,8 +26,9 @@ router.put('/classes/:id', auth, classController.updateClass);
 router.delete('/classes/:id', auth, classController.deleteClass);
 router.get('/classes/:classId', auth, classController.getClassDetails);
 
-// Class management
+// Class management - Updated routes
 router.post('/classes/assign-teacher', auth, classController.assignTeacher);
+router.post('/classes/assign-teachers', auth, classController.assignTeachers); // New plural route
 router.post('/classes/assign-class-admin', auth, classController.assignClassAdmin);
 
 module.exports = router;

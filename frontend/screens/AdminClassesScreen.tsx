@@ -75,15 +75,16 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [teacherModalVisible, setTeacherModalVisible] = useState(false);
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
-  const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
+  const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([]); // Changed to array
   const [searchQuery, setSearchQuery] = useState('');
+  const [teacherSearchQuery, setTeacherSearchQuery] = useState(''); // Added teacher search
   const [isCreating, setIsCreating] = useState(false);
 
   // Set header
   React.useLayoutEffect(() => {
     navigation.setOptions({
       headerShown: true,
-      headerTitle: 'Manage Classes',
+      headerTitle: 'Create Class & Assign Teachers',
       headerTitleStyle: {
         color: '#3A4276',
         fontWeight: '600',
@@ -253,10 +254,42 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
     setIsCreating(false);
   };
 
-  // Open modal for assigning teacher
+  // Open modal for assigning teachers
   const openAssignTeacherModal = (classId: string) => {
     setSelectedClassId(classId);
+    setSelectedTeacherIds([]); // Reset selected teachers
+    setTeacherSearchQuery(''); // Reset search
     setTeacherModalVisible(true);
+  };
+
+  // Toggle teacher selection
+  const toggleTeacherSelection = (teacherId: string) => {
+    setSelectedTeacherIds(prev => {
+      if (prev.includes(teacherId)) {
+        return prev.filter(id => id !== teacherId);
+      } else {
+        return [...prev, teacherId];
+      }
+    });
+  };
+
+  // Select all teachers
+  const selectAllTeachers = () => {
+    const filteredTeacherIds = getFilteredTeachers().map(teacher => teacher._id);
+    setSelectedTeacherIds(filteredTeacherIds);
+  };
+
+  // Clear all selections
+  const clearAllSelections = () => {
+    setSelectedTeacherIds([]);
+  };
+
+  // Get filtered teachers based on search
+  const getFilteredTeachers = () => {
+    return teachers.filter(teacher =>
+      teacher.name.toLowerCase().includes(teacherSearchQuery.toLowerCase()) ||
+      teacher.email.toLowerCase().includes(teacherSearchQuery.toLowerCase())
+    );
   };
 
   // Create new class
@@ -343,33 +376,53 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
     );
   };
 
-  // Assign teacher to class
-  const assignTeacher = async () => {
-    if (!selectedClassId || !selectedTeacherId) {
-      Alert.alert('Validation Error', 'Please select a teacher');
+  // Assign multiple teachers to class
+  const assignTeachers = async () => {
+    if (!selectedClassId || selectedTeacherIds.length === 0) {
+      Alert.alert('Validation Error', 'Please select at least one teacher');
       return;
     }
 
-    try {
-      setIsLoading(true);
-      const apiClient = await getAuthenticatedClient();
-      
-      await apiClient.post('/admin/classes/assign-teacher', {
-        classId: selectedClassId,
-        teacherId: selectedTeacherId
-      });
-      
-      Alert.alert('Success', 'Teacher assigned successfully');
-      setTeacherModalVisible(false);
-      setSelectedClassId(null);
-      setSelectedTeacherId(null);
-      await loadClasses();
-    } catch (error) {
-      console.error('Error assigning teacher:', error);
-      handleApiError(error);
-    } finally {
-      setIsLoading(false);
-    }
+    const selectedCount = selectedTeacherIds.length;
+    const teacherText = selectedCount === 1 ? 'teacher' : 'teachers';
+    
+    Alert.alert(
+      "Assign Teachers",
+      `Are you sure you want to assign ${selectedCount} ${teacherText} to this class?`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Assign",
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              const apiClient = await getAuthenticatedClient();
+              
+              // Send multiple teacher IDs to backend
+              await apiClient.post('/admin/classes/assign-teachers', {
+                classId: selectedClassId,
+                teacherIds: selectedTeacherIds
+              });
+              
+              Alert.alert('Success', `${selectedCount} ${teacherText} assigned successfully`);
+              setTeacherModalVisible(false);
+              setSelectedClassId(null);
+              setSelectedTeacherIds([]);
+              setTeacherSearchQuery('');
+              await loadClasses();
+            } catch (error) {
+              console.error('Error assigning teachers:', error);
+              handleApiError(error);
+            } finally {
+              setIsLoading(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   // Handle API errors
@@ -604,7 +657,7 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
         </View>
       </Modal>
       
-      {/* Assign Teacher Modal */}
+      {/* Assign Teachers Modal */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -612,15 +665,53 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
         onRequestClose={() => setTeacherModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, styles.teacherModalContent]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Assign Teacher</Text>
+              <Text style={styles.modalTitle}>Assign Teachers</Text>
               <TouchableOpacity onPress={() => setTeacherModalVisible(false)}>
                 <Feather name="x" size={24} color="#3A4276" />
               </TouchableOpacity>
             </View>
             
-            <Text style={styles.modalSubtitle}>Select a teacher to assign to this class</Text>
+            <Text style={styles.modalSubtitle}>
+              Select teachers to assign to this class ({selectedTeacherIds.length} selected)
+            </Text>
+            
+            {/* Teacher Search Bar */}
+            <View style={styles.searchContainer}>
+              <Feather name="search" size={20} color="#8A94A6" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search teachers..."
+                value={teacherSearchQuery}
+                onChangeText={setTeacherSearchQuery}
+                placeholderTextColor="#8A94A6"
+              />
+              {teacherSearchQuery ? (
+                <TouchableOpacity onPress={() => setTeacherSearchQuery('')}>
+                  <Feather name="x" size={20} color="#8A94A6" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            
+            {/* Selection Controls */}
+            <View style={styles.selectionControls}>
+              <TouchableOpacity
+                style={styles.selectionButton}
+                onPress={selectAllTeachers}
+              >
+                <Feather name="check-square" size={16} color="#4E54C8" />
+                <Text style={styles.selectionButtonText}>Select All</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.selectionButton}
+                onPress={clearAllSelections}
+              >
+                <Feather name="square" size={16} color="#8A94A6" />
+                <Text style={[styles.selectionButtonText, { color: '#8A94A6' }]}>Clear All</Text>
+              </TouchableOpacity>
+            </View>
             
             {teachers.length === 0 ? (
               <View style={styles.emptyTeachers}>
@@ -628,25 +719,31 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
               </View>
             ) : (
               <ScrollView style={styles.teachersList}>
-                {teachers.map((teacher) => (
+                {getFilteredTeachers().map((teacher) => (
                   <TouchableOpacity
                     key={teacher._id}
                     style={[
                       styles.teacherItem,
-                      selectedTeacherId === teacher._id && styles.selectedTeacher
+                      selectedTeacherIds.includes(teacher._id) && styles.selectedTeacher
                     ]}
-                    onPress={() => setSelectedTeacherId(teacher._id)}
+                    onPress={() => toggleTeacherSelection(teacher._id)}
                   >
+                    <View style={styles.teacherCheckbox}>
+                      {selectedTeacherIds.includes(teacher._id) ? (
+                        <Ionicons name="checkbox" size={24} color="#4E54C8" />
+                      ) : (
+                        <Ionicons name="checkbox-outline" size={24} color="#8A94A6" />
+                      )}
+                    </View>
+                    
                     <View style={styles.teacherAvatar}>
                       <FontAwesome5 name="user" size={16} color="#4E54C8" />
                     </View>
+                    
                     <View style={styles.teacherInfo}>
                       <Text style={styles.teacherName}>{teacher.name}</Text>
                       <Text style={styles.teacherEmail}>{teacher.email}</Text>
                     </View>
-                    {selectedTeacherId === teacher._id && (
-                      <Ionicons name="checkmark-circle" size={24} color="#4E54C8" />
-                    )}
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -661,11 +758,20 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
               </TouchableOpacity>
               
               <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={assignTeacher}
-                disabled={!selectedTeacherId}
+                style={[
+                  styles.modalButton, 
+                  styles.saveButton,
+                  selectedTeacherIds.length === 0 && styles.disabledButton
+                ]}
+                onPress={assignTeachers}
+                disabled={selectedTeacherIds.length === 0}
               >
-                <Text style={styles.saveButtonText}>Assign</Text>
+                <Text style={[
+                  styles.saveButtonText,
+                  selectedTeacherIds.length === 0 && styles.disabledButtonText
+                ]}>
+                  Assign ({selectedTeacherIds.length})
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -674,311 +780,349 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
     </SafeAreaView>
   );
 };
-
 const styles = StyleSheet.create({
-    safeArea: {
-      flex: 1,
-      backgroundColor: '#F8F9FC',
-    },
-    container: {
-      flex: 1,
-      padding: 16,
-    },
-    loadingContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      backgroundColor: '#F8F9FC',
-    },
-    loadingText: {
-      marginTop: 12,
-      fontSize: 16,
-      color: '#3A4276',
-    },
-    schoolInfoContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 16,
-    },
-    schoolIconContainer: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: 'rgba(78, 84, 200, 0.1)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginRight: 8,
-    },
-    schoolCodeText: {
-      fontSize: 14,
-      color: '#3A4276',
-      fontWeight: '500',
-    },
-    searchContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: '#FFFFFF',
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      marginBottom: 16,
-      height: 48,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 10,
-      elevation: 2,
-    },
-    searchIcon: {
-      marginRight: 8,
-    },
-    searchInput: {
-      flex: 1,
-      fontSize: 16,
-      color: '#3A4276',
-      height: '100%',
-    },
-    addButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: '#4E54C8',
-      borderRadius: 8,
-      paddingVertical: 12,
-      marginBottom: 16,
-      shadowColor: '#4E54C8',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.2,
-      shadowRadius: 8,
-      elevation: 4,
-    },
-    addButtonText: {
-      color: '#FFFFFF',
-      fontSize: 16,
-      fontWeight: '600',
-      marginLeft: 8,
-    },
-    emptyContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingVertical: 32,
-    },
-    emptyText: {
-      fontSize: 18,
-      fontWeight: '600',
-      color: '#3A4276',
-      marginTop: 16,
-    },
-    emptySubText: {
-      fontSize: 14,
-      color: '#8A94A6',
-      marginTop: 8,
-      textAlign: 'center',
-    },
-    listContent: {
-      paddingBottom: 20,
-    },
-    classCard: {
-      backgroundColor: '#FFFFFF',
-      borderRadius: 12,
-      marginBottom: 16,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 10,
-      elevation: 3,
-      overflow: 'hidden',
-    },
-    classCardContent: {
-      flexDirection: 'row',
-      padding: 16,
-    },
-    classIconContainer: {
-      width: 50,
-      height: 50,
-      borderRadius: 25,
-      backgroundColor: 'rgba(78, 84, 200, 0.1)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginRight: 16,
-    },
-    classInfo: {
-      flex: 1,
-    },
-    className: {
-      fontSize: 16,
-      fontWeight: '600',
-      color: '#3A4276',
-      marginBottom: 4,
-    },
-    classSection: {
-      fontSize: 14,
-      color: '#8A94A6',
-      marginBottom: 8,
-    },
-    classStats: {
-      flexDirection: 'row',
-    },
-    statItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginRight: 16,
-    },
-    statText: {
-      fontSize: 12,
-      color: '#8A94A6',
-      marginLeft: 4,
-    },
-    cardActions: {
-      flexDirection: 'row',
-      borderTopWidth: 1,
-      borderTopColor: '#F0F2F8',
-    },
-    actionButton: {
-      flex: 1,
-      paddingVertical: 12,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    assignButton: {
-      borderRightWidth: 1,
-      borderRightColor: '#F0F2F8',
-    },
-    editButton: {
-      borderRightWidth: 1,
-      borderRightColor: '#F0F2F8',
-    },
-    deleteButton: {},
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: 20,
-    },
-    modalContent: {
-      backgroundColor: '#FFFFFF',
-      borderRadius: 12,
-      width: '100%',
-      padding: 20,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.25,
-      shadowRadius: 10,
-      elevation: 5,
-    },
-    modalHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 20,
-    },
-    modalTitle: {
-      fontSize: 18,
-      fontWeight: '600',
-      color: '#3A4276',
-    },
-    modalSubtitle: {
-      fontSize: 14,
-      color: '#8A94A6',
-      marginBottom: 16,
-    },
-    formGroup: {
-      marginBottom: 16,
-    },
-    label: {
-      fontSize: 14,
-      color: '#3A4276',
-      marginBottom: 8,
-      fontWeight: '500',
-    },
-    input: {
-      backgroundColor: '#F8F9FC',
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      fontSize: 16,
-      color: '#3A4276',
-      borderWidth: 1,
-      borderColor: '#E4E7ED',
-    },
-    modalActions: {
-      flexDirection: 'row',
-      justifyContent: 'flex-end',
-      marginTop: 20,
-    },
-    modalButton: {
-      paddingVertical: 12,
-      paddingHorizontal: 20,
-      borderRadius: 8,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginLeft: 12,
-    },
-    cancelButton: {
-      backgroundColor: '#F0F2F8',
-    },
-    cancelButtonText: {
-      color: '#3A4276',
-      fontSize: 16,
-      fontWeight: '500',
-    },
-    saveButton: {
-      backgroundColor: '#4E54C8',
-    },
-    saveButtonText: {
-      color: '#FFFFFF',
-      fontSize: 16,
-      fontWeight: '500',
-    },
-    teachersList: {
-      maxHeight: 300,
-    },
-    teacherItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      padding: 12,
-      borderRadius: 8,
-      marginBottom: 8,
-      backgroundColor: '#F8F9FC',
-    },
-    selectedTeacher: {
-      backgroundColor: 'rgba(78, 84, 200, 0.1)',
-      borderWidth: 1,
-      borderColor: '#4E54C8',
-    },
-    teacherAvatar: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: 'rgba(78, 84, 200, 0.1)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginRight: 12,
-    },
-    teacherInfo: {
-      flex: 1,
-    },
-    teacherName: {
-      fontSize: 14,
-      fontWeight: '600',
-      color: '#3A4276',
-      marginBottom: 2,
-    },
-    teacherEmail: {
-      fontSize: 12,
-      color: '#8A94A6',
-    },
-    emptyTeachers: {
-      padding: 20,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    emptyTeachersText: {
-      fontSize: 14,
-      color: '#8A94A6',
-      textAlign: 'center',
-    }
-  });
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F8F9FC',
+  },
+  container: {
+    flex: 1,
+    padding: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FC',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#3A4276',
+  },
+  schoolInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  schoolIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(78, 84, 200, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  schoolCodeText: {
+    fontSize: 14,
+    color: '#3A4276',
+    fontWeight: '500',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+    height: 48,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#3A4276',
+    height: '100%',
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4E54C8',
+    borderRadius: 8,
+    paddingVertical: 12,
+    marginBottom: 16,
+    shadowColor: '#4E54C8',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  addButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 32,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#3A4276',
+    marginTop: 16,
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: '#8A94A6',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  listContent: {
+    paddingBottom: 20,
+  },
+  classCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  classCardContent: {
+    flexDirection: 'row',
+    padding: 16,
+  },
+  classIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(78, 84, 200, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  classInfo: {
+    flex: 1,
+  },
+  className: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3A4276',
+    marginBottom: 4,
+  },
+  classSection: {
+    fontSize: 14,
+    color: '#8A94A6',
+    marginBottom: 8,
+  },
+  classStats: {
+    flexDirection: 'row',
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  statText: {
+    fontSize: 12,
+    color: '#8A94A6',
+    marginLeft: 4,
+  },
+  cardActions: {
+  flexDirection: 'row',
+  justifyContent: 'flex-end',
+  alignItems: 'center',
+  paddingHorizontal: 16,
+  paddingVertical: 12,
+  borderTopWidth: 1,
+  borderTopColor: '#F3F4F6',
+},
+actionButton: {
+  width: 44,
+  height: 44,
+  borderRadius: 22,
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginHorizontal: 8, // Equal spacing on left and right
+},
+  assignButton: {
+    backgroundColor: 'rgba(78, 84, 200, 0.1)',
+  },
+  editButton: {
+    backgroundColor: 'rgba(255, 165, 2, 0.1)',
+  },
+  deleteButton: {
+    backgroundColor: 'rgba(255, 71, 87, 0.1)',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '80%',
+  },
+  teacherModalContent: {
+    maxHeight: '85%',
+    height: 600,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#3A4276',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#8A94A6',
+    marginBottom: 16,
+  },
+  formGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#3A4276',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#3A4276',
+    backgroundColor: '#FFFFFF',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 24,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#F3F4F6',
+    marginRight: 8,
+  },
+  cancelButtonText: {
+    color: '#6B7280',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  saveButton: {
+    backgroundColor: '#4E54C8',
+    marginLeft: 8,
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  disabledButton: {
+    backgroundColor: '#D1D5DB',
+  },
+  disabledButtonText: {
+    color: '#9CA3AF',
+  },
+  selectionControls: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  selectionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    backgroundColor: '#F3F4F6',
+  },
+  selectionButtonText: {
+    fontSize: 14,
+    color: '#4E54C8',
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  teachersList: {
+    flex: 1,
+    marginBottom: 16,
+  },
+  teacherItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  selectedTeacher: {
+    backgroundColor: 'rgba(78, 84, 200, 0.05)',
+    borderColor: '#4E54C8',
+  },
+  teacherCheckbox: {
+    marginRight: 12,
+  },
+  teacherAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(78, 84, 200, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  teacherInfo: {
+    flex: 1,
+  },
+  teacherName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#3A4276',
+    marginBottom: 2,
+  },
+  teacherEmail: {
+    fontSize: 14,
+    color: '#8A94A6',
+  },
+  emptyTeachers: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 32,
+  },
+  emptyTeachersText: {
+    fontSize: 16,
+    color: '#8A94A6',
+    textAlign: 'center',
+  },
+});
 
   export default AdminClassesScreen;

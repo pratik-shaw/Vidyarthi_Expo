@@ -130,7 +130,7 @@ exports.deleteClass = async (req, res) => {
   }
 };
 
-// Assign teacher to class (admin only)
+// Assign single teacher to class (admin only) - Keep existing function
 exports.assignTeacher = async (req, res) => {
   try {
     const { classId, teacherId } = req.body;
@@ -169,6 +169,86 @@ exports.assignTeacher = async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server error');
+  }
+};
+
+// Assign multiple teachers to class (admin only) - NEW FUNCTION
+exports.assignTeachers = async (req, res) => {
+  try {
+    const { classId, teacherIds } = req.body;
+
+    // Verify user is an admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ msg: 'Not authorized' });
+    }
+
+    // Validate input
+    if (!classId || !teacherIds || !Array.isArray(teacherIds) || teacherIds.length === 0) {
+      return res.status(400).json({ msg: 'Class ID and teacher IDs array are required' });
+    }
+
+    const admin = await Admin.findById(req.user.id);
+    if (!admin) {
+      return res.status(404).json({ msg: 'Admin not found' });
+    }
+
+    // Find class and ensure it belongs to admin's school
+    const classObj = await Class.findOne({ _id: classId, schoolId: admin.schoolId });
+    if (!classObj) {
+      return res.status(404).json({ msg: 'Class not found or not authorized' });
+    }
+
+    // Find all teachers and ensure they belong to admin's school
+    const teachers = await Teacher.find({ 
+      _id: { $in: teacherIds }, 
+      schoolId: admin.schoolId 
+    });
+
+    if (teachers.length !== teacherIds.length) {
+      return res.status(404).json({ msg: 'One or more teachers not found or not authorized' });
+    }
+
+    let assignedCount = 0;
+
+    // Process each teacher
+    for (const teacher of teachers) {
+      let teacherUpdated = false;
+      let classUpdated = false;
+
+      // Update class with teacher ID if not already present
+      if (!classObj.teacherIds.includes(teacher._id)) {
+        classObj.teacherIds.push(teacher._id);
+        classUpdated = true;
+      }
+
+      // Update teacher with class ID if not already present
+      if (!teacher.classIds.includes(classId)) {
+        teacher.classIds.push(classId);
+        teacherUpdated = true;
+      }
+
+      // Save teacher if updated
+      if (teacherUpdated) {
+        await teacher.save();
+        assignedCount++;
+      }
+    }
+
+    // Save class if updated
+    await classObj.save();
+
+    const message = assignedCount === 1 
+      ? `${assignedCount} teacher assigned to class successfully`
+      : `${assignedCount} teachers assigned to class successfully`;
+
+    res.json({ 
+      msg: message,
+      assignedCount,
+      totalRequested: teacherIds.length
+    });
+  } catch (err) {
+    console.error('Error in assignTeachers:', err.message);
+    res.status(500).json({ msg: 'Server error', error: err.message });
   }
 };
 
