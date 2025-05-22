@@ -7,7 +7,9 @@ const mongoose = require('mongoose');
 // Get teacher profile
 exports.getProfile = async (req, res) => {
   try {
-    const teacher = await Teacher.findById(req.user.id).select('-password');
+    const teacher = await Teacher.findById(req.user.id)
+      .select('-password')
+      .populate('adminClassId', 'name section');
     
     if (!teacher) {
       return res.status(404).json({ msg: 'Teacher not found' });
@@ -22,6 +24,7 @@ exports.getProfile = async (req, res) => {
         schoolCode: teacher.schoolCode,
         schoolId: teacher.schoolId,
         classIds: teacher.classIds,
+        adminClassId: teacher.adminClassId,
         uniqueCode: teacher.uniqueCode,
         subject: teacher.subject || '',
         phone: teacher.phone || '',
@@ -54,9 +57,10 @@ exports.getClasses = async (req, res) => {
       _id: { $in: teacher.classIds }
     });
     
-    // For each class, count the number of students
-    const classesWithStudentCount = await Promise.all(classes.map(async (classItem) => {
+    // For each class, count the number of students and check if teacher is admin
+    const classesWithDetails = await Promise.all(classes.map(async (classItem) => {
       const studentsCount = await Student.countDocuments({ classId: classItem._id });
+      const isAdmin = teacher.adminClassId && teacher.adminClassId.toString() === classItem._id.toString();
       
       return {
         _id: classItem._id,
@@ -65,12 +69,13 @@ exports.getClasses = async (req, res) => {
         section: classItem.section,
         studentsCount,
         schedule: classItem.schedule || '',
-        room: classItem.room || ''
+        room: classItem.room || '',
+        isAdmin
       };
     }));
     
     // Return with the classes array in a nested object to match the client expectation
-    res.json({ classes: classesWithStudentCount });
+    res.json({ classes: classesWithDetails });
   } catch (err) {
     console.error('Error fetching teacher classes:', err.message);
     res.status(500).send('Server error');
@@ -100,13 +105,17 @@ exports.getStudentsByClass = async (req, res) => {
 
     const students = await Student.find({ classId }).select('-password');
     
+    // Check if teacher is admin of this class
+    const isAdmin = teacher.adminClassId && teacher.adminClassId.toString() === classId;
+    
     // Format the response to include both class details and students
     res.json({
       class: {
         _id: classDetails._id,
         name: classDetails.name,
         grade: classDetails.grade,
-        section: classDetails.section
+        section: classDetails.section,
+        isAdmin
       },
       students
     });
@@ -118,6 +127,45 @@ exports.getStudentsByClass = async (req, res) => {
       return res.status(400).json({ msg: 'Invalid class ID format' });
     }
     
+    res.status(500).send('Server error');
+  }
+};
+
+// Get admin class details and students (for class admin)
+exports.getAdminClass = async (req, res) => {
+  try {
+    const teacher = await Teacher.findById(req.user.id).populate('adminClassId');
+    
+    if (!teacher) {
+      return res.status(404).json({ msg: 'Teacher not found' });
+    }
+    
+    if (!teacher.adminClassId) {
+      return res.status(404).json({ msg: 'No admin class assigned' });
+    }
+    
+    // Get students in the admin class
+    const students = await Student.find({ classId: teacher.adminClassId._id }).select('-password');
+    
+    // Get all teachers assigned to this class
+    const teachers = await Teacher.find({ 
+      classIds: teacher.adminClassId._id 
+    }).select('name email');
+    
+    res.json({
+      adminClass: {
+        _id: teacher.adminClassId._id,
+        name: teacher.adminClassId.name,
+        section: teacher.adminClassId.section,
+        grade: teacher.adminClassId.grade || '',
+        studentsCount: students.length,
+        teachersCount: teachers.length
+      },
+      students,
+      teachers
+    });
+  } catch (err) {
+    console.error('Error fetching admin class:', err.message);
     res.status(500).send('Server error');
   }
 };

@@ -1,5 +1,6 @@
 // models/Teacher.js
 const mongoose = require('mongoose');
+
 const teacherSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -29,6 +30,11 @@ const teacherSchema = new mongoose.Schema({
   schoolId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'School' 
+  },
+  adminClassId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Class',
+    default: null
   }
 }, {
   timestamps: true

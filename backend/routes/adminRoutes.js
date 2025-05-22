@@ -22,10 +22,12 @@ router.get('/students', auth, adminController.getStudents);
 // Classes routes
 router.get('/classes', auth, adminController.getClasses);
 router.post('/classes', auth, classController.createClass);
-router.put('/classes/:id', auth, classController.updateClass); // Changed to use classController
-router.delete('/classes/:id', auth, classController.deleteClass); // Changed to use classController
+router.put('/classes/:id', auth, classController.updateClass);
+router.delete('/classes/:id', auth, classController.deleteClass);
+router.get('/classes/:classId', auth, classController.getClassDetails);
 
 // Class management
 router.post('/classes/assign-teacher', auth, classController.assignTeacher);
+router.post('/classes/assign-class-admin', auth, classController.assignClassAdmin);
 
 module.exports = router;

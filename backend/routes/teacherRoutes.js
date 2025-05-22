@@ -15,4 +15,7 @@ router.get('/profile', auth, teacherController.getProfile);
 router.get('/classes', auth, teacherController.getClasses);
 router.get('/class/:classId/students', auth, teacherController.getStudentsByClass);
 
+// Admin class routes (for teachers who are class admins)
+router.get('/admin-class', auth, teacherController.getAdminClass);
+
 module.exports = router;

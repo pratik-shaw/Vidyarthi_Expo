@@ -108,6 +108,12 @@ exports.deleteClass = async (req, res) => {
       { $pull: { classIds: id } }
     );
 
+    // Remove adminClassId reference from teachers who are admin of this class
+    await Teacher.updateMany(
+      { adminClassId: id },
+      { $unset: { adminClassId: 1 } }
+    );
+
     // Remove class reference from all associated students
     await Student.updateMany(
       { classIds: id },
@@ -137,13 +143,11 @@ exports.assignTeacher = async (req, res) => {
     const admin = await Admin.findById(req.user.id);
 
     // Find class and teacher, ensure they belong to admin's school
-    // Fixed: *id -> _id
     const classObj = await Class.findOne({ _id: classId, schoolId: admin.schoolId });
     if (!classObj) {
       return res.status(404).json({ msg: 'Class not found' });
     }
 
-    // Fixed: *id -> _id
     const teacher = await Teacher.findOne({ _id: teacherId, schoolId: admin.schoolId });
     if (!teacher) {
       return res.status(404).json({ msg: 'Teacher not found' });
@@ -168,6 +172,54 @@ exports.assignTeacher = async (req, res) => {
   }
 };
 
+// Assign class admin (admin only)
+exports.assignClassAdmin = async (req, res) => {
+  try {
+    const { classId, teacherId } = req.body;
+
+    // Verify user is an admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ msg: 'Not authorized' });
+    }
+
+    const admin = await Admin.findById(req.user.id);
+    if (!admin) {
+      return res.status(404).json({ msg: 'Admin not found' });
+    }
+
+    // Find class and teacher, ensure they belong to admin's school
+    const classObj = await Class.findOne({ _id: classId, schoolId: admin.schoolId });
+    if (!classObj) {
+      return res.status(404).json({ msg: 'Class not found' });
+    }
+
+    const teacher = await Teacher.findOne({ _id: teacherId, schoolId: admin.schoolId });
+    if (!teacher) {
+      return res.status(404).json({ msg: 'Teacher not found' });
+    }
+
+    // Check if teacher is already assigned to this class
+    if (!teacher.classIds.includes(classId)) {
+      return res.status(400).json({ msg: 'Teacher must be assigned to the class first' });
+    }
+
+    // Remove admin role from current class admin (if any)
+    await Teacher.updateOne(
+      { adminClassId: classId },
+      { $unset: { adminClassId: 1 } }
+    );
+
+    // Assign new class admin
+    teacher.adminClassId = classId;
+    await teacher.save();
+
+    res.json({ msg: 'Class admin assigned successfully' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+};
+
 // Get class details
 exports.getClassDetails = async (req, res) => {
   try {
@@ -181,8 +233,16 @@ exports.getClassDetails = async (req, res) => {
     if (!classDetails) {
       return res.status(404).json({ msg: 'Class not found' });
     }
+
+    // Find the class admin
+    const classAdmin = await Teacher.findOne({ adminClassId: classId }).select('name email');
     
-    res.json(classDetails);
+    const response = {
+      ...classDetails.toObject(),
+      classAdmin: classAdmin || null
+    };
+    
+    res.json(response);
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server error');
