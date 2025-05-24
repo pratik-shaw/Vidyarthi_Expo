@@ -71,7 +71,7 @@ exports.getStudents = async (req, res) => {
   }
 };
 
-// Get all classes in admin's school
+// Get all classes in admin's school - FIXED VERSION
 exports.getClasses = async (req, res) => {
   try {
     const admin = await Admin.findById(req.user.id);
@@ -79,10 +79,14 @@ exports.getClasses = async (req, res) => {
       return res.status(404).json({ msg: 'Admin not found' });
     }
 
-    const classes = await Class.find({ schoolId: admin.schoolId });
+    // Fixed: Populate teacherIds and studentIds with the required fields
+    const classes = await Class.find({ schoolId: admin.schoolId })
+      .populate('teacherIds', '_id name email') // Include _id, name, and email
+      .populate('studentIds', '_id name studentId email'); // Include _id, name, studentId, and email
+
     res.json(classes);
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    console.error('Error in getClasses:', err.message);
+    res.status(500).json({ msg: 'Server error', error: err.message });
   }
 };

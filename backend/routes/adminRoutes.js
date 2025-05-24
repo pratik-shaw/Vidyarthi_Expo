@@ -26,9 +26,13 @@ router.put('/classes/:id', auth, classController.updateClass);
 router.delete('/classes/:id', auth, classController.deleteClass);
 router.get('/classes/:classId', auth, classController.getClassDetails);
 
-// Class management - Updated routes
+// Class management routes
 router.post('/classes/assign-teacher', auth, classController.assignTeacher);
-router.post('/classes/assign-teachers', auth, classController.assignTeachers); // New plural route
+router.post('/classes/assign-teachers', auth, classController.assignTeachers);
+router.post('/classes/remove-teacher', auth, classController.removeTeacher);
+
+router.post('/classes/assign-students', auth, classController.assignStudents);
+router.post('/classes/remove-student', auth, classController.removeStudent); // FIXED: Added missing auth middleware
 router.post('/classes/assign-class-admin', auth, classController.assignClassAdmin);
 
 module.exports = router;

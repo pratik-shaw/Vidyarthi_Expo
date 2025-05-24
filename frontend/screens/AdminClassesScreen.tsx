@@ -16,14 +16,13 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
-import { Feather, FontAwesome5, Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import NetInfo from '@react-native-community/netinfo';
 
-// API URL with configurable timeout
-const API_URL = 'http://192.168.29.148:5000/api'; // Change this to your server IP/domain
-const API_TIMEOUT = 15000; // 15 seconds timeout
+const API_URL = 'http://192.168.29.148:5000/api';
+const API_TIMEOUT = 15000;
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AdminClasses'>;
 
@@ -37,15 +36,6 @@ interface ClassData {
   createdAt: string;
 }
 
-interface AdminData {
-  _id: string;
-  name: string;
-  email: string;
-  schoolCode: string;
-  schoolId: string;
-  createdAt: string;
-}
-
 interface TeacherData {
   _id: string;
   name: string;
@@ -56,11 +46,15 @@ interface StudentData {
   _id: string;
   name: string;
   studentId: string;
+  email?: string;
 }
 
-interface FormData {
+interface AdminData {
+  _id: string;
   name: string;
-  section: string;
+  email: string;
+  schoolCode: string;
+  schoolId: string;
 }
 
 const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
@@ -68,74 +62,76 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [adminData, setAdminData] = useState<AdminData | null>(null);
+  
+  // Main data
   const [classes, setClasses] = useState<ClassData[]>([]);
-  const [teachers, setTeachers] = useState<TeacherData[]>([]);
-  const [formData, setFormData] = useState<FormData>({ name: '', section: '' });
-  const [editingClass, setEditingClass] = useState<ClassData | null>(null);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [allTeachers, setAllTeachers] = useState<TeacherData[]>([]);
+  const [allStudents, setAllStudents] = useState<StudentData[]>([]);
+  
+  // UI State
+  const [selectedClass, setSelectedClass] = useState<ClassData | null>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'teachers' | 'students'>('overview');
+  
+  // Modals
+  const [classModalVisible, setClassModalVisible] = useState(false);
   const [teacherModalVisible, setTeacherModalVisible] = useState(false);
-  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
-  const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([]); // Changed to array
+  const [studentModalVisible, setStudentModalVisible] = useState(false);
+  
+  // Forms
+  const [classForm, setClassForm] = useState({ name: '', section: '' });
+  const [editingClass, setEditingClass] = useState<ClassData | null>(null);
+  const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([]);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  
+  // Search
   const [searchQuery, setSearchQuery] = useState('');
-  const [teacherSearchQuery, setTeacherSearchQuery] = useState(''); // Added teacher search
-  const [isCreating, setIsCreating] = useState(false);
+  const [teacherSearchQuery, setTeacherSearchQuery] = useState('');
+  const [studentSearchQuery, setStudentSearchQuery] = useState('');
 
-  // Set header
+  // Header setup
   React.useLayoutEffect(() => {
     navigation.setOptions({
       headerShown: true,
-      headerTitle: 'Create Class & Assign Teachers',
-      headerTitleStyle: {
-        color: '#3A4276',
-        fontWeight: '600',
-      },
+      headerTitle: 'Class Management',
+      headerTitleStyle: { color: '#2D3748', fontWeight: '600' },
       headerLeft: () => (
         <TouchableOpacity 
           style={{ marginLeft: 16 }}
           onPress={() => navigation.goBack()}
         >
-          <Feather name="arrow-left" size={24} color="#3A4276" />
+          <Feather name="arrow-left" size={24} color="#2D3748" />
         </TouchableOpacity>
       ),
     });
   }, [navigation]);
 
-  // Check network connectivity
+  // Network connectivity
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
       setIsConnected(state.isConnected ?? false);
     });
-
-    return () => {
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, []);
 
-  // Load data on initial render
+  // Initial data load
   useEffect(() => {
-    const checkAuthAndLoadData = async () => {
+    const initializeData = async () => {
       try {
         const token = await AsyncStorage.getItem('token');
         if (!token) {
-          // Not authenticated, redirect to role selection
           navigation.replace('RoleSelection');
           return;
         }
-
-        // Load admin data and classes
-        await loadAdminData();
-        await loadClasses();
-        await loadTeachers();
+        await Promise.all([loadAdminData(), loadAllData()]);
       } catch (error) {
-        console.error('Auth check error:', error);
+        console.error('Init error:', error);
         handleLogout();
       }
     };
+    initializeData();
+  }, []);
 
-    checkAuthAndLoadData();
-  }, [navigation]);
-
-  // Create axios instance with auth token
+  // API client
   const getAuthenticatedClient = async () => {
     const token = await AsyncStorage.getItem('token');
     return axios.create({
@@ -148,35 +144,21 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
     });
   };
 
-  // Load admin data from API
+  // Load admin data
   const loadAdminData = async () => {
     try {
-      // Check if we have a cached version of the admin data
-      const cachedAdminData = await AsyncStorage.getItem('adminData');
-      if (cachedAdminData) {
-        setAdminData(JSON.parse(cachedAdminData));
-      }
-
-      if (!isConnected) {
-        return;
-      }
-
+      if (!isConnected) return;
       const apiClient = await getAuthenticatedClient();
-      
-      // Load admin profile
-      const profileResponse = await apiClient.get('/admin/profile');
-      const adminProfile = profileResponse.data;
-      setAdminData(adminProfile);
-      await AsyncStorage.setItem('adminData', JSON.stringify(adminProfile));
-      
+      const response = await apiClient.get('/admin/profile');
+      setAdminData(response.data);
     } catch (error) {
       console.error('Error loading admin data:', error);
       handleApiError(error);
     }
   };
 
-  // Load classes from API
-  const loadClasses = async () => {
+  // Load all data
+  const loadAllData = async () => {
     setIsLoading(true);
     try {
       if (!isConnected) {
@@ -185,13 +167,17 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
       }
 
       const apiClient = await getAuthenticatedClient();
+      const [classesRes, teachersRes, studentsRes] = await Promise.all([
+        apiClient.get('/admin/classes'),
+        apiClient.get('/admin/teachers'),
+        apiClient.get('/admin/students')
+      ]);
       
-      // Load classes data
-      const classesResponse = await apiClient.get('/admin/classes');
-      setClasses(classesResponse.data);
-      
+      setClasses(classesRes.data);
+      setAllTeachers(teachersRes.data);
+      setAllStudents(studentsRes.data);
     } catch (error) {
-      console.error('Error loading classes data:', error);
+      console.error('Error loading data:', error);
       handleApiError(error);
     } finally {
       setIsLoading(false);
@@ -199,171 +185,71 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  // Load teachers from API
-  const loadTeachers = async () => {
-    try {
-      if (!isConnected) {
-        return;
-      }
-
-      const apiClient = await getAuthenticatedClient();
-      
-      // Load teachers data
-      const teachersResponse = await apiClient.get('/admin/teachers');
-      setTeachers(teachersResponse.data);
-      
-    } catch (error) {
-      console.error('Error loading teachers data:', error);
-      handleApiError(error);
-    }
-  };
-
-  // Handle pull-to-refresh
+  // Refresh handler
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadClasses();
-    await loadTeachers();
+    await loadAllData();
   }, []);
 
-  // Handle form input changes
-  const handleInputChange = (field: keyof FormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
-
-  // Reset form
-  const resetForm = () => {
-    setFormData({ name: '', section: '' });
+  // Class operations
+  const openCreateClassModal = () => {
+    setClassForm({ name: '', section: '' });
     setEditingClass(null);
+    setClassModalVisible(true);
   };
 
-  // Open modal for creating a new class
-  const openCreateModal = () => {
-    resetForm();
-    setModalVisible(true);
-    setIsCreating(true);
-  };
-
-  // Open modal for editing a class
-  const openEditModal = (classData: ClassData) => {
-    setFormData({
-      name: classData.name,
-      section: classData.section,
-    });
+  const openEditClassModal = (classData: ClassData) => {
+    setClassForm({ name: classData.name, section: classData.section });
     setEditingClass(classData);
-    setModalVisible(true);
-    setIsCreating(false);
+    setClassModalVisible(true);
   };
 
-  // Open modal for assigning teachers
-  const openAssignTeacherModal = (classId: string) => {
-    setSelectedClassId(classId);
-    setSelectedTeacherIds([]); // Reset selected teachers
-    setTeacherSearchQuery(''); // Reset search
-    setTeacherModalVisible(true);
-  };
+  const createOrUpdateClass = async () => {
+    if (!classForm.name.trim()) {
+      Alert.alert('Error', 'Class name is required');
+      return;
+    }
 
-  // Toggle teacher selection
-  const toggleTeacherSelection = (teacherId: string) => {
-    setSelectedTeacherIds(prev => {
-      if (prev.includes(teacherId)) {
-        return prev.filter(id => id !== teacherId);
+    try {
+      setIsLoading(true);
+      const apiClient = await getAuthenticatedClient();
+      
+      if (editingClass) {
+        await apiClient.put(`/admin/classes/${editingClass._id}`, classForm);
       } else {
-        return [...prev, teacherId];
+        await apiClient.post('/admin/classes', classForm);
       }
-    });
-  };
-
-  // Select all teachers
-  const selectAllTeachers = () => {
-    const filteredTeacherIds = getFilteredTeachers().map(teacher => teacher._id);
-    setSelectedTeacherIds(filteredTeacherIds);
-  };
-
-  // Clear all selections
-  const clearAllSelections = () => {
-    setSelectedTeacherIds([]);
-  };
-
-  // Get filtered teachers based on search
-  const getFilteredTeachers = () => {
-    return teachers.filter(teacher =>
-      teacher.name.toLowerCase().includes(teacherSearchQuery.toLowerCase()) ||
-      teacher.email.toLowerCase().includes(teacherSearchQuery.toLowerCase())
-    );
-  };
-
-  // Create new class
-  const createClass = async () => {
-    if (!formData.name.trim()) {
-      Alert.alert('Validation Error', 'Class name is required');
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      const apiClient = await getAuthenticatedClient();
       
-      await apiClient.post('/admin/classes', formData);
-      
-      Alert.alert('Success', 'Class created successfully');
-      setModalVisible(false);
-      resetForm();
-      await loadClasses();
+      Alert.alert('Success', `Class ${editingClass ? 'updated' : 'created'} successfully`);
+      setClassModalVisible(false);
+      await loadAllData();
     } catch (error) {
-      console.error('Error creating class:', error);
+      console.error('Error with class operation:', error);
       handleApiError(error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Update class
-  const updateClass = async () => {
-    if (!formData.name.trim() || !editingClass?._id) {
-      Alert.alert('Validation Error', 'Class name is required');
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      const apiClient = await getAuthenticatedClient();
-      
-      await apiClient.put(`/admin/classes/${editingClass._id}`, formData);
-      
-      Alert.alert('Success', 'Class updated successfully');
-      setModalVisible(false);
-      resetForm();
-      await loadClasses();
-    } catch (error) {
-      console.error('Error updating class:', error);
-      handleApiError(error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Delete class
-  const deleteClass = async (classId: string) => {
+  const deleteClass = (classId: string) => {
     Alert.alert(
       "Delete Class",
-      "Are you sure you want to delete this class? This action cannot be undone.",
+      "This will remove the class and all its associations. Continue?",
       [
+        { text: "Cancel", style: "cancel" },
         {
-          text: "Cancel",
-          style: "cancel"
-        },
-        {
-          text: "Delete", 
+          text: "Delete",
           style: "destructive",
           onPress: async () => {
             try {
               setIsLoading(true);
               const apiClient = await getAuthenticatedClient();
-              
               await apiClient.delete(`/admin/classes/${classId}`);
-              
               Alert.alert('Success', 'Class deleted successfully');
-              await loadClasses();
+              if (selectedClass?._id === classId) {
+                setSelectedClass(null);
+              }
+              await loadAllData();
             } catch (error) {
               console.error('Error deleting class:', error);
               handleApiError(error);
@@ -376,45 +262,60 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
     );
   };
 
-  // Assign multiple teachers to class
+  // Teacher operations
+  const openTeacherModal = (classData: ClassData) => {
+    setSelectedClass(classData);
+    setSelectedTeacherIds([]);
+    setTeacherSearchQuery('');
+    setTeacherModalVisible(true);
+  };
+
   const assignTeachers = async () => {
-    if (!selectedClassId || selectedTeacherIds.length === 0) {
-      Alert.alert('Validation Error', 'Please select at least one teacher');
+    if (!selectedClass || selectedTeacherIds.length === 0) {
+      Alert.alert('Error', 'Please select at least one teacher');
       return;
     }
 
-    const selectedCount = selectedTeacherIds.length;
-    const teacherText = selectedCount === 1 ? 'teacher' : 'teachers';
-    
+    try {
+      setIsLoading(true);
+      const apiClient = await getAuthenticatedClient();
+      await apiClient.post('/admin/classes/assign-teachers', {
+        classId: selectedClass._id,
+        teacherIds: selectedTeacherIds
+      });
+      
+      Alert.alert('Success', `${selectedTeacherIds.length} teacher(s) assigned`);
+      setTeacherModalVisible(false);
+      await loadAllData();
+    } catch (error) {
+      console.error('Error assigning teachers:', error);
+      handleApiError(error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const removeTeacherFromClass = (teacherId: string, classId: string) => {
     Alert.alert(
-      "Assign Teachers",
-      `Are you sure you want to assign ${selectedCount} ${teacherText} to this class?`,
+      "Remove Teacher",
+      "Remove this teacher from the class?",
       [
+        { text: "Cancel", style: "cancel" },
         {
-          text: "Cancel",
-          style: "cancel"
-        },
-        {
-          text: "Assign",
+          text: "Remove",
+          style: "destructive",
           onPress: async () => {
             try {
               setIsLoading(true);
               const apiClient = await getAuthenticatedClient();
-              
-              // Send multiple teacher IDs to backend
-              await apiClient.post('/admin/classes/assign-teachers', {
-                classId: selectedClassId,
-                teacherIds: selectedTeacherIds
+              await apiClient.post('/admin/classes/remove-teacher', {
+                classId,
+                teacherId
               });
-              
-              Alert.alert('Success', `${selectedCount} ${teacherText} assigned successfully`);
-              setTeacherModalVisible(false);
-              setSelectedClassId(null);
-              setSelectedTeacherIds([]);
-              setTeacherSearchQuery('');
-              await loadClasses();
+              Alert.alert('Success', 'Teacher removed from class');
+              await loadAllData();
             } catch (error) {
-              console.error('Error assigning teachers:', error);
+              console.error('Error removing teacher:', error);
               handleApiError(error);
             } finally {
               setIsLoading(false);
@@ -425,352 +326,503 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
     );
   };
 
-  // Handle API errors
-  const handleApiError = (error: any) => {
-    if (axios.isAxiosError(error) && error.response?.status === 401) {
-      // Unauthorized, token might be expired
-      Alert.alert(
-        "Session Expired",
-        "Your session has expired. Please login again.",
-        [{ text: "OK", onPress: () => handleLogout() }]
-      );
-    } else {
-      Alert.alert(
-        "Error",
-        error.response?.data?.msg || "An unexpected error occurred"
-      );
+  // Student operations
+  const openStudentModal = (classData: ClassData) => {
+    setSelectedClass(classData);
+    setSelectedStudentIds([]);
+    setStudentSearchQuery('');
+    setStudentModalVisible(true);
+  };
+
+  const assignStudents = async () => {
+    if (!selectedClass || selectedStudentIds.length === 0) {
+      Alert.alert('Error', 'Please select at least one student');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const apiClient = await getAuthenticatedClient();
+      await apiClient.post('/admin/classes/assign-students', {
+        classId: selectedClass._id,
+        studentIds: selectedStudentIds
+      });
+      
+      Alert.alert('Success', `${selectedStudentIds.length} student(s) assigned`);
+      setStudentModalVisible(false);
+      await loadAllData();
+    } catch (error) {
+      console.error('Error assigning students:', error);
+      handleApiError(error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Handle logout
+  const removeStudentFromClass = (studentId: string, classId: string) => {
+    Alert.alert(
+      "Remove Student",
+      "Remove this student from the class?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              const apiClient = await getAuthenticatedClient();
+              await apiClient.post('/admin/classes/remove-student', {
+                classId,
+                studentId
+              });
+              Alert.alert('Success', 'Student removed from class');
+              await loadAllData();
+            } catch (error) {
+              console.error('Error removing student:', error);
+              handleApiError(error);
+            } finally {
+              setIsLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Utility functions
+  const handleApiError = (error: any) => {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      Alert.alert("Session Expired", "Please login again.", [
+        { text: "OK", onPress: () => handleLogout() }
+      ]);
+    } else {
+      Alert.alert("Error", error.response?.data?.msg || "An error occurred");
+    }
+  };
+
   const handleLogout = async () => {
     try {
-      // Clear auth data
-      await AsyncStorage.removeItem('token');
-      await AsyncStorage.removeItem('userRole');
-      await AsyncStorage.removeItem('adminData');
-      
-      // Navigate to role selection
+      await AsyncStorage.multiRemove(['token', 'userRole', 'adminData']);
       navigation.replace('RoleSelection');
     } catch (error) {
       console.error('Logout error:', error);
-      Alert.alert("Error", "Failed to logout. Please try again.");
     }
   };
 
-  // View class details
-  const viewClassDetails = (classId: string) => {
-    // You'll need to create this screen
-    Alert.alert("Coming Soon", "Class details screen is under development.");
-    // navigation.navigate('ClassDetails', { classId });
-  };
-
-  // Filter classes based on search query
+  // Filter functions
   const filteredClasses = classes.filter(c => 
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     c.section.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Show loading indicator
+  const getAvailableTeachers = () => {
+    if (!selectedClass) return [];
+    const assignedTeacherIds = selectedClass.teacherIds.map(t => t._id);
+    return allTeachers.filter(teacher => !assignedTeacherIds.includes(teacher._id));
+  };
+
+  const getAvailableStudents = () => {
+    if (!selectedClass) return [];
+    const assignedStudentIds = selectedClass.studentIds.map(s => s._id);
+    return allStudents.filter(student => !assignedStudentIds.includes(student._id));
+  };
+
+  const filteredAvailableTeachers = getAvailableTeachers().filter(teacher =>
+    teacher.name.toLowerCase().includes(teacherSearchQuery.toLowerCase()) ||
+    teacher.email.toLowerCase().includes(teacherSearchQuery.toLowerCase())
+  );
+
+  const filteredAvailableStudents = getAvailableStudents().filter(student =>
+    student.name.toLowerCase().includes(studentSearchQuery.toLowerCase()) ||
+    student.studentId.toLowerCase().includes(studentSearchQuery.toLowerCase())
+  );
+
   if (isLoading && !refreshing) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
-        <ActivityIndicator size="large" color="#4E54C8" />
+        <StatusBar barStyle="dark-content" backgroundColor="#F7FAFC" />
+        <ActivityIndicator size="large" color="#4299E1" />
         <Text style={styles.loadingText}>Loading...</Text>
       </SafeAreaView>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
-      
-      <View style={styles.container}>
-        {/* School Info */}
-        <View style={styles.schoolInfoContainer}>
-          <View style={styles.schoolIconContainer}>
-            <FontAwesome5 name="school" size={16} color="#4E54C8" />
+  const renderClassItem = ({ item }: { item: ClassData }) => (
+    <View style={styles.classCard}>
+      <TouchableOpacity 
+        style={[styles.classHeader, selectedClass?._id === item._id && styles.selectedClassHeader]}
+        onPress={() => setSelectedClass(selectedClass?._id === item._id ? null : item)}
+      >
+        <View style={styles.classInfo}>
+          <Text style={styles.className}>{item.name}</Text>
+          <Text style={styles.classSection}>Section: {item.section || 'N/A'}</Text>
+          <View style={styles.statsRow}>
+            <Text style={styles.statText}>{item.teacherIds?.length || 0} Teachers</Text>
+            <Text style={styles.statText}>{item.studentIds?.length || 0} Students</Text>
           </View>
-          <Text style={styles.schoolCodeText}>
-            School Code: {adminData?.schoolCode || 'N/A'}
-          </Text>
         </View>
         
-        {/* Search Bar */}
+        <View style={styles.classActions}>
+          <TouchableOpacity onPress={() => openEditClassModal(item)} style={styles.actionBtn}>
+            <Feather name="edit-2" size={16} color="#4299E1" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => deleteClass(item._id)} style={styles.actionBtn}>
+            <Feather name="trash-2" size={16} color="#E53E3E" />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+
+      {selectedClass?._id === item._id && (
+        <View style={styles.classDetails}>
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'overview' && styles.activeTab]}
+              onPress={() => setActiveTab('overview')}
+            >
+              <Text style={[styles.tabText, activeTab === 'overview' && styles.activeTabText]}>
+                Overview
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'teachers' && styles.activeTab]}
+              onPress={() => setActiveTab('teachers')}
+            >
+              <Text style={[styles.tabText, activeTab === 'teachers' && styles.activeTabText]}>
+                Teachers ({item.teacherIds?.length || 0})
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'students' && styles.activeTab]}
+              onPress={() => setActiveTab('students')}
+            >
+              <Text style={[styles.tabText, activeTab === 'students' && styles.activeTabText]}>
+                Students ({item.studentIds?.length || 0})
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.tabContent}>
+            {activeTab === 'overview' && (
+              <View style={styles.overviewContent}>
+                <Text style={styles.overviewText}>Class: {item.name}</Text>
+                <Text style={styles.overviewText}>Section: {item.section || 'N/A'}</Text>
+                <Text style={styles.overviewText}>
+                  Created: {new Date(item.createdAt).toLocaleDateString()}
+                </Text>
+              </View>
+            )}
+
+            {activeTab === 'teachers' && (
+              <View style={styles.listContent}>
+                <TouchableOpacity
+                  style={styles.addButton}
+                  onPress={() => openTeacherModal(item)}
+                >
+                  <Feather name="plus" size={16} color="#4299E1" />
+                  <Text style={styles.addButtonText}>Add Teachers</Text>
+                </TouchableOpacity>
+                
+                {item.teacherIds?.map((teacher) => (
+                  <View key={teacher._id} style={styles.memberItem}>
+                    <View style={styles.memberInfo}>
+                      <Text style={styles.memberName}>{teacher.name}</Text>
+                      <Text style={styles.memberDetail}>{teacher.email}</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => removeTeacherFromClass(teacher._id, item._id)}
+                      style={styles.removeBtn}
+                    >
+                      <Feather name="x" size={16} color="#E53E3E" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {activeTab === 'students' && (
+              <View style={styles.listContent}>
+                <TouchableOpacity
+                  style={styles.addButton}
+                  onPress={() => openStudentModal(item)}
+                >
+                  <Feather name="plus" size={16} color="#4299E1" />
+                  <Text style={styles.addButtonText}>Add Students</Text>
+                </TouchableOpacity>
+                
+                {item.studentIds?.map((student) => (
+                  <View key={student._id} style={styles.memberItem}>
+                    <View style={styles.memberInfo}>
+                      <Text style={styles.memberName}>{student.name}</Text>
+                      <Text style={styles.memberDetail}>ID: {student.studentId}</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => removeStudentFromClass(student._id, item._id)}
+                      style={styles.removeBtn}
+                    >
+                      <Feather name="x" size={16} color="#E53E3E" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F7FAFC" />
+      
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.schoolCode}>School: {adminData?.schoolCode || 'N/A'}</Text>
+        
         <View style={styles.searchContainer}>
-          <Feather name="search" size={20} color="#8A94A6" style={styles.searchIcon} />
+          <Feather name="search" size={16} color="#718096" />
           <TextInput
             style={styles.searchInput}
             placeholder="Search classes..."
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholderTextColor="#8A94A6"
+            placeholderTextColor="#A0AEC0"
           />
-          {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Feather name="x" size={20} color="#8A94A6" />
-            </TouchableOpacity>
-          ) : null}
         </View>
         
-        {/* Add Class Button */}
-        <TouchableOpacity 
-          style={styles.addButton}
-          onPress={openCreateModal}
+        <TouchableOpacity
+          style={styles.createButton}
+          onPress={openCreateClassModal}
         >
-          <Feather name="plus" size={20} color="#FFFFFF" />
-          <Text style={styles.addButtonText}>Create New Class</Text>
+          <Feather name="plus" size={16} color="#FFF" />
+          <Text style={styles.createButtonText}>Create Class</Text>
         </TouchableOpacity>
-        
-        {/* Classes List */}
-        {classes.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <FontAwesome5 name="book" size={50} color="#D1D5DB" />
-            <Text style={styles.emptyText}>No classes found</Text>
-            <Text style={styles.emptySubText}>Create your first class to get started</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={filteredClasses}
-            keyExtractor={(item) => item._id}
-            contentContainerStyle={styles.listContent}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={["#4E54C8"]}
-              />
-            }
-            renderItem={({ item }) => (
-              <View style={styles.classCard}>
-                <TouchableOpacity 
-                  style={styles.classCardContent}
-                  onPress={() => viewClassDetails(item._id)}
-                >
-                  <View style={styles.classIconContainer}>
-                    <Ionicons name="book" size={24} color="#4E54C8" />
-                  </View>
-                  
-                  <View style={styles.classInfo}>
-                    <Text style={styles.className}>{item.name}</Text>
-                    <Text style={styles.classSection}>Section: {item.section || 'N/A'}</Text>
-                    <View style={styles.classStats}>
-                      <View style={styles.statItem}>
-                        <FontAwesome5 name="chalkboard-teacher" size={12} color="#8A94A6" />
-                        <Text style={styles.statText}>{item.teacherIds?.length || 0} Teachers</Text>
-                      </View>
-                      <View style={styles.statItem}>
-                        <FontAwesome5 name="user-graduate" size={12} color="#8A94A6" />
-                        <Text style={styles.statText}>{item.studentIds?.length || 0} Students</Text>
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-                
-                <View style={styles.cardActions}>
-                  <TouchableOpacity 
-                    style={[styles.actionButton, styles.assignButton]}
-                    onPress={() => openAssignTeacherModal(item._id)}
-                  >
-                    <FontAwesome5 name="user-plus" size={16} color="#4E54C8" />
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[styles.actionButton, styles.editButton]}
-                    onPress={() => openEditModal(item)}
-                  >
-                    <Feather name="edit-2" size={16} color="#FFA502" />
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[styles.actionButton, styles.deleteButton]}
-                    onPress={() => deleteClass(item._id)}
-                  >
-                    <Feather name="trash-2" size={16} color="#FF4757" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-          />
-        )}
       </View>
-      
-      {/* Add/Edit Class Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
+
+      {/* Classes List */}
+      {classes.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Feather name="book" size={48} color="#CBD5E0" />
+          <Text style={styles.emptyText}>No classes found</Text>
+          <Text style={styles.emptySubText}>Create your first class to get started</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredClasses}
+          keyExtractor={(item) => item._id}
+          renderItem={renderClassItem}
+          contentContainerStyle={styles.listContainer}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#4299E1"]} />
+          }
+        />
+      )}
+
+      {/* Class Modal */}
+      <Modal visible={classModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {isCreating ? 'Create New Class' : 'Update Class'}
+                {editingClass ? 'Edit Class' : 'Create Class'}
               </Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Feather name="x" size={24} color="#3A4276" />
+              <TouchableOpacity onPress={() => setClassModalVisible(false)}>
+                <Feather name="x" size={24} color="#2D3748" />
               </TouchableOpacity>
             </View>
             
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Class Name *</Text>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Class Name *</Text>
               <TextInput
                 style={styles.input}
                 placeholder="Enter class name"
-                value={formData.name}
-                onChangeText={(text) => handleInputChange('name', text)}
-                placeholderTextColor="#8A94A6"
+                value={classForm.name}
+                onChangeText={(text) => setClassForm(prev => ({ ...prev, name: text }))}
               />
             </View>
             
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Section</Text>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Section</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Enter section (e.g. A, B, C)"
-                value={formData.section}
-                onChangeText={(text) => handleInputChange('section', text)}
-                placeholderTextColor="#8A94A6"
+                placeholder="Enter section"
+                value={classForm.section}
+                onChangeText={(text) => setClassForm(prev => ({ ...prev, section: text }))}
               />
             </View>
             
             <View style={styles.modalActions}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setModalVisible(false)}
+                style={styles.cancelButton}
+                onPress={() => setClassModalVisible(false)}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              
               <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={isCreating ? createClass : updateClass}
+                style={styles.saveButton}
+                onPress={createOrUpdateClass}
               >
                 <Text style={styles.saveButtonText}>
-                  {isCreating ? 'Create' : 'Update'}
+                  {editingClass ? 'Update' : 'Create'}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-      
-      {/* Assign Teachers Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={teacherModalVisible}
-        onRequestClose={() => setTeacherModalVisible(false)}
-      >
+
+      {/* Teacher Assignment Modal */}
+      <Modal visible={teacherModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, styles.teacherModalContent]}>
+          <View style={[styles.modalContent, styles.largeModal]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Assign Teachers</Text>
               <TouchableOpacity onPress={() => setTeacherModalVisible(false)}>
-                <Feather name="x" size={24} color="#3A4276" />
+                <Feather name="x" size={24} color="#2D3748" />
               </TouchableOpacity>
             </View>
             
-            <Text style={styles.modalSubtitle}>
-              Select teachers to assign to this class ({selectedTeacherIds.length} selected)
-            </Text>
-            
-            {/* Teacher Search Bar */}
             <View style={styles.searchContainer}>
-              <Feather name="search" size={20} color="#8A94A6" style={styles.searchIcon} />
+              <Feather name="search" size={16} color="#718096" />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search teachers..."
+                placeholder="Search available teachers..."
                 value={teacherSearchQuery}
                 onChangeText={setTeacherSearchQuery}
-                placeholderTextColor="#8A94A6"
+                placeholderTextColor="#A0AEC0"
               />
-              {teacherSearchQuery ? (
-                <TouchableOpacity onPress={() => setTeacherSearchQuery('')}>
-                  <Feather name="x" size={20} color="#8A94A6" />
+            </View>
+            
+            <Text style={styles.sectionTitle}>
+              Available Teachers ({filteredAvailableTeachers.length})
+            </Text>
+            
+            <ScrollView style={styles.membersList}>
+              {filteredAvailableTeachers.map((teacher) => (
+                <TouchableOpacity
+                  key={teacher._id}
+                  style={[
+                    styles.selectableItem,
+                    selectedTeacherIds.includes(teacher._id) && styles.selectedItem
+                  ]}
+                  onPress={() => {
+                    setSelectedTeacherIds(prev =>
+                      prev.includes(teacher._id)
+                        ? prev.filter(id => id !== teacher._id)
+                        : [...prev, teacher._id]
+                    );
+                  }}
+                >
+                  <View style={styles.memberInfo}>
+                    <Text style={styles.memberName}>{teacher.name}</Text>
+                    <Text style={styles.memberDetail}>{teacher.email}</Text>
+                  </View>
+                  <View style={styles.checkbox}>
+                    {selectedTeacherIds.includes(teacher._id) && (
+                      <Feather name="check" size={16} color="#4299E1" />
+                    )}
+                  </View>
                 </TouchableOpacity>
-              ) : null}
-            </View>
-            
-            {/* Selection Controls */}
-            <View style={styles.selectionControls}>
-              <TouchableOpacity
-                style={styles.selectionButton}
-                onPress={selectAllTeachers}
-              >
-                <Feather name="check-square" size={16} color="#4E54C8" />
-                <Text style={styles.selectionButtonText}>Select All</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.selectionButton}
-                onPress={clearAllSelections}
-              >
-                <Feather name="square" size={16} color="#8A94A6" />
-                <Text style={[styles.selectionButtonText, { color: '#8A94A6' }]}>Clear All</Text>
-              </TouchableOpacity>
-            </View>
-            
-            {teachers.length === 0 ? (
-              <View style={styles.emptyTeachers}>
-                <Text style={styles.emptyTeachersText}>No teachers available</Text>
-              </View>
-            ) : (
-              <ScrollView style={styles.teachersList}>
-                {getFilteredTeachers().map((teacher) => (
-                  <TouchableOpacity
-                    key={teacher._id}
-                    style={[
-                      styles.teacherItem,
-                      selectedTeacherIds.includes(teacher._id) && styles.selectedTeacher
-                    ]}
-                    onPress={() => toggleTeacherSelection(teacher._id)}
-                  >
-                    <View style={styles.teacherCheckbox}>
-                      {selectedTeacherIds.includes(teacher._id) ? (
-                        <Ionicons name="checkbox" size={24} color="#4E54C8" />
-                      ) : (
-                        <Ionicons name="checkbox-outline" size={24} color="#8A94A6" />
-                      )}
-                    </View>
-                    
-                    <View style={styles.teacherAvatar}>
-                      <FontAwesome5 name="user" size={16} color="#4E54C8" />
-                    </View>
-                    
-                    <View style={styles.teacherInfo}>
-                      <Text style={styles.teacherName}>{teacher.name}</Text>
-                      <Text style={styles.teacherEmail}>{teacher.email}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
+              ))}
+            </ScrollView>
             
             <View style={styles.modalActions}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
+                style={styles.cancelButton}
                 onPress={() => setTeacherModalVisible(false)}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              
               <TouchableOpacity
                 style={[
-                  styles.modalButton, 
                   styles.saveButton,
                   selectedTeacherIds.length === 0 && styles.disabledButton
                 ]}
                 onPress={assignTeachers}
                 disabled={selectedTeacherIds.length === 0}
               >
-                <Text style={[
-                  styles.saveButtonText,
-                  selectedTeacherIds.length === 0 && styles.disabledButtonText
-                ]}>
+                <Text style={styles.saveButtonText}>
                   Assign ({selectedTeacherIds.length})
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Student Assignment Modal */}
+      <Modal visible={studentModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, styles.largeModal]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Assign Students</Text>
+              <TouchableOpacity onPress={() => setStudentModalVisible(false)}>
+                <Feather name="x" size={24} color="#2D3748" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.searchContainer}>
+              <Feather name="search" size={16} color="#718096" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search available students..."
+                value={studentSearchQuery}
+                onChangeText={setStudentSearchQuery}
+                placeholderTextColor="#A0AEC0"
+              />
+            </View>
+            
+            <Text style={styles.sectionTitle}>
+              Available Students ({filteredAvailableStudents.length})
+            </Text>
+            
+            <ScrollView style={styles.membersList}>
+              {filteredAvailableStudents.map((student) => (
+                <TouchableOpacity
+                  key={student._id}
+                  style={[
+                    styles.selectableItem,
+                    selectedStudentIds.includes(student._id) && styles.selectedItem
+                  ]}
+                  onPress={() => {
+                    setSelectedStudentIds(prev =>
+                      prev.includes(student._id)
+                        ? prev.filter(id => id !== student._id)
+                        : [...prev, student._id]
+                    );
+                  }}
+                >
+                  <View style={styles.memberInfo}>
+                    <Text style={styles.memberName}>{student.name}</Text>
+                    <Text style={styles.memberDetail}>ID: {student.studentId}</Text>
+                  </View>
+                  <View style={styles.checkbox}>
+                    {selectedStudentIds.includes(student._id) && (
+                      <Feather name="check" size={16} color="#4299E1" />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setStudentModalVisible(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.saveButton,
+                  selectedStudentIds.length === 0 && styles.disabledButton
+                ]}
+                onPress={assignStudents}
+                disabled={selectedStudentIds.length === 0}
+              >
+                <Text style={styles.saveButtonText}>
+                  Assign ({selectedStudentIds.length})
                 </Text>
               </TouchableOpacity>
             </View>
@@ -780,185 +832,223 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F8F9FC',
-  },
   container: {
     flex: 1,
-    padding: 16,
+    backgroundColor: '#F7FAFC',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8F9FC',
+    backgroundColor: '#F7FAFC',
   },
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: '#3A4276',
+    color: '#2D3748',
   },
-  schoolInfoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
+  header: {
+    backgroundColor: '#FFF',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
   },
-  schoolIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(78, 84, 200, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  schoolCodeText: {
+  schoolCode: {
     fontSize: 14,
-    color: '#3A4276',
-    fontWeight: '500',
+    color: '#718096',
+    marginBottom: 12,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F7FAFC',
     borderRadius: 8,
     paddingHorizontal: 12,
-    marginBottom: 16,
-    height: 48,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  searchIcon: {
-    marginRight: 8,
+    paddingVertical: 8,
+    marginBottom: 12,
   },
   searchInput: {
     flex: 1,
+    marginLeft: 8,
     fontSize: 16,
-    color: '#3A4276',
-    height: '100%',
+    color: '#2D3748',
   },
-  addButton: {
+  createButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4E54C8',
+    backgroundColor: '#4299E1',
     borderRadius: 8,
-    paddingVertical: 12,
-    marginBottom: 16,
-    shadowColor: '#4E54C8',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    justifyContent: 'center',
   },
-  addButtonText: {
-    color: '#FFFFFF',
+  createButtonText: {
+    color: '#FFF',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '500',
     marginLeft: 8,
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#3A4276',
-    marginTop: 16,
-  },
-  emptySubText: {
-    fontSize: 14,
-    color: '#8A94A6',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  listContent: {
-    paddingBottom: 20,
+  listContainer: {
+    padding: 16,
   },
   classCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFF',
     borderRadius: 12,
     marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     elevation: 3,
-    overflow: 'hidden',
   },
-  classCardContent: {
+  classHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 16,
   },
-  classIconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(78, 84, 200, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
+  selectedClassHeader: {
+    backgroundColor: '#EBF8FF',
   },
   classInfo: {
     flex: 1,
   },
   className: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
-    color: '#3A4276',
+    color: '#2D3748',
     marginBottom: 4,
   },
   classSection: {
     fontSize: 14,
-    color: '#8A94A6',
+    color: '#718096',
     marginBottom: 8,
   },
-  classStats: {
+  statsRow: {
     flexDirection: 'row',
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 16,
+    gap: 16,
   },
   statText: {
     fontSize: 12,
-    color: '#8A94A6',
-    marginLeft: 4,
+    color: '#4A5568',
+    backgroundColor: '#EDF2F7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
-  cardActions: {
-  flexDirection: 'row',
-  justifyContent: 'flex-end',
-  alignItems: 'center',
-  paddingHorizontal: 16,
-  paddingVertical: 12,
-  borderTopWidth: 1,
-  borderTopColor: '#F3F4F6',
-},
-actionButton: {
-  width: 44,
-  height: 44,
-  borderRadius: 22,
-  justifyContent: 'center',
-  alignItems: 'center',
-  marginHorizontal: 8, // Equal spacing on left and right
-},
-  assignButton: {
-    backgroundColor: 'rgba(78, 84, 200, 0.1)',
+  classActions: {
+    flexDirection: 'row',
+    gap: 8,
   },
-  editButton: {
-    backgroundColor: 'rgba(255, 165, 2, 0.1)',
+  actionBtn: {
+    padding: 8,
+    borderRadius: 6,
+    backgroundColor: '#F7FAFC',
   },
-  deleteButton: {
-    backgroundColor: 'rgba(255, 71, 87, 0.1)',
+  classDetails: {
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  activeTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#4299E1',
+  },
+  tabText: {
+    fontSize: 14,
+    color: '#718096',
+    fontWeight: '500',
+  },
+  activeTabText: {
+    color: '#4299E1',
+  },
+  tabContent: {
+    padding: 16,
+  },
+  overviewContent: {
+    gap: 8,
+  },
+  overviewText: {
+    fontSize: 14,
+    color: '#4A5568',
+  },
+  listContent: {
+    gap: 12,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EBF8FF',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#BEE3F8',
+    borderStyle: 'dashed',
+  },
+  addButtonText: {
+    color: '#4299E1',
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  memberItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F7FAFC',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  memberInfo: {
+    flex: 1,
+  },
+  memberName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#2D3748',
+    marginBottom: 2,
+  },
+  memberDetail: {
+    fontSize: 12,
+    color: '#718096',
+  },
+  removeBtn: {
+    padding: 4,
+    borderRadius: 4,
+    backgroundColor: '#FED7D7',
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#4A5568',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: '#718096',
+    textAlign: 'center',
   },
   modalOverlay: {
     flex: 1,
@@ -967,162 +1057,118 @@ actionButton: {
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFF',
     borderRadius: 16,
     padding: 24,
     width: '90%',
-    maxWidth: 400,
     maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  teacherModalContent: {
-    maxHeight: '85%',
-    height: 600,
+  largeModal: {
+    width: '95%',
+    maxHeight: '90%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 24,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
-    color: '#3A4276',
+    color: '#2D3748',
   },
-  modalSubtitle: {
-    fontSize: 14,
-    color: '#8A94A6',
+  inputGroup: {
     marginBottom: 16,
   },
-  formGroup: {
-    marginBottom: 16,
-  },
-  label: {
+  inputLabel: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#3A4276',
+    color: '#4A5568',
     marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#E2E8F0',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: 10,
     fontSize: 16,
-    color: '#3A4276',
-    backgroundColor: '#FFFFFF',
+    color: '#2D3748',
+    backgroundColor: '#FFF',
   },
   modalActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
+    gap: 12,
     marginTop: 24,
   },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   cancelButton: {
-    backgroundColor: '#F3F4F6',
-    marginRight: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   cancelButtonText: {
-    color: '#6B7280',
+    color: '#4A5568',
     fontSize: 16,
     fontWeight: '500',
   },
   saveButton: {
-    backgroundColor: '#4E54C8',
-    marginLeft: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#4299E1',
   },
   saveButtonText: {
-    color: '#FFFFFF',
+    color: '#FFF',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   disabledButton: {
-    backgroundColor: '#D1D5DB',
+    backgroundColor: '#CBD5E0',
   },
-  disabledButtonText: {
-    color: '#9CA3AF',
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2D3748',
+    marginBottom: 12,
+    marginTop: 16,
   },
-  selectionControls: {
+  membersList: {
+    maxHeight: 300,
+  },
+  selectableItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  selectionButton: {
-    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-    backgroundColor: '#F3F4F6',
-  },
-  selectionButtonText: {
-    fontSize: 14,
-    color: '#4E54C8',
-    marginLeft: 6,
-    fontWeight: '500',
-  },
-  teachersList: {
-    flex: 1,
-    marginBottom: 16,
-  },
-  teacherItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    backgroundColor: '#F7FAFC',
+    borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
     marginBottom: 8,
-    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#E2E8F0',
   },
-  selectedTeacher: {
-    backgroundColor: 'rgba(78, 84, 200, 0.05)',
-    borderColor: '#4E54C8',
+  selectedItem: {
+    backgroundColor: '#EBF8FF',
+    borderColor: '#4299E1',
   },
-  teacherCheckbox: {
-    marginRight: 12,
-  },
-  teacherAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(78, 84, 200, 0.1)',
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
-  },
-  teacherInfo: {
-    flex: 1,
-  },
-  teacherName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#3A4276',
-    marginBottom: 2,
-  },
-  teacherEmail: {
-    fontSize: 14,
-    color: '#8A94A6',
-  },
-  emptyTeachers: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  emptyTeachersText: {
-    fontSize: 16,
-    color: '#8A94A6',
-    textAlign: 'center',
   },
 });
 
-  export default AdminClassesScreen;
+export default AdminClassesScreen;
