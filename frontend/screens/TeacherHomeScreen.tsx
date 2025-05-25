@@ -44,6 +44,7 @@ interface Teacher {
   phone?: string;
   subject?: string;
   profileImage?: string;
+  adminClassId?: string;
 }
 
 interface Class {
@@ -54,6 +55,7 @@ interface Class {
   studentsCount: number;
   schedule?: string;
   room?: string;
+  isAdmin?: boolean;
 }
 
 const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
@@ -66,7 +68,8 @@ const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
 
   // States
   const [teacher, setTeacher] = useState<Teacher | null>(null);
-  const [classes, setClasses] = useState<Class[]>([]);
+  const [adminClass, setAdminClass] = useState<Class | null>(null);
+  const [normalClasses, setNormalClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [token, setToken] = useState<string | null>(null);
@@ -74,6 +77,8 @@ const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
   const [statsData, setStatsData] = useState({
     totalStudents: 0,
     totalClasses: 0,
+    adminClassStudents: 0,
+    normalClassesStudents: 0,
   });
 
   // Check network connectivity
@@ -197,17 +202,35 @@ const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
 
       console.log('Classes fetched successfully:', response.data.classes.length);
       const fetchedClasses = response.data.classes;
-      setClasses(fetchedClasses);
+      
+      // Separate admin class from normal classes
+      const adminClassData = fetchedClasses.find((cls: Class) => cls.isAdmin);
+      const normalClassesData = fetchedClasses.filter((cls: Class) => !cls.isAdmin);
+      
+      setAdminClass(adminClassData || null);
+      setNormalClasses(normalClassesData);
       
       // Update stats data
       let totalStudents = 0;
+      let adminClassStudents = 0;
+      let normalClassesStudents = 0;
+      
       fetchedClasses.forEach((cls: Class) => {
-        totalStudents += cls.studentsCount || 0;
+        const studentCount = cls.studentsCount || 0;
+        totalStudents += studentCount;
+        
+        if (cls.isAdmin) {
+          adminClassStudents += studentCount;
+        } else {
+          normalClassesStudents += studentCount;
+        }
       });
       
       setStatsData({
         totalStudents,
         totalClasses: fetchedClasses.length,
+        adminClassStudents,
+        normalClassesStudents,
       });
     } catch (error) {
       console.error('Error fetching classes:', error);
@@ -272,7 +295,8 @@ const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
               await AsyncStorage.multiRemove(['teacherToken', 'teacherData', 'userRole']);
               setToken(null);
               setTeacher(null);
-              setClasses([]);
+              setAdminClass(null);
+              setNormalClasses([]);
               
               // Navigate to login and prevent going back
              navigation.navigate('RoleSelection');
@@ -287,9 +311,15 @@ const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   // Navigate to class details
-  const handleClassPress = (classItem: Class) => {
-  navigation.navigate('TeacherClassDetails', { classId: classItem._id, className: classItem.name });
-};
+  const handleNormalClassPress = (classItem: Class) => {
+    navigation.navigate('TeacherClassDetails', { classId: classItem._id, className: classItem.name });
+  };
+
+  // Navigate to admin class details
+  const handleAdminClassPress = (classItem: Class) => {
+    // TODO: Navigate to admin class screen when implemented
+    navigation.navigate('TeacherAdminClassDetails', { classId: classItem._id, className: classItem.name });
+  };
 
   // Navigate to other screens
   const navigateToSettings = () => {
@@ -302,11 +332,49 @@ const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
     // navigation.navigate('TeacherNotifications');
   };
 
-  // Render class card
-  const renderClassCard = ({ item }: { item: Class }) => (
+  // Render admin class card
+  const renderAdminClassCard = (classItem: Class) => (
+    <TouchableOpacity 
+      style={styles.adminClassCard}
+      onPress={() => handleAdminClassPress(classItem)}
+    >
+      <LinearGradient
+        colors={['#FF6B6B', '#FFE66D']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.adminClassGradientBorder}
+      >
+        <View style={styles.adminClassCardContent}>
+          <View style={styles.adminClassHeader}>
+            <View style={styles.adminBadge}>
+              <FontAwesome5 name="crown" size={12} color="#FF6B6B" />
+              <Text style={styles.adminBadgeText}>ADMIN</Text>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={16} color="#8A94A6" />
+          </View>
+          <View style={styles.adminClassDetails}>
+            <View style={styles.adminClassIconContainer}>
+              <FontAwesome5 name="user-tie" size={24} color="#FF6B6B" />
+            </View>
+            <View style={styles.adminClassInfo}>
+              <Text style={styles.adminClassName}>{classItem.name}</Text>
+              <Text style={styles.adminClassGrade}>Grade {classItem.grade} | Section {classItem.section}</Text>
+              <View style={styles.adminStudentCountContainer}>
+                <FontAwesome5 name="user-graduate" size={12} color="#8A94A6" />
+                <Text style={styles.adminStudentCount}>{classItem.studentsCount} Students</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+
+  // Render normal class card
+  const renderNormalClassCard = ({ item }: { item: Class }) => (
     <TouchableOpacity 
       style={styles.classCard}
-      onPress={() => handleClassPress(item)}
+      onPress={() => handleNormalClassPress(item)}
     >
       <LinearGradient
         colors={['#1CB5E0', '#38EF7D']}
@@ -428,7 +496,7 @@ const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
                 <FontAwesome5 name="chalkboard-teacher" size={22} color="#1CB5E0" />
               </View>
               <Text style={styles.statsNumber}>{statsData.totalClasses}</Text>
-              <Text style={styles.statsLabel}>Classes</Text>
+              <Text style={styles.statsLabel}>Total Classes</Text>
             </View>
             
             <View style={styles.statsCard}>
@@ -436,7 +504,7 @@ const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
                 <FontAwesome5 name="user-graduate" size={22} color="#38EF7D" />
               </View>
               <Text style={styles.statsNumber}>{statsData.totalStudents}</Text>
-              <Text style={styles.statsLabel}>Students</Text>
+              <Text style={styles.statsLabel}>Total Students</Text>
             </View>
             
             <TouchableOpacity 
@@ -454,28 +522,43 @@ const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         </View>
 
-        {/* Classes Section */}
-        <View style={styles.classesSection}>
-          <Text style={styles.sectionTitle}>My Classes</Text>
-          
-          {classes.length === 0 ? (
-            <View style={styles.noClassesContainer}>
-              <FontAwesome5 name="book" size={48} color="#B0B7C3" />
-              <Text style={styles.noClassesText}>No classes assigned yet</Text>
-              <Text style={styles.noClassesSubtext}>
-                Pull down to refresh or contact administration
-              </Text>
-            </View>
-          ) : (
+        {/* Admin Class Section */}
+        {adminClass && (
+          <View style={styles.adminClassSection}>
+            <Text style={styles.sectionTitle}>Admin Class</Text>
+            <Text style={styles.sectionSubtitle}>You are the class administrator for this class</Text>
+            {renderAdminClassCard(adminClass)}
+          </View>
+        )}
+
+        {/* Normal Classes Section */}
+        {normalClasses.length > 0 && (
+          <View style={styles.classesSection}>
+            <Text style={styles.sectionTitle}>Teaching Classes</Text>
+            <Text style={styles.sectionSubtitle}>Classes where you are a subject teacher</Text>
+            
             <FlatList
-              data={classes}
-              renderItem={renderClassCard}
+              data={normalClasses}
+              renderItem={renderNormalClassCard}
               keyExtractor={(item) => item._id}
               scrollEnabled={false}
               contentContainerStyle={styles.classesList}
             />
-          )}
-        </View>
+          </View>
+        )}
+
+        {/* No Classes Section */}
+        {!adminClass && normalClasses.length === 0 && (
+          <View style={styles.noClassesSection}>
+            <View style={styles.noClassesContainer}>
+              <FontAwesome5 name="book" size={48} color="#B0B7C3" />
+              <Text style={styles.noClassesText}>No classes assigned yet</Text>
+              <Text style={styles.noClassesSubtext}>
+                You haven't been assigned to any classes yet. Please contact your school administrator or pull down to refresh.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Notifications Card */}
         <TouchableOpacity 
@@ -564,20 +647,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F2F8',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  logoImage: {
-    width: 30,
-    height: 30,
-    marginRight: 8,
-  },
-  appName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#3A4276',
   },
   profileContainer: {
     marginBottom: 20,
@@ -697,7 +766,87 @@ const styles = StyleSheet.create({
   statsLabel: {
     fontSize: 12,
     color: '#8A94A6',
+    textAlign: 'center',
   },
+  // Admin Class Styles
+  adminClassSection: {
+    marginBottom: 20,
+  },
+  adminClassCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#FF6B6B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  adminClassGradientBorder: {
+    padding: 2,
+    borderRadius: 16,
+  },
+  adminClassCardContent: {
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+  },
+  adminClassHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  adminBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  adminBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FF6B6B',
+    marginLeft: 4,
+  },
+  adminClassDetails: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  adminClassIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  adminClassInfo: {
+    flex: 1,
+  },
+  adminClassName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#3A4276',
+    marginBottom: 4,
+  },
+  adminClassGrade: {
+    fontSize: 14,
+    color: '#8A94A6',
+    marginBottom: 8,
+  },
+  adminStudentCountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  adminStudentCount: {
+    fontSize: 12,
+    color: '#8A94A6',
+    marginLeft: 6,
+  },
+  // Normal Classes Styles
   classesSection: {
     marginBottom: 20,
   },
@@ -705,6 +854,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#3A4276',
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    color: '#8A94A6',
     marginBottom: 16,
   },
   classesList: {
@@ -745,7 +899,7 @@ const styles = StyleSheet.create({
   },
   className: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#3A4276',
     marginBottom: 4,
   },
@@ -764,57 +918,55 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   arrowContainer: {
-    width: 24,
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
+    marginLeft: 12,
+  },
+  // No Classes Section
+  noClassesSection: {
+    marginTop: 40,
+    marginBottom: 40,
   },
   noClassesContainer: {
-    padding: 32,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
+    paddingVertical: 40,
+    paddingHorizontal: 32,
   },
   noClassesText: {
     fontSize: 18,
     fontWeight: '600',
     color: '#3A4276',
-    marginTop: 16,
+    marginTop: 20,
     marginBottom: 8,
+    textAlign: 'center',
   },
   noClassesSubtext: {
     fontSize: 14,
     color: '#8A94A6',
     textAlign: 'center',
+    lineHeight: 20,
   },
+  // Notifications Card
   notificationsCard: {
-    borderRadius: 12,
     marginBottom: 20,
+    borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowColor: '#1CB5E0',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
   },
   notificationsGradient: {
-    borderRadius: 12,
+    padding: 16,
+    borderRadius: 16,
   },
   notificationsContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
   },
   notificationsIconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -833,14 +985,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(255, 255, 255, 0.8)',
   },
+  // Version Info
   versionContainer: {
     alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 20,
+    paddingVertical: 16,
   },
   versionText: {
     fontSize: 12,
-    color: '#8A94A6',
+    color: '#B0B7C3',
+    fontWeight: '500',
   },
 });
 

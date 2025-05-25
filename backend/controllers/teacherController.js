@@ -169,3 +169,62 @@ exports.getAdminClass = async (req, res) => {
     res.status(500).send('Server error');
   }
 };
+
+// Add this to your teacherController.js
+
+// Get specific admin class details by classId (for class admin)
+exports.getAdminClassById = async (req, res) => {
+  try {
+    const { classId } = req.params;
+    const teacher = await Teacher.findById(req.user.id);
+    
+    if (!teacher) {
+      return res.status(404).json({ msg: 'Teacher not found' });
+    }
+    
+    // Check if the teacher is admin of the requested class
+    if (!teacher.adminClassId || teacher.adminClassId.toString() !== classId) {
+      return res.status(403).json({ msg: 'Not authorized as admin for this class' });
+    }
+    
+    // Get the class details
+    const classDetails = await Class.findById(classId);
+    if (!classDetails) {
+      return res.status(404).json({ msg: 'Class not found' });
+    }
+    
+    // Get students in the class
+    const students = await Student.find({ classId }).select('-password');
+    
+    // Get all teachers assigned to this class
+    const teachers = await Teacher.find({ 
+      classIds: classId 
+    }).select('name email subject');
+    
+    // Return in the format expected by frontend
+    res.json({
+      _id: classDetails._id,
+      name: classDetails.name,
+      section: classDetails.section,
+      grade: classDetails.grade || '',
+      teacherIds: teachers,
+      studentIds: students,
+      schoolId: classDetails.schoolId,
+      schedule: classDetails.schedule || '',
+      room: classDetails.room || '',
+      description: classDetails.description || ''
+    });
+  } catch (err) {
+    console.error('Error fetching admin class by ID:', err.message);
+    
+    // Check if the classId is not a valid ObjectId
+    if (err instanceof mongoose.Error.CastError) {
+      return res.status(400).json({ msg: 'Invalid class ID format' });
+    }
+    
+    res.status(500).send('Server error');
+  }
+};
+
+// And add this route to your teacherRoutes.js:
+// router.get('/admin/class/:classId', auth, teacherController.getAdminClassById);
