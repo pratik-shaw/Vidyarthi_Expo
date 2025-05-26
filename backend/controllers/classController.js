@@ -425,7 +425,12 @@ exports.assignStudents = async (req, res) => {
       return res.status(404).json({ msg: 'Class not found or not authorized' });
     }
 
-    console.log('Class found:', { classId: classObj._id, currentStudentIds: classObj.studentIds });
+    console.log('Class found:', { 
+      classId: classObj._id, 
+      className: classObj.name,
+      section: classObj.section,
+      currentStudentIds: classObj.studentIds 
+    });
 
     // Find all students and ensure they belong to admin's school
     const students = await Student.find({ 
@@ -436,7 +441,7 @@ exports.assignStudents = async (req, res) => {
     console.log('Students found:', { 
       requestedCount: validStudentIds.length, 
       foundCount: students.length,
-      foundStudents: students.map(s => ({ id: s._id, name: s.name }))
+      foundStudents: students.map(s => ({ id: s._id, name: s.name, currentClassId: s.classId }))
     });
 
     if (students.length === 0) {
@@ -450,7 +455,13 @@ exports.assignStudents = async (req, res) => {
 
     let assignedCount = 0;
     let alreadyAssignedCount = 0;
+    let reassignedCount = 0;
     const assignmentResults = [];
+
+    // Initialize studentIds array in class if it doesn't exist
+    if (!classObj.studentIds) {
+      classObj.studentIds = [];
+    }
 
     // Process each student
     for (const student of students) {
@@ -458,28 +469,35 @@ exports.assignStudents = async (req, res) => {
         let studentUpdated = false;
         let classUpdated = false;
 
-        // Initialize classIds array if it doesn't exist
-        if (!student.classIds) {
-          student.classIds = [];
-        }
-
-        // Initialize studentIds array if it doesn't exist
-        if (!classObj.studentIds) {
-          classObj.studentIds = [];
-        }
-
-        // Check if student is already in the class
+        // Check if student is already in this specific class
         const studentAlreadyInClass = classObj.studentIds.some(id => id.toString() === student._id.toString());
-        const classAlreadyInStudent = student.classIds.some(id => id.toString() === classId.toString());
+        const studentCurrentlyInThisClass = student.classId && student.classId.toString() === classId.toString();
 
-        if (studentAlreadyInClass && classAlreadyInStudent) {
+        if (studentAlreadyInClass && studentCurrentlyInThisClass) {
           alreadyAssignedCount++;
           assignmentResults.push({
             studentId: student._id,
             studentName: student.name,
-            status: 'already_assigned'
+            status: 'already_assigned',
+            currentClass: student.className
           });
           continue;
+        }
+
+        // If student has a different class, remove them from the old class first
+        if (student.classId && student.classId.toString() !== classId.toString()) {
+          try {
+            const oldClass = await Class.findById(student.classId);
+            if (oldClass && oldClass.studentIds) {
+              oldClass.studentIds = oldClass.studentIds.filter(id => id.toString() !== student._id.toString());
+              await oldClass.save();
+              console.log('Removed student from old class:', { studentId: student._id, oldClassId: student.classId });
+              reassignedCount++;
+            }
+          } catch (oldClassError) {
+            console.error('Error removing student from old class:', oldClassError);
+            // Continue with assignment to new class even if old class removal fails
+          }
         }
 
         // Update class with student ID if not already present
@@ -488,26 +506,31 @@ exports.assignStudents = async (req, res) => {
           classUpdated = true;
         }
 
-        // Update student with class ID if not already present
-        if (!classAlreadyInStudent) {
-          student.classIds.push(classId);
-          studentUpdated = true;
-        }
+        // Update student with new class information
+        student.classId = classId;
+        student.className = classObj.name || '';
+        student.section = classObj.section || '';
+        studentUpdated = true;
 
-        // Save student if updated
+        // Save student
         if (studentUpdated) {
           await student.save();
-          console.log('Student updated:', student._id);
-        }
-
-        if (studentUpdated || classUpdated) {
-          assignedCount++;
-          assignmentResults.push({
-            studentId: student._id,
-            studentName: student.name,
-            status: 'assigned'
+          console.log('Student updated:', { 
+            studentId: student._id, 
+            newClassId: student.classId,
+            newClassName: student.className,
+            newSection: student.section
           });
         }
+
+        assignedCount++;
+        assignmentResults.push({
+          studentId: student._id,
+          studentName: student.name,
+          status: reassignedCount > 0 ? 'reassigned' : 'assigned',
+          newClass: student.className,
+          newSection: student.section
+        });
 
       } catch (studentError) {
         console.error('Error processing student:', student._id, studentError);
@@ -535,11 +558,12 @@ exports.assignStudents = async (req, res) => {
     // Prepare response message
     let message = '';
     if (assignedCount > 0 && alreadyAssignedCount > 0) {
-      message = `${assignedCount} student(s) newly assigned, ${alreadyAssignedCount} already assigned`;
+      message = `${assignedCount} student(s) assigned (${reassignedCount} reassigned), ${alreadyAssignedCount} already assigned`;
     } else if (assignedCount > 0) {
+      const reassignedText = reassignedCount > 0 ? ` (${reassignedCount} reassigned from other classes)` : '';
       message = assignedCount === 1 
-        ? `${assignedCount} student assigned to class successfully`
-        : `${assignedCount} students assigned to class successfully`;
+        ? `${assignedCount} student assigned to class successfully${reassignedText}`
+        : `${assignedCount} students assigned to class successfully${reassignedText}`;
     } else if (alreadyAssignedCount > 0) {
       message = `All ${alreadyAssignedCount} student(s) were already assigned to this class`;
     } else {
@@ -548,6 +572,7 @@ exports.assignStudents = async (req, res) => {
 
     console.log('Assignment completed:', {
       assignedCount,
+      reassignedCount,
       alreadyAssignedCount,
       totalRequested: validStudentIds.length,
       totalFound: students.length
@@ -556,6 +581,7 @@ exports.assignStudents = async (req, res) => {
     res.json({ 
       msg: message,
       assignedCount,
+      reassignedCount,
       alreadyAssignedCount,
       totalRequested: validStudentIds.length,
       totalFound: students.length,
@@ -615,22 +641,20 @@ exports.removeStudent = async (req, res) => {
       classId: classObj._id, 
       studentId: student._id,
       currentClassStudents: classObj.studentIds?.length || 0,
-      studentClasses: student.classIds?.length || 0
+      studentCurrentClass: student.classId,
+      studentCurrentClassName: student.className
     });
 
     // Initialize arrays if they don't exist
     if (!classObj.studentIds) {
       classObj.studentIds = [];
     }
-    if (!student.classIds) {
-      student.classIds = [];
-    }
 
     // Check if student is actually in the class
     const studentInClass = classObj.studentIds.some(id => id.toString() === studentId);
-    const classInStudent = student.classIds.some(id => id.toString() === classId);
+    const studentAssignedToThisClass = student.classId && student.classId.toString() === classId;
 
-    if (!studentInClass && !classInStudent) {
+    if (!studentInClass && !studentAssignedToThisClass) {
       console.log('Student not found in class');
       return res.status(400).json({ msg: 'Student is not assigned to this class' });
     }
@@ -646,12 +670,13 @@ exports.removeStudent = async (req, res) => {
       console.log('Removed student from class:', { originalLength, newLength: classObj.studentIds.length });
     }
 
-    // Remove class from student if present
-    if (classInStudent) {
-      const originalLength = student.classIds.length;
-      student.classIds = student.classIds.filter(id => id.toString() !== classId);
-      studentUpdated = student.classIds.length !== originalLength;
-      console.log('Removed class from student:', { originalLength, newLength: student.classIds.length });
+    // Clear student's class information if assigned to this class
+    if (studentAssignedToThisClass) {
+      student.classId = null;
+      student.className = '';
+      student.section = '';
+      studentUpdated = true;
+      console.log('Cleared student class information');
     }
 
     // Save changes
@@ -670,7 +695,14 @@ exports.removeStudent = async (req, res) => {
       res.json({ 
         msg: 'Student removed from class successfully',
         removedFromClass: classUpdated,
-        removedFromStudent: studentUpdated
+        studentRecordUpdated: studentUpdated,
+        studentInfo: {
+          id: student._id,
+          name: student.name,
+          classId: student.classId,
+          className: student.className,
+          section: student.section
+        }
       });
     } else {
       console.log('No changes made - student may not have been properly assigned');

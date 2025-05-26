@@ -423,10 +423,19 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const getAvailableStudents = () => {
-    if (!selectedClass) return [];
-    const assignedStudentIds = selectedClass.studentIds.map(s => s._id);
-    return allStudents.filter(student => !assignedStudentIds.includes(student._id));
-  };
+  if (!selectedClass) return [];
+  
+  // Get all student IDs that are already assigned to ANY class
+  const allAssignedStudentIds = new Set();
+  classes.forEach(classItem => {
+    classItem.studentIds.forEach(student => {
+      allAssignedStudentIds.add(student._id);
+    });
+  });
+  
+  // Return only students that are not assigned to any class
+  return allStudents.filter(student => !allAssignedStudentIds.has(student._id));
+};
 
   const filteredAvailableTeachers = getAvailableTeachers().filter(teacher =>
     teacher.name.toLowerCase().includes(teacherSearchQuery.toLowerCase()) ||
