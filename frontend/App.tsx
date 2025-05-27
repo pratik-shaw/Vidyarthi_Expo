@@ -35,6 +35,8 @@ import AdminHomeScreen from './screens/AdminHomeScreen';
 import TeacherClassDetailsScreen from './screens/TeacherClassDetailsScreen';
 import AdminAddClassTeacherScreen from './screens/AdminAddClassTeacherScreen';
 import TeacherAdminClassDetailsScreen from './screens/TeacherAdminClassDetails ';
+import AdminAllTeachersDataScreen from './screens/AdminAllTeachersDataScreen';
+import AdminAllStudentsDataScreen from './screens/AdminAllStudentsDataScreen';
 
 export type RootStackParamList = {
   Intro: undefined;
@@ -67,6 +69,8 @@ export type RootStackParamList = {
   TeacherClassDetails: { classId: string; className: string };
   TeacherAdminClassDetails: { classId: string; className: string };
   AdminAddClassTeacher: undefined;
+  AdminAllTeachersData: undefined;
+  AdminAllStudentsData: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -107,6 +111,8 @@ export default function App() {
         <Stack.Screen name="TeacherClassDetails" component={TeacherClassDetailsScreen} />
         <Stack.Screen name="AdminAddClassTeacher" component={AdminAddClassTeacherScreen} />
         <Stack.Screen name="TeacherAdminClassDetails" component={TeacherAdminClassDetailsScreen} />
+        <Stack.Screen name="AdminAllTeachersData" component={AdminAllTeachersDataScreen} />
+        <Stack.Screen name="AdminAllStudentsData" component={AdminAllStudentsDataScreen} />
         
         {/* Add any other screens you need here */}
       </Stack.Navigator>

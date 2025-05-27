@@ -218,9 +218,18 @@ const AdminHomeScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   // Navigate to specific screens
+
+  const navigateToTeachersData = () => {
+    navigation.navigate('AdminAllTeachersData');
+  };
+  const navigateToStudentsData = () => {
+    navigation.navigate('AdminAllStudentsData');  };
+
+  const navigateToClassesData = () => {
+    Alert.alert("Coming Soon", "Teacher management screen is under development.");
+  };
+
   const navigateToTeachers = () => {
-    // You'll need to create these screens
-    //Alert.alert("Coming Soon", "Teacher management screen is under development.");
     navigation.navigate('AdminAddClassTeacher');
   };
 
@@ -334,7 +343,7 @@ const AdminHomeScreen: React.FC<Props> = ({ navigation }) => {
           <View style={styles.statsCardsContainer}>
             <TouchableOpacity 
               style={styles.statsCard}
-              onPress={navigateToTeachers}
+              onPress={navigateToTeachersData}
             >
               <View style={[styles.statsIconContainer, { backgroundColor: 'rgba(78, 84, 200, 0.1)' }]}>
                 <FontAwesome5 name="chalkboard-teacher" size={22} color="#4E54C8" />
@@ -345,7 +354,7 @@ const AdminHomeScreen: React.FC<Props> = ({ navigation }) => {
             
             <TouchableOpacity 
               style={styles.statsCard}
-              onPress={navigateToStudents}
+              onPress={navigateToStudentsData}
             >
               <View style={[styles.statsIconContainer, { backgroundColor: 'rgba(46, 213, 115, 0.1)' }]}>
                 <FontAwesome5 name="user-graduate" size={22} color="#2ED573" />
@@ -356,7 +365,7 @@ const AdminHomeScreen: React.FC<Props> = ({ navigation }) => {
             
             <TouchableOpacity 
               style={styles.statsCard}
-              onPress={navigateToClasses}
+              onPress={navigateToClassesData}
             >
               <View style={[styles.statsIconContainer, { backgroundColor: 'rgba(255, 165, 2, 0.1)' }]}>
                 <Ionicons name="book" size={22} color="#FFA502" />
