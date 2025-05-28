@@ -602,6 +602,23 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
           </View>
           <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
         </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.optionItem}
+          // onPress={() => navigation.navigate('TeacherAdminSubjects',{
+          //   classId: 'your-class-id-here',
+          //   className: 'Class 10A' // or whatever the class name is
+          // })}
+        >
+          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(159, 122, 234, 0.1)' }]}>
+            <FontAwesome5 name="book" size={20} color="#9F7AEA" />
+          </View>
+          <View style={styles.optionContent}>
+            <Text style={styles.optionTitle}>Subjects & Teachers</Text>
+            <Text style={styles.optionDescription}>Manage subjects and teacher assignment</Text>
+          </View>
+          <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
+        </TouchableOpacity>
       </View>
     </View>
   );
