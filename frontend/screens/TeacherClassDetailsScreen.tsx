@@ -403,9 +403,9 @@ const generateAttendanceData = (studentId: string) => {
             onPress={() => Alert.alert("Coming Soon", "Attendance tracking feature is under development.")}
           >
             <View style={[styles.actionIconContainer, { backgroundColor: '#1CB5E0' }]}>
-              <FontAwesome5 name="calendar-check" size={18} color="#FFFFFF" />
+              <FontAwesome5 name="book" size={18} color="#FFFFFF" />
             </View>
-            <Text style={styles.actionText}>Take Attendance</Text>
+            <Text style={styles.actionText}>Add Marks</Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -413,7 +413,7 @@ const generateAttendanceData = (studentId: string) => {
             onPress={() => Alert.alert("Coming Soon", "Class materials feature is under development.")}
           >
             <View style={[styles.actionIconContainer, { backgroundColor: '#3A4276' }]}>
-              <FontAwesome5 name="book" size={18} color="#FFFFFF" />
+              <FontAwesome5 name="file" size={18} color="#FFFFFF" />
             </View>
             <Text style={styles.actionText}>Class Materials</Text>
           </TouchableOpacity>
