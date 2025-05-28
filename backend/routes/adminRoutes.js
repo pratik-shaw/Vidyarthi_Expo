@@ -1,4 +1,4 @@
-// routes/adminRoutes.js - ADD THESE NEW ROUTES
+// routes/adminRoutes.js - UPDATED WITH NEW REMOVE CLASS ADMIN ROUTE
 
 // ADD these imports at the top if not already present
 const express = require('express');
@@ -46,5 +46,8 @@ router.post('/classes/remove-teacher', auth, classController.removeTeacher);
 router.post('/classes/assign-students', auth, classController.assignStudents);
 router.post('/classes/remove-student', auth, classController.removeStudent);
 router.post('/classes/assign-class-admin', auth, classController.assignClassAdmin);
+
+// NEW ROUTE - Remove class admin
+router.post('/classes/remove-class-admin', auth, classController.removeClassAdmin);
 
 module.exports = router;

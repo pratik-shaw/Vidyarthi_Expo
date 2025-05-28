@@ -300,6 +300,94 @@ exports.assignClassAdmin = async (req, res) => {
   }
 };
 
+// Add this function to your existing classController.js file
+
+// Remove class admin (admin only)
+exports.removeClassAdmin = async (req, res) => {
+  try {
+    const { classId } = req.body;
+
+    console.log('removeClassAdmin called with:', { classId, userId: req.user?.id, userRole: req.user?.role });
+
+    // Verify user is an admin
+    if (!req.user || req.user.role !== 'admin') {
+      console.log('Authorization failed:', { user: req.user });
+      return res.status(403).json({ msg: 'Not authorized' });
+    }
+
+    // Validate input
+    if (!classId) {
+      return res.status(400).json({ msg: 'Class ID is required' });
+    }
+
+    const admin = await Admin.findById(req.user.id);
+    if (!admin) {
+      console.log('Admin not found:', req.user.id);
+      return res.status(404).json({ msg: 'Admin not found' });
+    }
+
+    console.log('Admin found:', { adminId: admin._id, schoolId: admin.schoolId });
+
+    // Find class and ensure it belongs to admin's school
+    const classObj = await Class.findOne({ _id: classId, schoolId: admin.schoolId });
+    if (!classObj) {
+      console.log('Class not found:', { classId, schoolId: admin.schoolId });
+      return res.status(404).json({ msg: 'Class not found or not authorized' });
+    }
+
+    console.log('Class found:', { 
+      classId: classObj._id, 
+      className: classObj.name,
+      section: classObj.section
+    });
+
+    // Find the current class admin
+    const currentClassAdmin = await Teacher.findOne({ adminClassId: classId, schoolId: admin.schoolId });
+    
+    if (!currentClassAdmin) {
+      console.log('No class admin found for this class');
+      return res.status(404).json({ msg: 'No class admin assigned to this class' });
+    }
+
+    console.log('Current class admin found:', {
+      teacherId: currentClassAdmin._id,
+      teacherName: currentClassAdmin.name,
+      teacherEmail: currentClassAdmin.email,
+      adminClassId: currentClassAdmin.adminClassId
+    });
+
+    // Remove the adminClassId from the teacher
+    const previousAdminInfo = {
+      id: currentClassAdmin._id,
+      name: currentClassAdmin.name,
+      email: currentClassAdmin.email
+    };
+
+    currentClassAdmin.adminClassId = undefined;
+    await currentClassAdmin.save();
+
+    console.log('Class admin role removed successfully');
+
+    res.json({ 
+      msg: 'Class admin removed successfully',
+      previousAdmin: previousAdminInfo,
+      classInfo: {
+        id: classObj._id,
+        name: classObj.name,
+        section: classObj.section
+      }
+    });
+
+  } catch (err) {
+    console.error('Error in removeClassAdmin:', err);
+    res.status(500).json({ 
+      msg: 'Server error', 
+      error: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+};
+
 // Get class details
 exports.getClassDetails = async (req, res) => {
   try {

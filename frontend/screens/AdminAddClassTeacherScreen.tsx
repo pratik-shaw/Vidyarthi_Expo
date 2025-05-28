@@ -415,44 +415,44 @@ const AdminAddClassTeacherScreen: React.FC<Props> = ({ navigation }) => {
 
   // Remove class admin
   const removeClassAdmin = async (classId: string, teacherName: string, className: string) => {
-    Alert.alert(
-      "Remove Class Administrator",
-      `Are you sure you want to remove ${teacherName} as administrator for ${className}?`,
-      [
-        {
-          text: "Cancel",
-          style: "cancel"
-        },
-        {
-          text: "Remove", 
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setIsLoading(true);
-              const apiClient = await getAuthenticatedClient();
-              
-              await apiClient.post('/admin/classes/assign-class-admin', {
-                classId: classId,
-                teacherId: null // Send null to remove assignment
-              });
-              
-              Alert.alert('Success', 'Class administrator removed successfully');
-              
-              // Reload all data to reflect changes
-              await loadClassAdmins();
-              await loadClasses();
-              await loadTeachers();
-            } catch (error) {
-              console.error('Error removing class admin:', error);
-              handleApiError(error);
-            } finally {
-              setIsLoading(false);
-            }
+  Alert.alert(
+    "Remove Class Administrator",
+    `Are you sure you want to remove ${teacherName} as administrator for ${className}?`,
+    [
+      {
+        text: "Cancel",
+        style: "cancel"
+      },
+      {
+        text: "Remove", 
+        style: "destructive",
+        onPress: async () => {
+          try {
+            setIsLoading(true);
+            const apiClient = await getAuthenticatedClient();
+            
+            // Use the new dedicated remove-class-admin endpoint
+            await apiClient.post('/admin/classes/remove-class-admin', {
+              classId: classId
+            });
+            
+            Alert.alert('Success', 'Class administrator removed successfully');
+            
+            // Reload all data to reflect changes
+            await loadClassAdmins();
+            await loadClasses();
+            await loadTeachers();
+          } catch (error) {
+            console.error('Error removing class admin:', error);
+            handleApiError(error);
+          } finally {
+            setIsLoading(false);
           }
         }
-      ]
-    );
-  };
+      }
+    ]
+  );
+};
 
   // Update class admin (reassign)
   const updateClassAdmin = (classId: string, currentTeacherId: string) => {
