@@ -605,10 +605,10 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
 
         <TouchableOpacity 
           style={styles.optionItem}
-          // onPress={() => navigation.navigate('TeacherAdminSubjects',{
-          //   classId: 'your-class-id-here',
-          //   className: 'Class 10A' // or whatever the class name is
-          // })}
+           onPress={() => navigation.navigate('TeacherAdminSubjects',{
+            classId: classDetails?._id || classId, // Use actual class ID from details or route params
+            className: classDetails?.name || className  // or whatever the class name is
+           })}
         >
           <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(159, 122, 234, 0.1)' }]}>
             <FontAwesome5 name="book" size={20} color="#9F7AEA" />
