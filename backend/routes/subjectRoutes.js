@@ -7,15 +7,16 @@ const subjectController = require('../controllers/subjectController');
 // All routes require authentication
 router.use(auth);
 
-// Class Admin Routes (only class admin teachers can access these)
-
-// Initialize subjects for a class (create subject document)
+// Initialize subjects for a class (one-time setup)
 router.post('/class/:classId/initialize', subjectController.initializeSubjects);
 
-// Get all subjects for a class
+// Get all subjects for a class (with initialization check)
 router.get('/class/:classId', subjectController.getSubjectsByClass);
 
-// Add a new subject to class
+// Check if subjects are initialized for a class
+router.get('/class/:classId/status', subjectController.checkSubjectsStatus);
+
+// Add a new subject to a class
 router.post('/class/:classId', subjectController.addSubject);
 
 // Update a specific subject
@@ -30,11 +31,13 @@ router.post('/class/:classId/subject/:subjectId/assign', subjectController.assig
 // Remove teacher from a subject
 router.delete('/class/:classId/subject/:subjectId/teacher', subjectController.removeTeacher);
 
-// Teacher Routes (for all teachers)
-
-// Get subjects assigned to the logged-in teacher
+// Get subjects assigned to the current teacher
 router.get('/my-subjects', subjectController.getSubjectsByTeacher);
+
+// Get all teachers assigned to a specific class
 router.get('/class/:classId/teachers', subjectController.getClassTeachers);
 
+// Get or initialize subjects (alternative approach)
+router.get('/class/:classId/get-or-init', subjectController.getOrInitializeSubjects);
 
 module.exports = router;

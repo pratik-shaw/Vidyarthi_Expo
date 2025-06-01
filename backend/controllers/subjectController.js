@@ -601,3 +601,101 @@ exports.getClassTeachers = async (req, res) => {
     });
   }
 };
+
+// Add these methods to your existing subjectController.js
+
+// Check if subjects are already initialized for a class
+exports.checkSubjectsStatus = async (req, res) => {
+  try {
+    const { classId } = req.params;
+
+    console.log('checkSubjectsStatus called:', { classId, userId: req.user.id });
+
+    // Verify teacher has access to this class
+    const authCheck = await verifyClassAdmin(req.user.id, classId);
+    if (!authCheck.authorized) {
+      return res.status(403).json({ msg: authCheck.error });
+    }
+
+    const { classObj } = authCheck;
+
+    // Check if subjects document exists
+    const subjectDoc = await Subject.findOne({ classId });
+    
+    res.status(200).json({
+      initialized: !!subjectDoc,
+      classInfo: {
+        id: classObj._id,
+        name: classObj.name,
+        section: classObj.section
+      },
+      subjectCount: subjectDoc ? subjectDoc.subjects.length : 0,
+      subjects: subjectDoc ? subjectDoc.subjects : []
+    });
+
+  } catch (err) {
+    console.error('Error checking subjects status:', err);
+    res.status(500).json({ 
+      msg: 'Server error', 
+      error: err.message 
+    });
+  }
+};
+
+// Get subjects or initialize if not exists (alternative approach)
+exports.getOrInitializeSubjects = async (req, res) => {
+  try {
+    const { classId } = req.params;
+
+    console.log('getOrInitializeSubjects called:', { classId, userId: req.user.id });
+
+    // Verify teacher is class admin for this class
+    const authCheck = await verifyClassAdmin(req.user.id, classId);
+    if (!authCheck.authorized) {
+      return res.status(403).json({ msg: authCheck.error });
+    }
+
+    const { teacher, classObj } = authCheck;
+
+    // Find existing or create new
+    let subjectDoc = await Subject.findOne({ classId });
+    let isNewlyInitialized = false;
+    
+    if (!subjectDoc) {
+      subjectDoc = new Subject({
+        classId,
+        schoolId: teacher.schoolId,
+        classAdminId: teacher._id,
+        subjects: []
+      });
+      await subjectDoc.save();
+      isNewlyInitialized = true;
+      console.log('Subjects initialized for class:', classId);
+    }
+
+    // Populate the document with teacher details
+    const populatedDoc = await Subject.findOne({ classId })
+      .populate('subjects.teacherId', 'name email subject')
+      .populate('classAdminId', 'name email');
+
+    res.status(200).json({
+      msg: isNewlyInitialized ? 'Subjects initialized successfully' : 'Subjects retrieved successfully',
+      classInfo: {
+        id: classObj._id,
+        name: classObj.name,
+        section: classObj.section
+      },
+      subjects: populatedDoc.subjects,
+      totalSubjects: populatedDoc.subjects.length,
+      isNewlyInitialized,
+      isInitialized: true
+    });
+
+  } catch (err) {
+    console.error('Error in getOrInitializeSubjects:', err);
+    res.status(500).json({ 
+      msg: 'Server error', 
+      error: err.message 
+    });
+  }
+};

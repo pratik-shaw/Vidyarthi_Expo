@@ -93,6 +93,8 @@ exports.getClasses = async (req, res) => {
 
 // controllers/adminController.js - ADD THESE NEW FUNCTIONS
 
+// These controllers provide detailed profiles for teachers and students, including statistics and class information-this is for future use 
+
 // Get complete teacher profile by ID (Admin only)
 exports.getTeacherProfile = async (req, res) => {
   try {

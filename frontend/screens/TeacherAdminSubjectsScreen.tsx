@@ -79,7 +79,6 @@ const TeacherAdminSubjectsScreen: React.FC<Props> = ({ navigation, route }) => {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [isConnected, setIsConnected] = useState(true);
   const [token, setToken] = useState<string | null>(null);
-  const [isInitialized, setIsInitialized] = useState<boolean>(false);
 
   // Modal states
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
@@ -135,30 +134,30 @@ const TeacherAdminSubjectsScreen: React.FC<Props> = ({ navigation, route }) => {
   }, []);
 
   const initializeScreen = async () => {
-  try {
-    const storedToken = await AsyncStorage.getItem('teacherToken');
-    if (!storedToken) {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'TeacherLogin' }],
-      });
-      return;
+    try {
+      const storedToken = await AsyncStorage.getItem('teacherToken');
+      if (!storedToken) {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'TeacherLogin' }],
+        });
+        return;
+      }
+      
+      setToken(storedToken);
+      
+      // Load subjects using the new endpoint that auto-initializes
+      await loadSubjects(storedToken);
+      
+      // Load teachers
+      await loadAvailableTeachers(storedToken);
+      
+      console.log('Screen initialized successfully');
+    } catch (error) {
+      console.error('Initialization error:', error);
+      Alert.alert('Error', 'Failed to initialize screen');
     }
-    
-    setToken(storedToken);
-    
-    // Load subjects first to get the current state
-    await loadSubjects(storedToken);
-    
-    // Load teachers
-    await loadAvailableTeachers(storedToken);
-    
-    console.log('Screen initialized successfully');
-  } catch (error) {
-    console.error('Initialization error:', error);
-    Alert.alert('Error', 'Failed to initialize screen');
-  }
-};
+  };
 
   // Get authenticated API client
   const getAuthenticatedClient = (authToken = token) => {
@@ -173,93 +172,65 @@ const TeacherAdminSubjectsScreen: React.FC<Props> = ({ navigation, route }) => {
     });
   };
 
-  // Load subjects for the class
-  const loadSubjects = async (authToken = token, preserveInitState = false) => {
-  if (!authToken) return;
-  
-  try {
-    setLoading(true);
-    const apiClient = getAuthenticatedClient(authToken);
-    const response = await apiClient.get(`/subjects/class/${classId}`);
+  // Load subjects for the class - Updated to use the new endpoint
+  const loadSubjects = async (authToken = token) => {
+    if (!authToken) return;
     
-    const { subjects: fetchedSubjects, classInfo: fetchedClassInfo, isInitialized: initialized } = response.data;
-    
-    setSubjects(fetchedSubjects || []);
-    setClassInfo(fetchedClassInfo);
-    
-    // Only update isInitialized if we're not preserving the current state
-    if (!preserveInitState) {
-      setIsInitialized(initialized);
-    }
-    
-    console.log('Subjects loaded:', fetchedSubjects?.length || 0);
-    console.log('Is initialized:', initialized);
-  } catch (error) {
-    console.error('Error loading subjects:', error);
-    if (axios.isAxiosError(error)) {
-      if (error.response?.status === 401) {
-        handleLogout();
-      } else if (!refreshing) {
-        Alert.alert('Error', error.response?.data?.msg || 'Failed to load subjects');
+    try {
+      setLoading(true);
+      const apiClient = getAuthenticatedClient(authToken);
+      
+      // Use the new endpoint that auto-initializes if not exists
+      const response = await apiClient.get(`/subjects/class/${classId}/get-or-init`);
+      
+      const { 
+        subjects: fetchedSubjects, 
+        classInfo: fetchedClassInfo, 
+        isNewlyInitialized,
+        msg 
+      } = response.data;
+      
+      setSubjects(fetchedSubjects || []);
+      setClassInfo(fetchedClassInfo);
+      
+      // Show success message if newly initialized
+      if (isNewlyInitialized && !refreshing) {
+        console.log('Subjects auto-initialized for class');
       }
+      
+      console.log('Subjects loaded:', fetchedSubjects?.length || 0);
+    } catch (error) {
+      console.error('Error loading subjects:', error);
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          handleLogout();
+        } else if (!refreshing) {
+          Alert.alert('Error', error.response?.data?.msg || 'Failed to load subjects');
+        }
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
-  }
-};
+  };
 
   // Load available teachers for assignment
-
-const loadAvailableTeachers = async (authToken = token) => {
-  if (!authToken) return;
-  
-  try {
-    const apiClient = getAuthenticatedClient(authToken);
+  const loadAvailableTeachers = async (authToken = token) => {
+    if (!authToken) return;
     
-    // If you added the route to subjectRoutes, use this:
-    const response = await apiClient.get(`/subjects/class/${classId}/teachers`);
-    
-    // If you created separate classRoutes, use this instead:
-    // const response = await apiClient.get(`/class/${classId}/teachers`);
-    
-    setAvailableTeachers(response.data.teachers || []);
-    console.log('Teachers loaded:', response.data.teachers?.length || 0);
-  } catch (error) {
-    console.error('Error loading teachers:', error);
-    if (axios.isAxiosError(error)) {
-      console.log('API Error:', error.response?.status, error.response?.data);
+    try {
+      const apiClient = getAuthenticatedClient(authToken);
+      const response = await apiClient.get(`/subjects/class/${classId}/teachers`);
+      
+      setAvailableTeachers(response.data.teachers || []);
+      console.log('Teachers loaded:', response.data.teachers?.length || 0);
+    } catch (error) {
+      console.error('Error loading teachers:', error);
+      if (axios.isAxiosError(error)) {
+        console.log('API Error:', error.response?.status, error.response?.data);
+      }
     }
-  }
-};
-
-  // Initialize subjects for the class
-  const initializeSubjects = async () => {
-  if (!token) return;
-  
-  try {
-    setSubmitting(true);
-    const apiClient = getAuthenticatedClient();
-    const response = await apiClient.post(`/subjects/class/${classId}/initialize`);
-    
-    // Set initialized state immediately after successful API call
-    setIsInitialized(true);
-    
-    Alert.alert('Success', 'Subjects initialized successfully');
-    
-    // Load subjects but preserve the initialized state we just set
-    await loadSubjects(token, true);
-    
-    console.log('Subjects initialized successfully');
-  } catch (error) {
-    console.error('Error initializing subjects:', error);
-    if (axios.isAxiosError(error)) {
-      Alert.alert('Error', error.response?.data?.msg || 'Failed to initialize subjects');
-    }
-  } finally {
-    setSubmitting(false);
-  }
-};
+  };
 
   // Add new subject
   const addSubject = async () => {
@@ -438,26 +409,13 @@ const loadAvailableTeachers = async (authToken = token) => {
   };
 
   // Handle refresh
-const onRefresh = useCallback(() => {
-  setRefreshing(true);
-  // Don't override isInitialized state during refresh
-  loadSubjects(token, isInitialized);
-}, [isInitialized, token]);
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadSubjects(token);
+  }, [token]);
 
-
-  // Event handlers
+  // Event handlers - Simplified since no manual initialization needed
   const handleAddSubject = () => {
-    if (!isInitialized) {
-      Alert.alert(
-        'Initialize Subjects',
-        'Subjects need to be initialized for this class first.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Initialize', onPress: initializeSubjects }
-        ]
-      );
-      return;
-    }
     resetForm();
     setShowAddModal(true);
   };
@@ -631,30 +589,8 @@ const onRefresh = useCallback(() => {
           </View>
         )}
 
-        {/* Subjects List */}
-        {!isInitialized ? (
-          <View style={styles.notInitializedContainer}>
-            <FontAwesome5 name="book-open" size={48} color="#B0B7C3" />
-            <Text style={styles.notInitializedTitle}>Initialize Subjects</Text>
-            <Text style={styles.notInitializedText}>
-              Subjects haven't been initialized for this class yet. Click the button below to get started.
-            </Text>
-            <TouchableOpacity
-              style={styles.initializeButton}
-              onPress={initializeSubjects}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <FontAwesome5 name="plus" size={16} color="#FFFFFF" />
-                  <Text style={styles.initializeButtonText}>Initialize Subjects</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        ) : subjects.length === 0 ? (
+        {/* Subjects List - Simplified since auto-initialization handles empty states */}
+        {subjects.length === 0 ? (
           <View style={styles.emptyContainer}>
             <FontAwesome5 name="book" size={48} color="#B0B7C3" />
             <Text style={styles.emptyTitle}>No Subjects Yet</Text>
@@ -674,7 +610,6 @@ const onRefresh = useCallback(() => {
       </ScrollView>
 
       {/* Add Subject Modal */}
-       {/* Add Subject Modal */}
       <Modal
         visible={showAddModal}
         animationType="slide"
@@ -786,6 +721,7 @@ const onRefresh = useCallback(() => {
           </TouchableWithoutFeedback>
         </SafeAreaView>
       </Modal>
+
 
       {/* Edit Subject Modal */}
       <Modal
