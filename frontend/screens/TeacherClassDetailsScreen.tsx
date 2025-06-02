@@ -400,10 +400,12 @@ const generateAttendanceData = (studentId: string) => {
         <View style={styles.actionButtonsContainer}>
           <TouchableOpacity 
             style={[styles.actionCard, { backgroundColor: 'rgba(28, 181, 224, 0.1)' }]}
-            onPress={() => Alert.alert("Coming Soon", "Attendance tracking feature is under development.")}
-          >
+              onPress={() => navigation.navigate('TeacherScoring', {
+                  classId: classId, // Make sure this variable is available
+                  className: className, // Make sure this variable is available
+                })}          >
             <View style={[styles.actionIconContainer, { backgroundColor: '#1CB5E0' }]}>
-              <FontAwesome5 name="book" size={18} color="#FFFFFF" />
+              <FontAwesome5 name="poll" size={18} color="#FFFFFF" />
             </View>
             <Text style={styles.actionText}>Add Marks</Text>
           </TouchableOpacity>

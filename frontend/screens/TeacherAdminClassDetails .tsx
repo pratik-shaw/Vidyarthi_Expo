@@ -636,6 +636,23 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
           </View>
           <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
         </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.optionItem}
+          onPress={() => navigation.navigate('TeacherScoring', {
+            classId: classId, // Use actual class ID from details or route params
+            className: className  // or whatever the class name is
+          })}
+        >
+          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(159, 122, 234, 0.1)' }]}>
+            <FontAwesome5 name="poll" size={20} color="#9F7AEA" />
+          </View>
+          <View style={styles.optionContent}>
+            <Text style={styles.optionTitle}>Add Marks</Text>
+            <Text style={styles.optionDescription}>Add marks as a subject teacher to your own class students</Text>
+          </View>
+          <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
+        </TouchableOpacity>
       </View>
     </View>
   );

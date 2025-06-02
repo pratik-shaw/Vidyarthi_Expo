@@ -2,6 +2,7 @@
 const Exam = require('../models/Exam');
 const Class = require('../models/Class');
 const Teacher = require('../models/Teacher');
+const markController = require('./markController'); // Add this import
 const mongoose = require('mongoose');
 
 // Helper function to verify class admin permissions
@@ -85,6 +86,20 @@ exports.createExam = async (req, res) => {
     });
 
     await newExam.save();
+
+    // CRITICAL: Initialize mark records for all students in the class
+    try {
+      const markInitResult = await markController.initializeExamMarks(newExam._id);
+      console.log('Mark records initialized:', markInitResult);
+    } catch (markError) {
+      console.error('Error initializing marks:', markError);
+      // You might want to delete the exam if mark initialization fails
+      await Exam.findByIdAndDelete(newExam._id);
+      return res.status(500).json({ 
+        msg: 'Exam created but failed to initialize mark records. Exam has been rolled back.',
+        error: markError.message 
+      });
+    }
 
     // Get populated exam data
     const populatedExam = await Exam.findById(newExam._id)
@@ -301,6 +316,10 @@ exports.deleteExam = async (req, res) => {
       return res.status(404).json({ msg: 'Exam not found' });
     }
 
+    // TODO: Consider whether to also delete associated mark records
+    // This depends on your business logic - you might want to keep historical data
+    // or implement soft deletion instead
+
     console.log('Exam deleted successfully:', examId);
 
     res.json({
@@ -349,6 +368,15 @@ exports.addSubjectsToExam = async (req, res) => {
 
     // Add subjects to exam
     await exam.addSubjects(subjects);
+
+    // IMPORTANT: Re-initialize mark records to include new subjects
+    try {
+      await markController.initializeExamMarks(examId);
+      console.log('Mark records updated with new subjects');
+    } catch (markError) {
+      console.error('Error updating marks with new subjects:', markError);
+      // Log the error but don't fail the request since exam was already updated
+    }
 
     // Get updated exam with populated data
     const updatedExam = await Exam.findById(examId)
@@ -406,6 +434,9 @@ exports.removeSubjectFromExam = async (req, res) => {
 
     // Remove subject from exam
     await exam.removeSubject(subjectId);
+
+    // TODO: Consider updating mark records to remove the subject
+    // This depends on your business logic - you might want to keep historical data
 
     console.log('Subject removed from exam successfully');
 
@@ -493,3 +524,5 @@ exports.getExamsByTeacher = async (req, res) => {
     });
   }
 };
+
+module.exports = exports;
