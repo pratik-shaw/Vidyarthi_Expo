@@ -10,6 +10,7 @@ const teacherRoutes = require('./routes/teacherRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const classRoutes = require('./routes/classRoutes');
 const subjectRoutes = require('./routes/subjectRoutes'); // NEW ROUTE
+const examRoutes = require('./routes/examRoutes'); // NEW ROUTE
 
 // Initialize express app
 const app = express();
@@ -27,6 +28,7 @@ app.use('/api/teacher', teacherRoutes);
 app.use('/api/student', studentRoutes);
 app.use('/api/class', classRoutes);
 app.use('/api/subjects', subjectRoutes); // NEW ROUTE USAGE
+app.use('/api/exams', examRoutes); // NEW ROUTE USAGE
 
 // Simple test route
 app.get('/', (req, res) => {
