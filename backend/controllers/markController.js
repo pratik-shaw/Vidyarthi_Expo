@@ -4,6 +4,7 @@ const Exam = require('../models/Exam');
 const Student = require('../models/Student');
 const Teacher = require('../models/Teacher');
 const Class = require('../models/Class');
+const Subject = require('../models/Subject');
 const mongoose = require('mongoose');
 
 // Helper function to verify teacher permissions
@@ -89,6 +90,18 @@ exports.getStudentsForScoring = async (req, res) => {
       });
     }
 
+    // SYNC CHECK: Get current subject assignments for validation
+    const subjectDoc = await Subject.findOne({ classId });
+    const activeSubjectTeacherMap = new Map();
+    
+    if (subjectDoc) {
+      subjectDoc.subjects.forEach(subject => {
+        if (subject.teacherId) {
+          activeSubjectTeacherMap.set(subject._id.toString(), subject.teacherId.toString());
+        }
+      });
+    }
+
     // Get all exams for this class
     const exams = await Exam.find({ classId: classId });
     console.log('Exams found for class:', exams.length);
@@ -111,11 +124,13 @@ exports.getStudentsForScoring = async (req, res) => {
       });
     }
 
-    // Filter exams to only include subjects this teacher can score
+    // Filter exams to only include subjects this teacher can score (with sync validation)
     const filteredExams = exams.map(exam => {
-      const teacherSubjects = exam.subjects.filter(
-        subject => subject.teacherId.toString() === teacherId
-      );
+      const teacherSubjects = exam.subjects.filter(subject => {
+        const currentTeacherId = activeSubjectTeacherMap.get(subject.subjectId.toString());
+        // Only include if teacher is currently assigned to this subject
+        return currentTeacherId === teacherId;
+      });
       
       if (teacherSubjects.length === 0) {
         return null;
@@ -174,7 +189,7 @@ exports.getStudentsForScoring = async (req, res) => {
             subjectName: subject.subjectName,
             teacherId: subject.teacherId,
             fullMarks: subject.fullMarks,
-            marksScored: null, // Not scored yet
+            marksScored: null,
             scoredBy: null,
             scoredAt: null
           }))
@@ -187,11 +202,12 @@ exports.getStudentsForScoring = async (req, res) => {
           exams: studentExams
         });
       } else {
-        // Use existing mark record data
+        // Use existing mark record data but validate against current assignments
         const filteredExamData = markRecord.exams.map(exam => {
-          const teacherSubjects = exam.subjects.filter(
-            subject => subject.teacherId.toString() === teacherId
-          );
+          const teacherSubjects = exam.subjects.filter(subject => {
+            const currentTeacherId = activeSubjectTeacherMap.get(subject.subjectId.toString());
+            return currentTeacherId === teacherId;
+          });
           
           if (teacherSubjects.length === 0) {
             return null;
@@ -264,6 +280,15 @@ exports.submitMarks = async (req, res) => {
     const authCheck = await verifyTeacherAccess(teacherId, classId);
     if (!authCheck.authorized) {
       return res.status(403).json({ msg: authCheck.error });
+    }
+
+    // VALIDATION: Check if teacher is currently assigned to this subject
+    const subjectDoc = await Subject.findOne({ classId });
+    if (subjectDoc) {
+      const subject = subjectDoc.subjects.find(sub => sub._id.toString() === subjectId);
+      if (!subject || !subject.teacherId || subject.teacherId.toString() !== teacherId) {
+        return res.status(403).json({ msg: 'You are not currently assigned to this subject' });
+      }
     }
 
     // Find student's mark record

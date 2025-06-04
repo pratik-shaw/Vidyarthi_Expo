@@ -2,6 +2,8 @@
 const Subject = require('../models/Subject');
 const Class = require('../models/Class');
 const Teacher = require('../models/Teacher');
+const Mark = require('../models/Mark');
+const Exam = require('../models/Exam');
 const mongoose = require('mongoose');
 
 // Helper function to verify class admin permissions
@@ -400,8 +402,67 @@ exports.assignTeacher = async (req, res) => {
       return res.status(400).json({ msg: 'Teacher must be assigned to this class first' });
     }
 
+    const subjectObjectId = new mongoose.Types.ObjectId(subjectId);
+
     // Assign teacher to subject
     await subjectDoc.assignTeacher(subjectId, teacherId);
+
+    // SYNC WITH EXAM COLLECTION - Update all exams for this class
+    try {
+      const examUpdateResult = await Exam.updateMany(
+        { 
+          classId: classId,
+          'subjects.subjectId': subjectObjectId
+        },
+        { 
+          $set: { 'subjects.$.teacherId': new mongoose.Types.ObjectId(teacherId) }
+        }
+      );
+      console.log(`Updated ${examUpdateResult.modifiedCount} exam records`);
+    } catch (examError) {
+      console.error('Error updating exam records:', examError);
+    }
+
+    // SYNC WITH MARK COLLECTION - Update all mark records for this class
+    try {
+      const markUpdateResult = await Mark.updateMany(
+        { 
+          classId: new mongoose.Types.ObjectId(classId)
+        },
+        { 
+          $set: { 
+            'exams.$[exam].subjects.$[subject].teacherId': new mongoose.Types.ObjectId(teacherId)
+          }
+        },
+        {
+          arrayFilters: [
+            { 'exam.subjects.subjectId': subjectObjectId },
+            { 'subject.subjectId': subjectObjectId }
+          ]
+        }
+      );
+      console.log(`Updated ${markUpdateResult.modifiedCount} mark records`);
+
+      // Additional update to ensure all nested arrays are updated
+      const bulkUpdateResult = await Mark.bulkWrite([
+        {
+          updateMany: {
+            filter: { classId: new mongoose.Types.ObjectId(classId) },
+            update: {
+              $set: {
+                'exams.$[].subjects.$[subject].teacherId': new mongoose.Types.ObjectId(teacherId)
+              }
+            },
+            arrayFilters: [
+              { 'subject.subjectId': subjectObjectId }
+            ]
+          }
+        }
+      ]);
+      console.log(`Bulk update result: ${JSON.stringify(bulkUpdateResult)}`);
+    } catch (markError) {
+      console.error('Error updating mark records:', markError);
+    }
 
     // Get updated document with populated data
     const updatedDoc = await Subject.findOne({ classId })
@@ -410,7 +471,7 @@ exports.assignTeacher = async (req, res) => {
 
     const updatedSubject = updatedDoc.subjects.id(subjectId);
 
-    console.log('Teacher assigned to subject successfully');
+    console.log('Teacher assigned to subject successfully and synced with exams/marks');
 
     res.json({
       msg: `Teacher assigned to subject "${subject.name}" successfully`,
@@ -435,6 +496,7 @@ exports.assignTeacher = async (req, res) => {
     });
   }
 };
+
 
 // Remove teacher from subject (class admin only)
 exports.removeTeacher = async (req, res) => {
@@ -465,18 +527,78 @@ exports.removeTeacher = async (req, res) => {
       return res.status(400).json({ msg: 'No teacher assigned to this subject' });
     }
 
-    const previousTeacher = subject.teacherId;
+    const previousTeacherId = subject.teacherId;
+    const subjectObjectId = new mongoose.Types.ObjectId(subjectId);
 
     // Remove teacher from subject
     await subjectDoc.removeTeacher(subjectId);
 
-    console.log('Teacher removed from subject successfully');
+    // SYNC WITH EXAM COLLECTION - Update all exams for this class
+    try {
+      const examUpdateResult = await Exam.updateMany(
+        { 
+          classId: classId,
+          'subjects.subjectId': subjectObjectId
+        },
+        { 
+          $unset: { 'subjects.$.teacherId': "" }
+        }
+      );
+      console.log(`Updated ${examUpdateResult.modifiedCount} exam records`);
+    } catch (examError) {
+      console.error('Error updating exam records:', examError);
+    }
+
+    // SYNC WITH MARK COLLECTION - Update all mark records for this class
+    try {
+      const markUpdateResult = await Mark.updateMany(
+        { 
+          classId: new mongoose.Types.ObjectId(classId)
+        },
+        { 
+          $unset: { 
+            'exams.$[exam].subjects.$[subject].teacherId': "",
+            'exams.$[exam].subjects.$[subject].scoredBy': ""
+          }
+        },
+        {
+          arrayFilters: [
+            { 'exam.subjects.subjectId': subjectObjectId },
+            { 'subject.subjectId': subjectObjectId }
+          ]
+        }
+      );
+      console.log(`Updated ${markUpdateResult.modifiedCount} mark records`);
+
+      // Additional bulk update to ensure all nested arrays are updated
+      const bulkUpdateResult = await Mark.bulkWrite([
+        {
+          updateMany: {
+            filter: { classId: new mongoose.Types.ObjectId(classId) },
+            update: {
+              $unset: {
+                'exams.$[].subjects.$[subject].teacherId': "",
+                'exams.$[].subjects.$[subject].scoredBy': ""
+              }
+            },
+            arrayFilters: [
+              { 'subject.subjectId': subjectObjectId }
+            ]
+          }
+        }
+      ]);
+      console.log(`Bulk update result: ${JSON.stringify(bulkUpdateResult)}`);
+    } catch (markError) {
+      console.error('Error updating mark records:', markError);
+    }
+
+    console.log('Teacher removed from subject successfully and synced with exams/marks');
 
     res.json({
       msg: `Teacher removed from subject "${subject.name}" successfully`,
       subjectId: subjectId,
       subjectName: subject.name,
-      previousTeacherId: previousTeacher
+      previousTeacherId: previousTeacherId
     });
 
   } catch (err) {
@@ -693,6 +815,89 @@ exports.getOrInitializeSubjects = async (req, res) => {
 
   } catch (err) {
     console.error('Error in getOrInitializeSubjects:', err);
+    res.status(500).json({ 
+      msg: 'Server error', 
+      error: err.message 
+    });
+  }
+};
+
+exports.syncMarksWithSubjects = async (req, res) => {
+  try {
+    const { classId } = req.params;
+
+    console.log('syncMarksWithSubjects called:', { classId, userId: req.user.id });
+
+    // Verify teacher is class admin for this class
+    const authCheck = await verifyClassAdmin(req.user.id, classId);
+    if (!authCheck.authorized) {
+      return res.status(403).json({ msg: authCheck.error });
+    }
+
+    // Get current subject assignments
+    const subjectDoc = await Subject.findOne({ classId });
+    if (!subjectDoc) {
+      return res.status(404).json({ msg: 'No subjects found for this class' });
+    }
+
+    // Create a map of subjectId -> teacherId from current assignments
+    const subjectTeacherMap = new Map();
+    subjectDoc.subjects.forEach(subject => {
+      if (subject.teacherId) {
+        subjectTeacherMap.set(subject._id.toString(), subject.teacherId.toString());
+      }
+    });
+
+    // Get all mark records for this class
+    const markRecords = await Mark.find({ classId });
+
+    let updatedRecords = 0;
+    let updatedSubjects = 0;
+
+    // Update each mark record
+    for (const markRecord of markRecords) {
+      let recordModified = false;
+
+      markRecord.exams.forEach(exam => {
+        exam.subjects.forEach(subject => {
+          const currentTeacherId = subjectTeacherMap.get(subject.subjectId.toString());
+          
+          if (currentTeacherId) {
+            // Assign current teacher
+            if (!subject.teacherId || subject.teacherId.toString() !== currentTeacherId) {
+              subject.teacherId = new mongoose.Types.ObjectId(currentTeacherId);
+              recordModified = true;
+              updatedSubjects++;
+            }
+          } else {
+            // Remove teacher assignment if no longer assigned
+            if (subject.teacherId) {
+              subject.teacherId = null;
+              subject.scoredBy = null;
+              recordModified = true;
+              updatedSubjects++;
+            }
+          }
+        });
+      });
+
+      if (recordModified) {
+        await markRecord.save();
+        updatedRecords++;
+      }
+    }
+
+    console.log(`Sync completed: ${updatedRecords} records updated, ${updatedSubjects} subject assignments synced`);
+
+    res.json({
+      msg: 'Marks synchronized with current subject assignments',
+      updatedRecords,
+      updatedSubjects,
+      totalRecords: markRecords.length
+    });
+
+  } catch (err) {
+    console.error('Error in syncMarksWithSubjects:', err);
     res.status(500).json({ 
       msg: 'Server error', 
       error: err.message 

@@ -31,6 +31,9 @@ router.post('/class/:classId/subject/:subjectId/assign', subjectController.assig
 // Remove teacher from a subject
 router.delete('/class/:classId/subject/:subjectId/teacher', subjectController.removeTeacher);
 
+// Sync marks with current subject assignments (class admin only)
+router.put('/class/:classId/sync-marks', subjectController.syncMarksWithSubjects);
+
 // Get subjects assigned to the current teacher
 router.get('/my-subjects', subjectController.getSubjectsByTeacher);
 
