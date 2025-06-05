@@ -56,6 +56,7 @@ interface Class {
   schedule?: string;
   room?: string;
   isAdmin?: boolean;
+  teachingSubject?: string; // Add this line
 }
 
 const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
@@ -182,78 +183,103 @@ const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
 
   // Fetch classes assigned to the teacher
   const fetchClasses = async (authToken = token) => {
-    setLoading(true);
-    try {
-      if (!authToken) {
-        console.log('No token available for fetching classes');
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'TeacherLogin' }],
-        });
-        return;
-      }
-
-      // Log only a portion of the token for security
-      console.log('Fetching classes with token:', authToken.substring(0, 10) + '...');
-      
-      // Use apiClient with appropriate headers
-      const apiClient = await getAuthenticatedClient(authToken);
-      const response = await apiClient.get('/teacher/classes');
-
-      console.log('Classes fetched successfully:', response.data.classes.length);
-      const fetchedClasses = response.data.classes;
-      
-      // Separate admin class from normal classes
-      const adminClassData = fetchedClasses.find((cls: Class) => cls.isAdmin);
-      const normalClassesData = fetchedClasses.filter((cls: Class) => !cls.isAdmin);
-      
-      setAdminClass(adminClassData || null);
-      setNormalClasses(normalClassesData);
-      
-      // Update stats data
-      let totalStudents = 0;
-      let adminClassStudents = 0;
-      let normalClassesStudents = 0;
-      
-      fetchedClasses.forEach((cls: Class) => {
-        const studentCount = cls.studentsCount || 0;
-        totalStudents += studentCount;
-        
-        if (cls.isAdmin) {
-          adminClassStudents += studentCount;
-        } else {
-          normalClassesStudents += studentCount;
-        }
+  setLoading(true);
+  try {
+    if (!authToken) {
+      console.log('No token available for fetching classes');
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'TeacherLogin' }],
       });
-      
-      setStatsData({
-        totalStudents,
-        totalClasses: fetchedClasses.length,
-        adminClassStudents,
-        normalClassesStudents,
-      });
-    } catch (error) {
-      console.error('Error fetching classes:', error);
-      
-      // Log more details about the error
-      if (axios.isAxiosError(error)) {
-        console.log('Error status:', error.response?.status);
-        console.log('Error data:', error.response?.data);
-        
-        if (error.response?.status === 401) {
-          console.log('Unauthorized access, logging out');
-          handleLogout();
-        } else if (!refreshing) {
-          Alert.alert('Error', `Failed to load classes: ${error.response?.data?.message || 'Please try again'}`);
-        }
-      } else if (!refreshing) {
-        Alert.alert('Error', 'Failed to load classes due to network issue. Please try again.');
-      }
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      return;
     }
-  };
+
+    console.log('Fetching classes with token:', authToken.substring(0, 10) + '...');
+    
+    const apiClient = await getAuthenticatedClient(authToken);
+    const response = await apiClient.get('/teacher/classes');
+
+    console.log('Classes fetched successfully:', response.data.classes.length);
+    const fetchedClasses = response.data.classes;
+    
+    // Fetch teacher's assigned subjects
+    let teacherSubjects = [];
+    try {
+      const subjectsResponse = await apiClient.get('/subjects/my-subjects');
+      teacherSubjects = subjectsResponse.data.subjects || [];
+      console.log('Teacher subjects fetched:', teacherSubjects);
+    } catch (error) {
+      console.error('Error fetching teacher subjects:', error);
+    }
+    
+    // Map subjects to classes
+    const classesWithSubjects = fetchedClasses.map((cls: { _id: any; name: any; }) => {
+      console.log('Processing class:', cls._id, cls.name);
+      
+      // Match using classInfo.id from the subject data
+      const assignedSubject = teacherSubjects.find((subject: { classInfo: { id: any; }; }) => 
+        subject.classInfo?.id === cls._id
+      );
+      
+      console.log('Found subject for class:', cls.name, assignedSubject?.name);
+      
+      return {
+        ...cls,
+        teachingSubject: assignedSubject ? assignedSubject.name : undefined
+      };
+    });
+    
+    // Separate admin class from normal classes
+    const adminClassData = classesWithSubjects.find((cls: { isAdmin: any; }) => cls.isAdmin);
+    const normalClassesData = classesWithSubjects.filter((cls: { isAdmin: any; }) => !cls.isAdmin);
+    
+    setAdminClass(adminClassData || null);
+    setNormalClasses(normalClassesData);
+    
+    // Update stats data
+    let totalStudents = 0;
+    let adminClassStudents = 0;
+    let normalClassesStudents = 0;
+    
+    classesWithSubjects.forEach((cls: { studentsCount: number; isAdmin: any; }) => {
+      const studentCount = cls.studentsCount || 0;
+      totalStudents += studentCount;
+      
+      if (cls.isAdmin) {
+        adminClassStudents += studentCount;
+      } else {
+        normalClassesStudents += studentCount;
+      }
+    });
+    
+    setStatsData({
+      totalStudents,
+      totalClasses: classesWithSubjects.length,
+      adminClassStudents,
+      normalClassesStudents,
+    });
+  } catch (error) {
+    console.error('Error fetching classes:', error);
+    
+    if (axios.isAxiosError(error)) {
+      console.log('Error status:', error.response?.status);
+      console.log('Error data:', error.response?.data);
+      
+      if (error.response?.status === 401) {
+        console.log('Unauthorized access, logging out');
+        handleLogout();
+      } else if (!refreshing) {
+        Alert.alert('Error', `Failed to load classes: ${error.response?.data?.message || 'Please try again'}`);
+      }
+    } else if (!refreshing) {
+      Alert.alert('Error', 'Failed to load classes due to network issue. Please try again.');
+    }
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+};
+
 
   // Handle refresh
   const onRefresh = () => {
@@ -334,73 +360,80 @@ const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
 
   // Render admin class card
   const renderAdminClassCard = (classItem: Class) => (
-    <TouchableOpacity 
-      style={styles.adminClassCard}
-      onPress={() => handleAdminClassPress(classItem)}
+  <TouchableOpacity 
+    style={styles.adminClassCard}
+    onPress={() => handleAdminClassPress(classItem)}
+  >
+    <LinearGradient
+      colors={['#FF6B6B', '#FFE66D']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
+      style={styles.adminClassGradientBorder}
     >
-      <LinearGradient
-        colors={['#FF6B6B', '#FFE66D']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.adminClassGradientBorder}
-      >
-        <View style={styles.adminClassCardContent}>
-          <View style={styles.adminClassHeader}>
-            <View style={styles.adminBadge}>
-              <FontAwesome5 name="crown" size={12} color="#FF6B6B" />
-              <Text style={styles.adminBadgeText}>ADMIN</Text>
-            </View>
-            <MaterialIcons name="arrow-forward-ios" size={16} color="#8A94A6" />
+      <View style={styles.adminClassCardContent}>
+        <View style={styles.adminClassHeader}>
+          <View style={styles.adminBadge}>
+            <FontAwesome5 name="crown" size={12} color="#FF6B6B" />
+            <Text style={styles.adminBadgeText}>ADMIN</Text>
           </View>
-          <View style={styles.adminClassDetails}>
-            <View style={styles.adminClassIconContainer}>
-              <FontAwesome5 name="user-tie" size={24} color="#FF6B6B" />
-            </View>
-            <View style={styles.adminClassInfo}>
-              <Text style={styles.adminClassName}>{classItem.name}</Text>
-              <Text style={styles.adminClassGrade}>Grade {classItem.grade} | Section {classItem.section}</Text>
-              <View style={styles.adminStudentCountContainer}>
-                <FontAwesome5 name="user-graduate" size={12} color="#8A94A6" />
-                <Text style={styles.adminStudentCount}>{classItem.studentsCount} Students</Text>
-              </View>
+          <MaterialIcons name="arrow-forward-ios" size={16} color="#8A94A6" />
+        </View>
+        <View style={styles.adminClassDetails}>
+          <View style={styles.adminClassIconContainer}>
+            <FontAwesome5 name="user-tie" size={24} color="#FF6B6B" />
+          </View>
+          <View style={styles.adminClassInfo}>
+            <Text style={styles.adminClassName}>{classItem.name}</Text>
+            <Text style={styles.adminClassGrade}>Grade {classItem.grade} | Section {classItem.section}</Text>
+            {classItem.teachingSubject && (
+              <Text style={styles.subjectTag}>Subject: {classItem.teachingSubject}</Text>
+            )}
+            <View style={styles.adminStudentCountContainer}>
+              <FontAwesome5 name="user-graduate" size={12} color="#8A94A6" />
+              <Text style={styles.adminStudentCount}>{classItem.studentsCount} Students</Text>
             </View>
           </View>
         </View>
-      </LinearGradient>
-    </TouchableOpacity>
-  );
+      </View>
+    </LinearGradient>
+  </TouchableOpacity>
+);
+
 
   // Render normal class card
   const renderNormalClassCard = ({ item }: { item: Class }) => (
-    <TouchableOpacity 
-      style={styles.classCard}
-      onPress={() => handleNormalClassPress(item)}
+  <TouchableOpacity 
+    style={styles.classCard}
+    onPress={() => handleNormalClassPress(item)}
+  >
+    <LinearGradient
+      colors={['#1CB5E0', '#38EF7D']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
+      style={styles.classGradientBorder}
     >
-      <LinearGradient
-        colors={['#1CB5E0', '#38EF7D']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.classGradientBorder}
-      >
-        <View style={styles.classCardContent}>
-          <View style={styles.classIconContainer}>
-            <FontAwesome5 name="chalkboard-teacher" size={24} color="#3A4276" />
-          </View>
-          <View style={styles.classDetails}>
-            <Text style={styles.className}>{item.name}</Text>
-            <Text style={styles.classInfo}>Grade {item.grade} | Section {item.section}</Text>
-            <View style={styles.studentCountContainer}>
-              <FontAwesome5 name="user-graduate" size={12} color="#8A94A6" />
-              <Text style={styles.studentCount}>{item.studentsCount} Students</Text>
-            </View>
-          </View>
-          <View style={styles.arrowContainer}>
-            <MaterialIcons name="arrow-forward-ios" size={16} color="#8A94A6" />
+      <View style={styles.classCardContent}>
+        <View style={styles.classIconContainer}>
+          <FontAwesome5 name="chalkboard-teacher" size={24} color="#3A4276" />
+        </View>
+        <View style={styles.classDetails}>
+          <Text style={styles.className}>{item.name}</Text>
+          <Text style={styles.classInfo}>Grade {item.grade} | Section {item.section}</Text>
+          {item.teachingSubject && (
+            <Text style={styles.subjectTag}>Subject: {item.teachingSubject}</Text>
+          )}
+          <View style={styles.studentCountContainer}>
+            <FontAwesome5 name="user-graduate" size={12} color="#8A94A6" />
+            <Text style={styles.studentCount}>{item.studentsCount} Students</Text>
           </View>
         </View>
-      </LinearGradient>
-    </TouchableOpacity>
-  );
+        <View style={styles.arrowContainer}>
+          <MaterialIcons name="arrow-forward-ios" size={16} color="#8A94A6" />
+        </View>
+      </View>
+    </LinearGradient>
+  </TouchableOpacity>
+);
 
   // Show loading indicator
   if (loading && !refreshing) {
@@ -995,6 +1028,12 @@ const styles = StyleSheet.create({
     color: '#B0B7C3',
     fontWeight: '500',
   },
+  subjectTag: {
+  fontSize: 12,
+  color: '#1CB5E0',
+  fontWeight: '500',
+  marginBottom: 6,
+},
 });
 
 export default TeacherHomeScreen;
