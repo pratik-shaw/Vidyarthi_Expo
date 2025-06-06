@@ -40,6 +40,7 @@ import AdminAllStudentsDataScreen from './screens/AdminAllStudentsDataScreen';
 import TeacherAdminSubjectsScreen from './screens/TeacherAdminSubjectsScreen';
 import TeacherAdminExamsScreen from './screens/TeacherAdminExamsScreen';
 import TeacherScoringScreen from './screens/TeacherScoringScreen';
+import TeacherStudentDetailsScreen from './screens/TeacherStudentDetailsScreen';
 
 
 export type RootStackParamList = {
@@ -75,6 +76,12 @@ export type RootStackParamList = {
   TeacherAdminSubjects: {classId: string; className: string; };
   TeacherAdminExams: { classId: string; className: string; };
   TeacherScoring: {
+    classId: string;
+    className: string;
+  };
+  TeacherStudentDetailsScreen: {
+    studentId: string;
+    studentName: string;
     classId: string;
     className: string;
   };
@@ -126,6 +133,7 @@ export default function App() {
         <Stack.Screen name="TeacherAdminSubjects" component={TeacherAdminSubjectsScreen} />
         <Stack.Screen name="TeacherAdminExams" component={TeacherAdminExamsScreen} />
         <Stack.Screen name="TeacherScoring" component={TeacherScoringScreen} />
+        <Stack.Screen name="TeacherStudentDetailsScreen" component={TeacherStudentDetailsScreen} />
         
         {/* Add any other screens you need here */}
       </Stack.Navigator>

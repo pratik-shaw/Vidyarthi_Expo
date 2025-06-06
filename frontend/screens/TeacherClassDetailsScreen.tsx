@@ -47,11 +47,6 @@ interface Student {
   name: string;
   studentId: string;
   email?: string;
-  attendance?: {
-    present: number;
-    absent: number;
-    percentage: number;
-  };
 }
 
 interface ClassDetails {
@@ -209,33 +204,18 @@ const TeacherClassDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
     );
   };
 
-  // Generate random attendance data
-  // Note: In a real app, this would come from the API
-  // Generate random attendance data
-// Note: In a real app, this would come from the API
-const generateAttendanceData = (studentId: string) => {
-  // Check if studentId exists and use a default if it doesn't
-  const idToUse = studentId || `default-${Math.random()}`;
-  
-  // Use studentId as seed for consistent but random-looking values
-  const seed = idToUse.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const present = 10 + (seed % 15); // Between 10-24 days present
-  const absent = Math.max(1, 3 + (seed % 5)); // Between 3-7 days absent
-  const total = present + absent;
-  const percentage = Math.round((present / total) * 100);
-  
-  return {
-    present,
-    absent,
-    percentage
+  // Handle view student details
+  const handleViewStudentDetails = (student: Student) => {
+    navigation.navigate('TeacherStudentDetailsScreen', {
+      studentId: student._id,
+      studentName: student.name,
+      classId: classId,
+      className: className,
+    });
   };
-};
 
   // Render student item
   const renderStudentItem = ({ item, index }: { item: Student; index: number }) => {
-    // Generate attendance data for this student
-    const attendance = item.attendance || generateAttendanceData(item._id);
-    
     return (
       <View style={[
         styles.studentRow, 
@@ -243,27 +223,13 @@ const generateAttendanceData = (studentId: string) => {
       ]}>
         <Text style={[styles.studentCell, styles.idCell]}>{item.studentId || `ST${index + 1001}`}</Text>
         <Text style={[styles.studentCell, styles.nameCell]}>{item.name}</Text>
-        <View style={[styles.studentCellContainer, styles.attendanceCell]}>
-          <View style={styles.attendanceBar}>
-            <View 
-              style={[
-                styles.attendanceProgress, 
-                { 
-                  width: `${attendance.percentage}%`,
-                  backgroundColor: attendance.percentage >= 75 ? '#38EF7D' : 
-                                  attendance.percentage >= 60 ? '#FFB946' : '#F7685B'
-                }
-              ]} 
-            />
-          </View>
-          <Text style={styles.attendanceText}>{attendance.percentage}%</Text>
-        </View>
+        <Text style={[styles.studentCell, styles.emailCell]}>{item.email || 'N/A'}</Text>
         <View style={[styles.studentCellContainer, styles.actionsCell]}>
           <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={() => Alert.alert("Coming Soon", "Student detail view is under development.")}
+            style={styles.viewDetailsButton}
+            onPress={() => handleViewStudentDetails(item)}
           >
-            <FontAwesome5 name="info-circle" size={16} color="#1CB5E0" />
+            <Text style={styles.viewDetailsText}>View Details</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -372,7 +338,7 @@ const generateAttendanceData = (studentId: string) => {
               <View style={styles.tableHeader}>
                 <Text style={[styles.headerCell, styles.idCell]}>ID</Text>
                 <Text style={[styles.headerCell, styles.nameCell]}>Name</Text>
-                <Text style={[styles.headerCell, styles.attendanceCell]}>Attendance</Text>
+                <Text style={[styles.headerCell, styles.emailCell]}>Email</Text>
                 <Text style={[styles.headerCell, styles.actionsCell]}>Action</Text>
               </View>
               
@@ -400,10 +366,11 @@ const generateAttendanceData = (studentId: string) => {
         <View style={styles.actionButtonsContainer}>
           <TouchableOpacity 
             style={[styles.actionCard, { backgroundColor: 'rgba(28, 181, 224, 0.1)' }]}
-              onPress={() => navigation.navigate('TeacherScoring', {
-                  classId: classId, // Make sure this variable is available
-                  className: className, // Make sure this variable is available
-                })}          >
+            onPress={() => navigation.navigate('TeacherScoring', {
+              classId: classId,
+              className: className,
+            })}
+          >
             <View style={[styles.actionIconContainer, { backgroundColor: '#1CB5E0' }]}>
               <FontAwesome5 name="poll" size={18} color="#FFFFFF" />
             </View>
@@ -430,6 +397,47 @@ const generateAttendanceData = (studentId: string) => {
             <Text style={styles.actionText}>Reports</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Chat Room Section */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Communication & Calendars</Text>
+          
+          <TouchableOpacity 
+            style={styles.featureCard}
+            onPress={() => Alert.alert("Coming Soon", "Chat room feature is under development.")}
+          >
+            <View style={styles.featureContent}>
+              <View style={[styles.featureIconContainer, { backgroundColor: '#FF6B6B' }]}>
+                <FontAwesome5 name="comments" size={20} color="#FFFFFF" />
+              </View>
+              <View style={styles.featureDetails}>
+                <Text style={styles.featureTitle}>Class Chat Room</Text>
+                <Text style={styles.featureSubtitle}>Communicate with students and parents</Text>
+              </View>
+              <View style={styles.comingSoonBadge}>
+                <Text style={styles.comingSoonText}>Coming Soon</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.featureCard}
+            onPress={() => Alert.alert("Coming Soon", "Calendar events feature is under development.")}
+          >
+            <View style={styles.featureContent}>
+              <View style={[styles.featureIconContainer, { backgroundColor: '#4ECDC4' }]}>
+                <FontAwesome5 name="calendar-alt" size={20} color="#FFFFFF" />
+              </View>
+              <View style={styles.featureDetails}>
+                <Text style={styles.featureTitle}>Schedule Events</Text>
+                <Text style={styles.featureSubtitle}>Manage class events and calendar</Text>
+              </View>
+              <View style={styles.comingSoonBadge}>
+                <Text style={styles.comingSoonText}>Coming Soon</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </View>
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -635,11 +643,11 @@ const styles = StyleSheet.create({
     width: '30%', 
     flex: 1,
   } as TextStyle,
-  attendanceCell: {
+  emailCell: {
     width: '30%',
-  } as TextStyle | ViewStyle,
+  } as TextStyle,
   actionsCell: {
-    width: '15%',
+    width: '25%',
     alignItems: 'center',
   } as TextStyle | ViewStyle,
   studentsList: {
@@ -664,33 +672,18 @@ const styles = StyleSheet.create({
     color: '#3A4276',
   } as TextStyle,
   studentCellContainer: {
-  padding: 10,
-  backgroundColor: '#F8F9FC',
-  borderRadius: 8,
-  // Other ViewStyle properties
-} as ViewStyle,
-  attendanceBar: {
-    width: '80%',
-    height: 6,
-    backgroundColor: '#EFF2F7',
-    borderRadius: 3,
-    marginBottom: 4,
-  },
-  attendanceProgress: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  attendanceText: {
-    fontSize: 12,
-    color: '#8A94A6',
-  },
-  actionButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(28, 181, 224, 0.1)',
-    justifyContent: 'center',
     alignItems: 'center',
+  } as ViewStyle,
+  viewDetailsButton: {
+    backgroundColor: '#1CB5E0',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  viewDetailsText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   actionButtonsContainer: {
     flexDirection: 'row',
@@ -716,6 +709,53 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#3A4276',
     textAlign: 'center',
+  },
+  featureCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
+    marginBottom: 12,
+  },
+  featureContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  featureIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  featureDetails: {
+    flex: 1,
+  },
+  featureTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3A4276',
+    marginBottom: 4,
+  },
+  featureSubtitle: {
+    fontSize: 14,
+    color: '#8A94A6',
+  },
+  comingSoonBadge: {
+    backgroundColor: 'rgba(247, 104, 91, 0.1)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  comingSoonText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#F7685B',
   },
 });
 
