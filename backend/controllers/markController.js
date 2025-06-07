@@ -489,4 +489,227 @@ exports.getClassMarksSummary = async (req, res) => {
   }
 };
 
+// Add this to controllers/markController.js
+
+// Get comprehensive academic data for a student
+exports.getStudentAcademicReport = async (req, res) => {
+  try {
+    const studentId = req.user.id; // Get student ID from JWT token
+    
+    console.log('getStudentAcademicReport called for student:', studentId);
+
+    // Get student details
+    const student = await Student.findById(studentId).populate('classId');
+    if (!student) {
+      return res.status(404).json({ msg: 'Student not found' });
+    }
+
+    const classId = student.classId._id;
+
+    // Get student's mark record
+    const markRecord = await Mark.findOne({
+      studentId: studentId,
+      classId: classId
+    })
+    .populate('exams.subjects.teacherId', 'name')
+    .populate('exams.subjects.scoredBy', 'name');
+
+    if (!markRecord || markRecord.exams.length === 0) {
+      return res.json({
+        studentInfo: {
+          id: student._id,
+          name: student.name,
+          studentId: student.studentId,
+          className: student.classId.name,
+          section: student.classId.section
+        },
+        hasData: false,
+        message: 'No academic records found',
+        exams: [],
+        summary: null
+      });
+    }
+
+    // Process academic data
+    const processedExams = [];
+    const subjectPerformance = new Map();
+    const examPerformance = [];
+    
+    let totalExams = 0;
+    let completedExams = 0;
+    let totalSubjects = 0;
+    let completedSubjects = 0;
+    let overallMarksScored = 0;
+    let overallFullMarks = 0;
+
+    // Process each exam
+    markRecord.exams.forEach(exam => {
+      let examMarksScored = 0;
+      let examFullMarks = 0;
+      let examCompletedSubjects = 0;
+
+      const processedSubjects = exam.subjects.map(subject => {
+        const isCompleted = subject.marksScored !== null;
+        
+        // Update subject performance tracking
+        if (!subjectPerformance.has(subject.subjectName)) {
+          subjectPerformance.set(subject.subjectName, {
+            subjectName: subject.subjectName,
+            totalMarks: 0,
+            totalFullMarks: 0,
+            examCount: 0,
+            completedCount: 0,
+            averagePercentage: 0,
+            grades: []
+          });
+        }
+        
+        const subjectData = subjectPerformance.get(subject.subjectName);
+        subjectData.examCount++;
+        
+        if (isCompleted) {
+          subjectData.totalMarks += subject.marksScored;
+          subjectData.completedCount++;
+          examCompletedSubjects++;
+          completedSubjects++;
+          
+          const percentage = (subject.marksScored / subject.fullMarks) * 100;
+          subjectData.grades.push({
+            examName: exam.examName,
+            marks: subject.marksScored,
+            fullMarks: subject.fullMarks,
+            percentage: percentage,
+            grade: calculateGrade(percentage)
+          });
+        }
+        
+        subjectData.totalFullMarks += subject.fullMarks;
+        
+        examFullMarks += subject.fullMarks;
+        if (isCompleted) {
+          examMarksScored += subject.marksScored;
+        }
+        totalSubjects++;
+
+        return {
+          subjectId: subject.subjectId,
+          subjectName: subject.subjectName,
+          teacherName: subject.teacherId ? subject.teacherId.name : 'Unknown',
+          fullMarks: subject.fullMarks,
+          marksScored: subject.marksScored,
+          percentage: isCompleted ? ((subject.marksScored / subject.fullMarks) * 100).toFixed(2) : null,
+          grade: isCompleted ? calculateGrade((subject.marksScored / subject.fullMarks) * 100) : null,
+          isCompleted: isCompleted,
+          scoredBy: subject.scoredBy ? subject.scoredBy.name : null,
+          scoredAt: subject.scoredAt
+        };
+      });
+
+      const examPercentage = examFullMarks > 0 ? (examMarksScored / examFullMarks) * 100 : 0;
+      const isExamCompleted = examCompletedSubjects === exam.subjects.length;
+      
+      totalExams++;
+      if (isExamCompleted) {
+        completedExams++;
+      }
+      
+      overallMarksScored += examMarksScored;
+      overallFullMarks += examFullMarks;
+
+      // Store exam performance for trends
+      examPerformance.push({
+        examName: exam.examName,
+        examCode: exam.examCode,
+        examDate: exam.examDate,
+        percentage: examPercentage,
+        marksScored: examMarksScored,
+        fullMarks: examFullMarks,
+        isCompleted: isExamCompleted
+      });
+
+      processedExams.push({
+        examId: exam.examId,
+        examName: exam.examName,
+        examCode: exam.examCode,
+        examDate: exam.examDate,
+        subjects: processedSubjects,
+        totalMarksScored: examMarksScored,
+        totalFullMarks: examFullMarks,
+        percentage: examPercentage.toFixed(2),
+        grade: calculateGrade(examPercentage),
+        isCompleted: isExamCompleted,
+        completedSubjects: examCompletedSubjects,
+        totalSubjects: exam.subjects.length
+      });
+    });
+
+    // Calculate subject averages
+    const subjectSummary = Array.from(subjectPerformance.values()).map(subject => {
+      const avgPercentage = subject.completedCount > 0 ? 
+        (subject.totalMarks / (subject.totalFullMarks * subject.completedCount / subject.examCount)) * 100 : 0;
+      
+      return {
+        ...subject,
+        averagePercentage: avgPercentage.toFixed(2),
+        averageGrade: calculateGrade(avgPercentage),
+        completionRate: ((subject.completedCount / subject.examCount) * 100).toFixed(2)
+      };
+    });
+
+    // Overall performance summary
+    const overallPercentage = overallFullMarks > 0 ? (overallMarksScored / overallFullMarks) * 100 : 0;
+    const completionRate = totalSubjects > 0 ? (completedSubjects / totalSubjects) * 100 : 0;
+
+    const summary = {
+      overallPercentage: overallPercentage.toFixed(2),
+      overallGrade: calculateGrade(overallPercentage),
+      totalExams: totalExams,
+      completedExams: completedExams,
+      totalSubjects: totalSubjects,
+      completedSubjects: completedSubjects,
+      completionRate: completionRate.toFixed(2),
+      totalMarksScored: overallMarksScored,
+      totalFullMarks: overallFullMarks,
+      examCompletionRate: totalExams > 0 ? ((completedExams / totalExams) * 100).toFixed(2) : 0
+    };
+
+    console.log('Student academic report generated successfully');
+
+    res.json({
+      studentInfo: {
+        id: student._id,
+        name: student.name,
+        studentId: student.studentId,
+        className: student.classId.name,
+        section: student.classId.section
+      },
+      hasData: true,
+      exams: processedExams,
+      subjectSummary: subjectSummary,
+      examTrends: examPerformance.filter(exam => exam.isCompleted),
+      summary: summary,
+      lastUpdated: markRecord.updatedAt
+    });
+
+  } catch (err) {
+    console.error('Error in getStudentAcademicReport:', err);
+    res.status(500).json({ 
+      msg: 'Server error', 
+      error: err.message 
+    });
+  }
+};
+
+// Helper function to calculate grade based on percentage
+const calculateGrade = (percentage) => {
+  if (percentage >= 90) return 'A+';
+  if (percentage >= 80) return 'A';
+  if (percentage >= 70) return 'B+';
+  if (percentage >= 60) return 'B';
+  if (percentage >= 50) return 'C+';
+  if (percentage >= 40) return 'C';
+  if (percentage >= 33) return 'D';
+  return 'F';
+};
+
 module.exports = exports;
