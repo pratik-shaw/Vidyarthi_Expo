@@ -396,7 +396,7 @@ exports.getClassDetails = async (req, res) => {
     // Find class and populate related data
     const classDetails = await Class.findById(classId)
       .populate('teacherIds', 'name email -_id')
-      .populate('studentIds', 'name studentId -_id');
+      .populate('studentIds', 'name email studentId _id');
     
     if (!classDetails) {
       return res.status(404).json({ msg: 'Class not found' });
