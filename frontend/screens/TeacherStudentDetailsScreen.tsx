@@ -101,13 +101,60 @@ interface Submission {
   grade?: string;
   feedback?: string;
 }
+interface TeacherSubjectMark {
+  subjectId: string;
+  subjectName: string;
+  teacherId: string;
+  teacherName?: string;
+  fullMarks: number;
+  marksScored: number | null;
+  percentage: number | null;
+  grade: string | null;
+  isCompleted: boolean;
+  scoredBy: string | null;
+  scoredAt: string | null;
+}
+
+interface TeacherExamResult {
+  examId: string;
+  examName: string;
+  examCode: string;
+  examDate: string;
+  subjects: TeacherSubjectMark[];
+  totalMarksScored: number;
+  totalFullMarks: number;
+  percentage: string;
+  grade: string | null;
+  isCompleted: boolean;
+  completedSubjects: number;
+  totalSubjects: number;
+}
+
+interface TeacherAcademicData {
+  hasData: boolean;
+  message?: string;
+  exams: TeacherExamResult[];
+  summary: {
+    overallPercentage: string;
+    overallGrade: string;
+    totalExams: number;
+    completedExams: number;
+    totalSubjects: number;
+    completedSubjects: number;
+    completionRate: string;
+    totalMarksScored: number;
+    totalFullMarks: number;
+    examCompletionRate: string;
+  } | null;
+  lastUpdated?: string;
+}
 
 const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
   const { studentId, studentName, classId, className } = route.params as unknown as TeacherStudentDetailsParams;
   
   // States
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
-  const [academicData, setAcademicData] = useState<AcademicData | null>(null);
+  const [academicData, setAcademicData] = useState<TeacherAcademicData | null>(null);
   const [conductEntries, setConductEntries] = useState<ConductEntry[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -187,78 +234,113 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
       }
     });
   };
-
+  const calculateGrade = (percentage: number): string => {
+  if (percentage >= 90) return 'A+';
+  if (percentage >= 80) return 'A';
+  if (percentage >= 70) return 'B+';
+  if (percentage >= 60) return 'B';
+  if (percentage >= 50) return 'C+';
+  if (percentage >= 40) return 'C';
+  if (percentage >= 33) return 'D';
+  return 'F';
+};
   // Fetch all student data
   const fetchAllData = async (authToken = token) => {
-    setLoading(true);
-    setError(null);
+  setLoading(true);
+  setError(null);
+  
+  try {
+    if (!authToken) {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'TeacherLogin' }],
+      });
+      return;
+    }
+
+    if (!isConnected) {
+      setError('No internet connection. Please check your network.');
+      setLoading(false);
+      return;
+    }
+
+    const apiClient = getAuthenticatedClient(authToken);
     
+    // Fetch student profile (mock for now - you can implement actual API later)
+    const mockProfile: StudentProfile = {
+      _id: studentId,
+      name: studentName,
+      email: 'student@example.com',
+      phone: '+91 9876543210',
+      studentId: 'ST001',
+      uniqueId: 'UNIQUE001',
+      className: className,
+      section: 'A',
+      schoolId: 'school123',
+      isActive: true
+    };
+    setStudentProfile(mockProfile);
+
+    // Fetch academic data from the new endpoint
     try {
-      if (!authToken) {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'TeacherLogin' }],
-        });
-        return;
-      }
-
-      if (!isConnected) {
-        setError('No internet connection. Please check your network.');
-        setLoading(false);
-        return;
-      }
-
-      const apiClient = getAuthenticatedClient(authToken);
+      console.log('Fetching academic data for student:', studentId, 'in class:', classId);
+      const academicResponse = await apiClient.get(`/marks/class/${classId}/student/${studentId}/details`);
       
-      // Fetch student profile (you'll need to create this endpoint)
-      // For now, using mock data structure
-      const mockProfile: StudentProfile = {
-        _id: studentId,
-        name: studentName,
-        email: 'student@example.com',
-        phone: '+91 9876543210',
-        studentId: 'ST001',
-        uniqueId: 'UNIQUE001',
-        className: className,
-        section: 'A',
-        schoolId: 'school123',
-        isActive: true
-      };
-      setStudentProfile(mockProfile);
-
-      // Fetch academic data from marks API
-      try {
-        const academicResponse = await apiClient.get(`/marks/class/${classId}/student/${studentId}/details`);
-        setAcademicData(academicResponse.data);
-      } catch (err) {
-        console.log('Academic data not available yet');
-        // Set mock data for now
-        const mockAcademicData: AcademicData = {
-          results: [
-            {
-              examId: 'exam1',
-              examName: 'Mid Term Exam',
-              examType: 'Mid Term',
-              date: '2024-03-15',
-              subjects: [
-                { subjectId: 'math', subjectName: 'Mathematics', marks: 85, totalMarks: 100, percentage: 85 },
-                { subjectId: 'eng', subjectName: 'English', marks: 78, totalMarks: 100, percentage: 78 },
-                { subjectId: 'sci', subjectName: 'Science', marks: 92, totalMarks: 100, percentage: 92 }
-              ],
-              totalMarks: 300,
-              obtainedMarks: 255,
-              percentage: 85,
-              grade: 'A'
-            }
-          ],
-          overallPerformance: {
-            averagePercentage: 85,
-            totalExams: 1,
-            grade: 'A'
-          }
+      if (academicResponse.data) {
+        const processedAcademicData: TeacherAcademicData = {
+          hasData: academicResponse.data.exams && academicResponse.data.exams.length > 0,
+          exams: academicResponse.data.exams || [],
+          summary: null, // Will be calculated from exams data
+          message: academicResponse.data.exams?.length === 0 ? 'No academic records found for subjects you teach' : undefined
         };
-        setAcademicData(mockAcademicData);
+
+        // Calculate summary if we have exam data
+        if (processedAcademicData.exams.length > 0) {
+          let totalMarksScored = 0;
+          let totalFullMarks = 0;
+          let completedExams = 0;
+          let totalSubjects = 0;
+          let completedSubjects = 0;
+
+          processedAcademicData.exams.forEach(exam => {
+            totalMarksScored += exam.totalMarksScored;
+            totalFullMarks += exam.totalFullMarks;
+            totalSubjects += exam.totalSubjects;
+            completedSubjects += exam.completedSubjects;
+            if (exam.isCompleted) {
+              completedExams++;
+            }
+          });
+
+          const overallPercentage = totalFullMarks > 0 ? ((totalMarksScored / totalFullMarks) * 100) : 0;
+          
+          processedAcademicData.summary = {
+            overallPercentage: overallPercentage.toFixed(2),
+            overallGrade: calculateGrade(overallPercentage),
+            totalExams: processedAcademicData.exams.length,
+            completedExams: completedExams,
+            totalSubjects: totalSubjects,
+            completedSubjects: completedSubjects,
+            completionRate: totalSubjects > 0 ? ((completedSubjects / totalSubjects) * 100).toFixed(2) : '0',
+            totalMarksScored: totalMarksScored,
+            totalFullMarks: totalFullMarks,
+            examCompletionRate: processedAcademicData.exams.length > 0 ? ((completedExams / processedAcademicData.exams.length) * 100).toFixed(2) : '0'
+          };
+        }
+
+        setAcademicData(processedAcademicData);
       }
+    } catch (err) {
+      console.log('Academic data fetch error:', err);
+      
+      // Set empty state with appropriate message
+      setAcademicData({
+        hasData: false,
+        message: 'No academic records available or you do not teach any subjects for this student',
+        exams: [],
+        summary: null
+      });
+    }
 
       // Mock conduct entries (will be replaced with actual API)
       const mockConductEntries: ConductEntry[] = [
@@ -491,9 +573,40 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
   );
 
   // Render academic section
-  const renderAcademicSection = () => (
+  // Replace the renderAcademicSection function with this fixed version:
+
+// Replace your renderAcademicSection function with this fixed version:
+
+const renderAcademicSection = () => {
+  if (!academicData) {
+    return (
+      <View style={styles.sectionContainer}>
+        <View style={styles.emptyStateContainer}>
+          <FontAwesome5 name="graduation-cap" size={36} color="#B0B7C3" />
+          <Text style={styles.emptyStateText}>Loading academic data...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!academicData.hasData) {
+    return (
+      <View style={styles.sectionContainer}>
+        <View style={styles.emptyStateContainer}>
+          <FontAwesome5 name="graduation-cap" size={36} color="#B0B7C3" />
+          <Text style={styles.emptyStateText}>No Academic Records</Text>
+          <Text style={styles.emptyStateSubtext}>
+            {academicData.message || 'No academic records found for subjects you teach'}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
     <View style={styles.sectionContainer}>
-      {academicData?.overallPerformance && (
+      {/* Overall Performance Card */}
+      {academicData.summary && (
         <View style={styles.performanceCard}>
           <LinearGradient
             colors={['#1CB5E0', '#38EF7D']}
@@ -503,49 +616,178 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
           >
             <View style={styles.performanceContent}>
               <Text style={styles.performanceTitle}>Overall Performance</Text>
-              <Text style={styles.performancePercentage}>{academicData.overallPerformance.averagePercentage}%</Text>
-              <Text style={styles.performanceGrade}>Grade: {academicData.overallPerformance.grade}</Text>
+              <Text style={styles.performanceSubtitle}>Subjects You Teach</Text>
+              <Text style={styles.performancePercentage}>
+                {String(academicData.summary.overallPercentage)}%
+              </Text>
+              <Text style={styles.performanceGrade}>
+                Grade: {String(academicData.summary.overallGrade)}
+              </Text>
+              <View style={styles.performanceStats}>
+                <View style={styles.performanceStatItem}>
+                  <Text style={styles.performanceStatValue}>
+                    {String(academicData.summary.completedExams)}
+                  </Text>
+                  <Text style={styles.performanceStatLabel}>Completed Exams</Text>
+                </View>
+                <View style={styles.performanceStatItem}>
+                  <Text style={styles.performanceStatValue}>
+                    {String(academicData.summary.completedSubjects)}
+                  </Text>
+                  <Text style={styles.performanceStatLabel}>Completed Subjects</Text>
+                </View>
+                <View style={styles.performanceStatItem}>
+                  <Text style={styles.performanceStatValue}>
+                    {String(academicData.summary.completionRate)}%
+                  </Text>
+                  <Text style={styles.performanceStatLabel}>Completion Rate</Text>
+                </View>
+              </View>
             </View>
           </LinearGradient>
         </View>
       )}
       
-      {academicData?.results?.map((exam, index) => (
-        <View key={exam.examId || index} style={styles.examCard}>
+      {/* Exam Results */}
+      {academicData.exams && academicData.exams.length > 0 && academicData.exams.map((exam, index) => (
+        <View key={`exam-${exam.examId || index}`} style={styles.examCard}>
           <View style={styles.examHeader}>
-            <Text style={styles.examName}>{exam.examName}</Text>
-            <Text style={styles.examDate}>{new Date(exam.date).toLocaleDateString()}</Text>
+            <View style={styles.examTitleContainer}>
+              <Text style={styles.examName}>{String(exam.examName || 'Untitled Exam')}</Text>
+              <Text style={styles.examCode}>({String(exam.examCode || 'No Code')})</Text>
+            </View>
+            <View style={styles.examDateContainer}>
+              <Text style={styles.examDate}>
+                {exam.examDate ? new Date(exam.examDate).toLocaleDateString() : 'No Date'}
+              </Text>
+              <View style={[
+                styles.completionBadge, 
+                { backgroundColor: exam.isCompleted ? 'rgba(56, 239, 125, 0.1)' : 'rgba(255, 167, 38, 0.1)' }
+              ]}>
+                <Text style={[
+                  styles.completionText, 
+                  { color: exam.isCompleted ? '#38EF7D' : '#FFA726' }
+                ]}>
+                  {exam.isCompleted ? 'Completed' : 'In Progress'}
+                </Text>
+              </View>
+            </View>
           </View>
           
           <View style={styles.examSummary}>
             <View style={styles.summaryItem}>
-              <Text style={styles.summaryValue}>{exam.obtainedMarks}</Text>
+              <Text style={styles.summaryValue}>
+                {String(exam.totalMarksScored || 0)}
+              </Text>
+              <Text style={styles.summaryLabel}>Marks Scored</Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryValue}>
+                {String(exam.totalFullMarks || 0)}
+              </Text>
               <Text style={styles.summaryLabel}>Total Marks</Text>
             </View>
             <View style={styles.summaryItem}>
-              <Text style={styles.summaryValue}>{exam.percentage}%</Text>
+              <Text style={styles.summaryValue}>
+                {String(exam.percentage || '0')}%
+              </Text>
               <Text style={styles.summaryLabel}>Percentage</Text>
             </View>
             <View style={styles.summaryItem}>
-              <Text style={styles.summaryValue}>{exam.grade || 'N/A'}</Text>
+              <Text style={styles.summaryValue}>
+                {String(exam.grade || 'N/A')}
+              </Text>
               <Text style={styles.summaryLabel}>Grade</Text>
             </View>
           </View>
           
           <View style={styles.subjectsContainer}>
-            <Text style={styles.subjectsTitle}>Subject-wise Performance</Text>
-            {exam.subjects.map((subject, idx) => (
-              <View key={subject.subjectId || idx} style={styles.subjectRow}>
-                <Text style={styles.subjectName}>{subject.subjectName}</Text>
-                <Text style={styles.subjectMarks}>{subject.marks}/{subject.totalMarks}</Text>
-                <Text style={styles.subjectPercentage}>{subject.percentage}%</Text>
+            <Text style={styles.subjectsTitle}>Your Subjects Performance</Text>
+            <Text style={styles.subjectsSubtitle}>
+              {String(exam.completedSubjects || 0)} of {String(exam.totalSubjects || 0)} subjects completed
+            </Text>
+            
+            {exam.subjects && exam.subjects.length > 0 && exam.subjects.map((subject, idx) => (
+              <View key={`subject-${subject.subjectId || idx}`} style={styles.subjectRow}>
+                <View style={styles.subjectHeader}>
+                  <Text style={styles.subjectName}>
+                    {String(subject.subjectName || 'Unknown Subject')}
+                  </Text>
+                  <View style={[
+                    styles.subjectStatus,
+                    { 
+                      backgroundColor: subject.isCompleted 
+                        ? 'rgba(56, 239, 125, 0.1)' 
+                        : 'rgba(180, 183, 195, 0.1)' 
+                    }
+                  ]}>
+                    <Text style={[
+                      styles.subjectStatusText,
+                      { 
+                        color: subject.isCompleted ? '#38EF7D' : '#8A94A6'
+                      }
+                    ]}>
+                      {subject.isCompleted ? 'Graded' : 'Pending'}
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.subjectDetails}>
+                  <Text style={styles.subjectMarks}>
+                    {subject.marksScored !== null ? String(subject.marksScored) : '-'}/{String(subject.fullMarks || 0)}
+                  </Text>
+                  <Text style={styles.subjectPercentage}>
+                    {subject.percentage !== null ? `${String(subject.percentage)}%` : 'N/A'}
+                  </Text>
+                </View>
+                
+                {subject.scoredBy && (
+                  <Text style={styles.scoredByText}>
+                    Graded by: {String(subject.scoredBy)}
+                  </Text>
+                )}
               </View>
             ))}
           </View>
+          
+          {/* Progress Bar */}
+          <View style={styles.progressContainer}>
+            <View style={styles.progressHeader}>
+              <Text style={styles.progressLabel}>Completion Progress</Text>
+              <Text style={styles.progressPercentage}>
+                {exam.totalSubjects > 0 
+                  ? String(Math.round((exam.completedSubjects / exam.totalSubjects) * 100))
+                  : '0'}%
+              </Text>
+            </View>
+            <View style={styles.progressBar}>
+              <View 
+                style={[
+                  styles.progressFill,
+                  {
+                    width: `${exam.totalSubjects > 0 
+                      ? Math.round((exam.completedSubjects / exam.totalSubjects) * 100) 
+                      : 0}%`
+                  }
+                ]}
+              />
+            </View>
+          </View>
         </View>
       ))}
+      
+      {/* Last Updated Info */}
+      {academicData.lastUpdated && (
+        <View style={styles.lastUpdatedContainer}>
+          <FontAwesome5 name="clock" size={14} color="#8A94A6" />
+          <Text style={styles.lastUpdatedText}>
+            Last updated: {new Date(academicData.lastUpdated).toLocaleString()}
+          </Text>
+        </View>
+      )}
     </View>
   );
+};
 
   // Render conduct section
   const renderConductSection = () => (
@@ -1369,6 +1611,132 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
+  performanceSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginBottom: 8,
+  },
+  performanceStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  performanceStatItem: {
+    alignItems: 'center',
+  },
+  performanceStatValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  performanceStatLabel: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  examTitleContainer: {
+    flex: 1,
+  },
+  examCode: {
+    fontSize: 12,
+    color: '#8A94A6',
+    marginTop: 2,
+  },
+  examDateContainer: {
+    alignItems: 'flex-end',
+  },
+  completionBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  completionText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  subjectsSubtitle: {
+    fontSize: 12,
+    color: '#8A94A6',
+    marginBottom: 12,
+  },
+  subjectHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  subjectStatus: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  subjectStatusText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  subjectDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  scoredByText: {
+    fontSize: 11,
+    color: '#8A94A6',
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  progressContainer: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7F0',
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  progressLabel: {
+    fontSize: 12,
+    color: '#3A4276',
+    fontWeight: '600',
+  },
+  progressPercentage: {
+    fontSize: 12,
+    color: '#1CB5E0',
+    fontWeight: '600',
+  },
+  progressBar: {
+    height: 6,
+    backgroundColor: '#E5E7F0',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#1CB5E0',
+    borderRadius: 3,
+  },
+  lastUpdatedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginTop: 16,
+  },
+  lastUpdatedText: {
+    fontSize: 12,
+    color: '#8A94A6',
+    marginLeft: 6,
+  },
+
 });
 
 export default TeacherStudentDetailsScreen;
