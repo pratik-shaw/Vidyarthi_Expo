@@ -1,3 +1,4 @@
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,25 +10,23 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
-  Image,
   ScrollView,
-  TextStyle,
-  ViewStyle
+  Dimensions,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
-import React, { useEffect, useState } from 'react';
-import { Feather, FontAwesome5, Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 
-// API base URL - replace with your actual backend URL
+// Constants
 const API_URL = 'http://192.168.29.148:5000/api';
-const API_TIMEOUT = 15000; // 15 seconds timeout
+const API_TIMEOUT = 15000;
+const { width } = Dimensions.get('window');
 
-// Properly define the route params type
+// Types
 type TeacherClassDetailsParams = {
   classId: string;
   className: string;
@@ -35,7 +34,6 @@ type TeacherClassDetailsParams = {
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherClassDetails'>;
 
-// Define types
 interface Teacher {
   _id: string;
   name: string;
@@ -47,6 +45,8 @@ interface Student {
   name: string;
   studentId: string;
   email?: string;
+  phone?: string;
+  uniqueId?: string;
 }
 
 interface ClassDetails {
@@ -59,19 +59,28 @@ interface ClassDetails {
   schoolId?: string;
 }
 
+interface NetworkState {
+  isConnected: boolean;
+  isInternetReachable: boolean;
+}
+
 const TeacherClassDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
-  // Get classId from route params with proper type assertion
-  const { classId, className } = route.params as unknown as TeacherClassDetailsParams;
+  // Route params
+  const { classId, className } = route.params as TeacherClassDetailsParams;
   
-  // States
+  // State management
   const [classDetails, setClassDetails] = useState<ClassDetails | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [token, setToken] = useState<string | null>(null);
-  const [isConnected, setIsConnected] = useState(true);
+  const [networkState, setNetworkState] = useState<NetworkState>({
+    isConnected: true,
+    isInternetReachable: true,
+  });
   const [error, setError] = useState<string | null>(null);
-  
-  // Set header title
+  const [studentsLoading, setStudentsLoading] = useState<boolean>(false);
+
+  // Set navigation header
   React.useLayoutEffect(() => {
     navigation.setOptions({
       title: className || 'Class Details',
@@ -79,132 +88,149 @@ const TeacherClassDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
       headerStyle: {
         backgroundColor: '#FFFFFF',
       },
-      headerTintColor: '#3A4276',
-      headerShadowVisible: false,
+      headerTintColor: '#2C3E50',
+      headerTitleStyle: {
+        fontWeight: '600',
+        fontSize: 18,
+      },
       headerBackTitle: 'Back',
     });
   }, [navigation, className]);
 
-  // Check network connectivity
+  // Network connectivity monitoring
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
-      setIsConnected(state.isConnected ?? false);
+      setNetworkState({
+        isConnected: state.isConnected ?? false,
+        isInternetReachable: state.isInternetReachable ?? false,
+      });
     });
 
-    return () => {
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, []);
 
-  // Load data on component mount
+  // Initialize component
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const storedToken = await AsyncStorage.getItem('teacherToken');
-        
-        if (!storedToken) {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'TeacherLogin' }],
-          });
-          return;
-        }
-        
-        setToken(storedToken);
-        fetchClassDetails(storedToken);
-      } catch (error) {
-        console.error('Error loading data:', error);
-        setError('Failed to load data');
-        setLoading(false);
-      }
-    };
-    
-    loadData();
+    initializeScreen();
   }, [classId]);
 
-  // Get authenticated API client
-  const getAuthenticatedClient = (authToken = token) => {
+  const initializeScreen = async () => {
+    try {
+      const storedToken = await AsyncStorage.getItem('teacherToken');
+      
+      if (!storedToken) {
+        handleSessionExpired();
+        return;
+      }
+      
+      setToken(storedToken);
+      await fetchClassDetails(storedToken);
+    } catch (error) {
+      console.error('Error initializing screen:', error);
+      setError('Failed to initialize screen');
+      setLoading(false);
+    }
+  };
+
+  // Create authenticated API client
+  const createApiClient = useCallback((authToken: string) => {
     return axios.create({
       baseURL: API_URL,
       timeout: API_TIMEOUT,
       headers: {
         'Authorization': `Bearer ${authToken}`,
         'x-auth-token': authToken,
-        'Content-Type': 'application/json'
-      }
+        'Content-Type': 'application/json',
+      },
     });
-  };
+  }, []);
 
-  // Fetch class details from API
-  const fetchClassDetails = async (authToken = token) => {
-    setLoading(true);
-    setError(null);
-    
+  // Fetch class details
+  const fetchClassDetails = async (authToken: string = token!) => {
+    if (!authToken) {
+      handleSessionExpired();
+      return;
+    }
+
+    if (!networkState.isConnected) {
+      setError('No internet connection. Please check your network and try again.');
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     try {
-      if (!authToken) {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'TeacherLogin' }],
-        });
-        return;
-      }
+      setLoading(!refreshing);
+      setError(null);
 
-      if (!isConnected) {
-        setError('No internet connection. Please check your network.');
-        setLoading(false);
-        return;
-      }
-
-      const apiClient = getAuthenticatedClient(authToken);
+      const apiClient = createApiClient(authToken);
       const response = await apiClient.get(`/class/${classId}`);
       
-      setClassDetails(response.data);
-      console.log('Class details fetched:', response.data);
+      if (response.data) {
+        setClassDetails(response.data);
+        console.log('Class details loaded:', response.data);
+      } else {
+        throw new Error('No data received from server');
+      }
     } catch (error) {
       console.error('Error fetching class details:', error);
-      
-      if (axios.isAxiosError(error)) {
-        if (error.response?.status === 401) {
-          handleSessionExpired();
-        } else {
-          setError(`Error: ${error.response?.data?.msg || 'Failed to fetch class details'}`);
-        }
-      } else {
-        setError('An unknown error occurred');
-      }
+      handleApiError(error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  // Handle refresh
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchClassDetails();
+  // Handle API errors
+  const handleApiError = (error: any) => {
+    if (axios.isAxiosError(error)) {
+      if (error.response?.status === 401) {
+        handleSessionExpired();
+      } else if (error.response?.status === 404) {
+        setError('Class not found. Please check if the class still exists.');
+      } else if (error.code === 'ECONNABORTED') {
+        setError('Request timeout. Please try again.');
+      } else {
+        const message = error.response?.data?.msg || error.response?.data?.message || 'Failed to load class details';
+        setError(message);
+      }
+    } else {
+      setError('An unexpected error occurred. Please try again.');
+    }
   };
 
-  // Handle session expired
+  // Handle session expiration
   const handleSessionExpired = () => {
     Alert.alert(
-      "Session Expired",
-      "Your session has expired. Please login again.",
+      'Session Expired',
+      'Your session has expired. Please login again.',
       [
         {
-          text: "OK",
+          text: 'OK',
           onPress: async () => {
-            await AsyncStorage.removeItem('teacherToken');
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'TeacherLogin' }],
-            });
-          }
-        }
-      ]
+            try {
+              await AsyncStorage.removeItem('teacherToken');
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'TeacherLogin' }],
+              });
+            } catch (error) {
+              console.error('Error clearing storage:', error);
+            }
+          },
+        },
+      ],
+      { cancelable: false }
     );
   };
 
-  // Handle view student details
+  // Handle pull to refresh
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchClassDetails();
+  }, [token]);
+
+  // Navigate to student details
   const handleViewStudentDetails = (student: Student) => {
     navigation.navigate('TeacherStudentDetailsScreen', {
       studentId: student._id,
@@ -214,238 +240,243 @@ const TeacherClassDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
     });
   };
 
-  // Render student item
-  const renderStudentItem = ({ item, index }: { item: Student; index: number }) => {
-    return (
-      <View style={[
-        styles.studentRow, 
-        index % 2 === 0 ? styles.evenRow : styles.oddRow
-      ]}>
-        <Text style={[styles.studentCell, styles.idCell]}>{item.studentId || `ST${index + 1001}`}</Text>
-        <Text style={[styles.studentCell, styles.nameCell]}>{item.name}</Text>
-        <Text style={[styles.studentCell, styles.emailCell]}>{item.email || 'N/A'}</Text>
-        <View style={[styles.studentCellContainer, styles.actionsCell]}>
-          <TouchableOpacity 
-            style={styles.viewDetailsButton}
-            onPress={() => handleViewStudentDetails(item)}
-          >
-            <Text style={styles.viewDetailsText}>View Details</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+  // Navigate to scoring screen
+  const handleAddMarks = () => {
+    navigation.navigate('TeacherScoring', {
+      classId: classId,
+      className: className,
+    });
+  };
+
+  // Show coming soon alerts
+  const showComingSoon = (feature: string) => {
+    Alert.alert(
+      'Coming Soon',
+      `${feature} feature is under development and will be available in a future update.`,
+      [{ text: 'OK' }]
     );
   };
 
-  // Show loading indicator
+  // Render student item
+  const renderStudentItem = ({ item, index }: { item: Student; index: number }) => (
+    <View style={[styles.studentRow, index % 2 === 0 ? styles.evenRow : styles.oddRow]}>
+      <View style={styles.studentInfo}>
+        <Text style={styles.studentName}>{item.name}</Text>
+        <Text style={styles.studentId}>ID: {item.studentId || `ST${1000 + index + 1}`}</Text>
+        <Text style={styles.studentEmail}>{item.email || 'No email provided'}</Text>
+      </View>
+      <TouchableOpacity
+        style={styles.viewButton}
+        onPress={() => handleViewStudentDetails(item)}
+        activeOpacity={0.7}
+      >
+        <Feather name="eye" size={16} color="#FFFFFF" />
+        <Text style={styles.viewButtonText}>View</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Render teacher item
+  const renderTeacherItem = ({ item }: { item: Teacher }) => (
+    <View style={styles.teacherCard}>
+      <View style={styles.teacherIcon}>
+        <FontAwesome5 name="user-tie" size={18} color="#FFFFFF" />
+      </View>
+      <View style={styles.teacherInfo}>
+        <Text style={styles.teacherName}>{item.name}</Text>
+        <Text style={styles.teacherEmail}>{item.email}</Text>
+      </View>
+    </View>
+  );
+
+  // Render action button
+  const renderActionButton = (
+    icon: string,
+    title: string,
+    onPress: () => void,
+    backgroundColor: string,
+    iconColor: string = '#FFFFFF'
+  ) => (
+    <TouchableOpacity
+      style={[styles.actionButton, { backgroundColor }]}
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
+      <FontAwesome5 name={icon} size={20} color={iconColor} />
+      <Text style={[styles.actionButtonText, { color: iconColor }]}>{title}</Text>
+    </TouchableOpacity>
+  );
+
+  // Loading state
   if (loading && !refreshing) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <StatusBar hidden={true} />
-        <ActivityIndicator size="large" color="#1CB5E0" />
-        <Text style={styles.loadingText}>Loading class details...</Text>
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3498DB" />
+          <Text style={styles.loadingText}>Loading class details...</Text>
+        </View>
       </SafeAreaView>
     );
   }
 
-  // Show error message
-  if (error) {
+  // Error state
+  if (error && !classDetails) {
     return (
-      <SafeAreaView style={styles.errorContainer}>
-        <StatusBar hidden={true} />
-        <FontAwesome5 name="exclamation-circle" size={48} color="#F7685B" />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity 
-          style={styles.retryButton}
-          onPress={() => fetchClassDetails()}
-        >
-          <Text style={styles.retryButtonText}>Try Again</Text>
-        </TouchableOpacity>
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <View style={styles.errorContainer}>
+          <FontAwesome5 name="exclamation-triangle" size={48} color="#E74C3C" />
+          <Text style={styles.errorTitle}>Oops! Something went wrong</Text>
+          <Text style={styles.errorMessage}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => fetchClassDetails()}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar hidden={true} />
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       
       <ScrollView
-        contentContainerStyle={styles.scrollContainer}
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={['#1CB5E0', '#38EF7D']}
+            colors={['#3498DB', '#2ECC71']}
+            tintColor="#3498DB"
           />
         }
+        showsVerticalScrollIndicator={false}
       >
-        {/* Class Details Card */}
-        <View style={styles.classCardContainer}>
+        {/* Class Header Card */}
+        <View style={styles.headerCard}>
           <LinearGradient
-            colors={['#1CB5E0', '#38EF7D']}
+            colors={['#3498DB', '#2ECC71']}
             start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.classGradient}
+            end={{ x: 1, y: 1 }}
+            style={styles.headerGradient}
           >
-            <View style={styles.classCardContent}>
+            <View style={styles.headerContent}>
               <View style={styles.classIconContainer}>
-                <FontAwesome5 name="chalkboard-teacher" size={32} color="#3A4276" />
+                <FontAwesome5 name="chalkboard-teacher" size={28} color="#FFFFFF" />
               </View>
-              
-              <View style={styles.classDetails}>
-                <Text style={styles.className}>{classDetails?.name || 'Class Name'}</Text>
-                <Text style={styles.classSection}>Section: {classDetails?.section || '-'}</Text>
-                <Text style={styles.studentCount}>
-                  <FontAwesome5 name="user-graduate" size={14} color="#3A4276" />
-                  {' '}{classDetails?.studentIds?.length || 0} Students
-                </Text>
+              <View style={styles.classInfo}>
+                <Text style={styles.classTitle}>{classDetails?.name || 'Unknown Class'}</Text>
+                <Text style={styles.classSection}>Section {classDetails?.section || 'N/A'}</Text>
+                <View style={styles.studentCountContainer}>
+                  <FontAwesome5 name="users" size={14} color="#FFFFFF" />
+                  <Text style={styles.studentCount}>
+                    {classDetails?.studentIds?.length || 0} Students
+                  </Text>
+                </View>
               </View>
             </View>
           </LinearGradient>
         </View>
 
+        {/* Quick Actions */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <View style={styles.actionsGrid}>
+            {renderActionButton('poll', 'Add Marks', handleAddMarks, '#3498DB')}
+            {renderActionButton('file-alt', 'Materials', () => showComingSoon('Class Materials'), '#9B59B6')}
+            {renderActionButton('chart-bar', 'Reports', () => showComingSoon('Performance Reports'), '#E67E22')}
+            {renderActionButton('calendar', 'Schedule', () => showComingSoon('Class Schedule'), '#1ABC9C')}
+          </View>
+        </View>
+
         {/* Teachers Section */}
-        <View style={styles.sectionContainer}>
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Teachers</Text>
-          
           {classDetails?.teacherIds && classDetails.teacherIds.length > 0 ? (
-            <View style={styles.teachersContainer}>
-              {classDetails.teacherIds.map((teacher, index) => (
-                <View key={teacher._id || index} style={styles.teacherCard}>
-                  <View style={styles.teacherIconContainer}>
-                    <FontAwesome5 name="user-tie" size={16} color="#FFFFFF" />
-                  </View>
-                  <View style={styles.teacherDetails}>
-                    <Text style={styles.teacherName}>{teacher.name}</Text>
-                    <Text style={styles.teacherEmail}>{teacher.email}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
+            <FlatList
+              data={classDetails.teacherIds}
+              renderItem={renderTeacherItem}
+              keyExtractor={(item, index) => `teacher-${item._id}-${index}`}
+              scrollEnabled={false}
+              showsVerticalScrollIndicator={false}
+            />
           ) : (
-            <View style={styles.emptyStateContainer}>
-              <Text style={styles.emptyStateText}>No teachers assigned to this class</Text>
+            <View style={styles.emptyState}>
+              <FontAwesome5 name="user-slash" size={32} color="#BDC3C7" />
+              <Text style={styles.emptyStateText}>No teachers assigned</Text>
             </View>
           )}
+
         </View>
 
         {/* Students Section */}
-        <View style={styles.sectionContainer}>
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Students</Text>
-          
           {classDetails?.studentIds && classDetails.studentIds.length > 0 ? (
-            <View style={styles.studentsTableContainer}>
-              {/* Table Header */}
-              <View style={styles.tableHeader}>
-                <Text style={[styles.headerCell, styles.idCell]}>ID</Text>
-                <Text style={[styles.headerCell, styles.nameCell]}>Name</Text>
-                <Text style={[styles.headerCell, styles.emailCell]}>Email</Text>
-                <Text style={[styles.headerCell, styles.actionsCell]}>Action</Text>
-              </View>
-              
-              {/* Student List */}
+            <View style={styles.studentsContainer}>
               <FlatList
                 data={classDetails.studentIds}
                 renderItem={renderStudentItem}
-                keyExtractor={(item) => item._id || item.studentId || `student-${Math.random()}`}
+                keyExtractor={(item, index) => `student-${item._id}-${index}`}
                 scrollEnabled={false}
-                contentContainerStyle={styles.studentsList}
+                showsVerticalScrollIndicator={false}
+                ItemSeparatorComponent={() => <View style={styles.separator} />}
               />
             </View>
           ) : (
-            <View style={styles.emptyStateContainer}>
-              <FontAwesome5 name="user-graduate" size={36} color="#B0B7C3" />
-              <Text style={styles.emptyStateText}>No students in this class</Text>
+            <View style={styles.emptyState}>
+              <FontAwesome5 name="user-graduate" size={32} color="#BDC3C7" />
+              <Text style={styles.emptyStateText}>No students enrolled</Text>
               <Text style={styles.emptyStateSubtext}>
-                Students need to be enrolled in the class
+                Students will appear here once they enroll in the class
               </Text>
             </View>
           )}
-        </View>
+        
+        </View> 
 
-        {/* Action Buttons */}
-        <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity 
-            style={[styles.actionCard, { backgroundColor: 'rgba(28, 181, 224, 0.1)' }]}
-            onPress={() => navigation.navigate('TeacherScoring', {
-              classId: classId,
-              className: className,
-            })}
-          >
-            <View style={[styles.actionIconContainer, { backgroundColor: '#1CB5E0' }]}>
-              <FontAwesome5 name="poll" size={18} color="#FFFFFF" />
-            </View>
-            <Text style={styles.actionText}>Add Marks</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.actionCard, { backgroundColor: 'rgba(58, 66, 118, 0.1)' }]}
-            onPress={() => Alert.alert("Coming Soon", "Class materials feature is under development.")}
-          >
-            <View style={[styles.actionIconContainer, { backgroundColor: '#3A4276' }]}>
-              <FontAwesome5 name="file" size={18} color="#FFFFFF" />
-            </View>
-            <Text style={styles.actionText}>Class Materials</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.actionCard, { backgroundColor: 'rgba(56, 239, 125, 0.1)' }]}
-            onPress={() => Alert.alert("Coming Soon", "Performance reports feature is under development.")}
-          >
-            <View style={[styles.actionIconContainer, { backgroundColor: '#38EF7D' }]}>
-              <FontAwesome5 name="chart-bar" size={18} color="#FFFFFF" />
-            </View>
-            <Text style={styles.actionText}>Reports</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Communication Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Communication</Text>
+          <View style={styles.communicationGrid}>
+            <TouchableOpacity
+              style={styles.communicationCard}
+              onPress={() => showComingSoon('Class Chat')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.communicationIcon, { backgroundColor: '#E74C3C' }]}>
+                <FontAwesome5 name="comments" size={18} color="#FFFFFF" />
+              </View>
+              <Text style={styles.communicationTitle}>Class Chat</Text>
+              <Text style={styles.communicationSubtitle}>Message students & parents</Text>
+            </TouchableOpacity>
 
-        {/* Chat Room Section */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Communication & Calendars</Text>
-          
-          <TouchableOpacity 
-            style={styles.featureCard}
-            onPress={() => Alert.alert("Coming Soon", "Chat room feature is under development.")}
-          >
-            <View style={styles.featureContent}>
-              <View style={[styles.featureIconContainer, { backgroundColor: '#FF6B6B' }]}>
-                <FontAwesome5 name="comments" size={20} color="#FFFFFF" />
+            <TouchableOpacity
+              style={styles.communicationCard}
+              onPress={() => showComingSoon('Announcements')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.communicationIcon, { backgroundColor: '#F39C12' }]}>
+                <FontAwesome5 name="bullhorn" size={18} color="#FFFFFF" />
               </View>
-              <View style={styles.featureDetails}>
-                <Text style={styles.featureTitle}>Class Chat Room</Text>
-                <Text style={styles.featureSubtitle}>Communicate with students and parents</Text>
-              </View>
-              <View style={styles.comingSoonBadge}>
-                <Text style={styles.comingSoonText}>Coming Soon</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.featureCard}
-            onPress={() => Alert.alert("Coming Soon", "Calendar events feature is under development.")}
-          >
-            <View style={styles.featureContent}>
-              <View style={[styles.featureIconContainer, { backgroundColor: '#4ECDC4' }]}>
-                <FontAwesome5 name="calendar-alt" size={20} color="#FFFFFF" />
-              </View>
-              <View style={styles.featureDetails}>
-                <Text style={styles.featureTitle}>Schedule Events</Text>
-                <Text style={styles.featureSubtitle}>Manage class events and calendar</Text>
-              </View>
-              <View style={styles.comingSoonBadge}>
-                <Text style={styles.comingSoonText}>Coming Soon</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
+              <Text style={styles.communicationTitle}>Announcements</Text>
+              <Text style={styles.communicationSubtitle}>Send class updates</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-
       </ScrollView>
     </SafeAreaView>
   );
 };
 
-// Add type assertions for styles
 const styles = StyleSheet.create({
-  safeArea: {
+  container: {
     flex: 1,
     backgroundColor: '#F8F9FC',
   },
@@ -453,29 +484,35 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8F9FC',
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#8A94A6',
+    color: '#7F8C8D',
+    fontWeight: '500',
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8F9FC',
-    padding: 24,
+    paddingHorizontal: 32,
   },
-  errorText: {
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#2C3E50',
     marginTop: 16,
+    marginBottom: 8,
+  },
+  errorMessage: {
     fontSize: 16,
-    color: '#8A94A6',
+    color: '#7F8C8D',
     textAlign: 'center',
     marginBottom: 24,
+    lineHeight: 22,
   },
   retryButton: {
-    backgroundColor: '#1CB5E0',
+    backgroundColor: '#3498DB',
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 8,
@@ -485,71 +522,95 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  scrollContainer: {
-    flexGrow: 1,
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
     paddingHorizontal: 16,
     paddingBottom: 24,
   },
-  classCardContainer: {
-    marginVertical: 16,
+  headerCard: {
+    marginTop: 16,
+    marginBottom: 24,
     borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#1CB5E0',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 6,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
   },
-  classGradient: {
-    padding: 2,
-    borderRadius: 16,
+  headerGradient: {
+    padding: 20,
   },
-  classCardContent: {
+  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
   },
   classIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(28, 181, 224, 0.1)',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
   },
-  classDetails: {
+  classInfo: {
     flex: 1,
   },
-  className: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#3A4276',
+  classTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#FFFFFF',
     marginBottom: 4,
   },
   classSection: {
     fontSize: 16,
-    color: '#8A94A6',
+    color: 'rgba(255, 255, 255, 0.8)',
     marginBottom: 8,
+  },
+  studentCountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   studentCount: {
     fontSize: 14,
-    color: '#3A4276',
+    color: '#FFFFFF',
+    marginLeft: 6,
     fontWeight: '500',
   },
-  sectionContainer: {
-    marginBottom: 20,
+  section: {
+    marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
-    color: '#3A4276',
-    marginBottom: 12,
+    color: '#2C3E50',
+    marginBottom: 16,
   },
-  teachersContainer: {
-    marginHorizontal: -6,
+  actionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  actionButton: {
+    width: (width - 48) / 2,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  actionButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 8,
   },
   teacherCard: {
     backgroundColor: '#FFFFFF',
@@ -557,109 +618,51 @@ const styles = StyleSheet.create({
     padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 6,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
     elevation: 2,
-    minWidth: '45%',
-    flexGrow: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
   },
-  teacherIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#3A4276',
+  teacherIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#34495E',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
-  teacherDetails: {
+  teacherInfo: {
     flex: 1,
   },
   teacherName: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
-    color: '#3A4276',
+    color: '#2C3E50',
     marginBottom: 2,
   },
   teacherEmail: {
-    fontSize: 12,
-    color: '#8A94A6',
-  },
-  emptyStateContainer: {
-    padding: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#3A4276',
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  emptyStateSubtext: {
     fontSize: 14,
-    color: '#8A94A6',
-    textAlign: 'center',
+    color: '#7F8C8D',
   },
-  studentsTableContainer: {
+  studentsContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
     elevation: 2,
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#F0F2F8',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  headerCell: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#3A4276',
-  } as TextStyle,
-  idCell: {
-    width: '20%',
-  } as TextStyle,
-  nameCell: {
-    width: '30%', 
-    flex: 1,
-  } as TextStyle,
-  emailCell: {
-    width: '30%',
-  } as TextStyle,
-  actionsCell: {
-    width: '25%',
-    alignItems: 'center',
-  } as TextStyle | ViewStyle,
-  studentsList: {
-    flexGrow: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
   },
   studentRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 16,
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EFF2F7',
+    justifyContent: 'space-between',
   },
   evenRow: {
     backgroundColor: '#FFFFFF',
@@ -667,95 +670,105 @@ const styles = StyleSheet.create({
   oddRow: {
     backgroundColor: '#F8F9FC',
   },
-  studentCell: {
-    fontSize: 14,
-    color: '#3A4276',
-  } as TextStyle,
-  studentCellContainer: {
-    alignItems: 'center',
-  } as ViewStyle,
-  viewDetailsButton: {
-    backgroundColor: '#1CB5E0',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
+  studentInfo: {
+    flex: 1,
   },
-  viewDetailsText: {
+  studentName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2C3E50',
+    marginBottom: 2,
+  },
+  studentId: {
+    fontSize: 13,
+    color: '#7F8C8D',
+    marginBottom: 2,
+  },
+  studentEmail: {
+    fontSize: 13,
+    color: '#95A5A6',
+  },
+  viewButton: {
+    backgroundColor: '#3498DB',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  viewButtonText: {
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '600',
+    marginLeft: 4,
   },
-  actionButtonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
+  separator: {
+    height: 1,
+    backgroundColor: '#E8E8E8',
+    marginHorizontal: 16,
   },
-  actionCard: {
-    width: '31%',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-  },
-  actionIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  actionText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#3A4276',
-    textAlign: 'center',
-  },
-  featureCard: {
+  emptyState: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
-    marginBottom: 12,
-  },
-  featureContent: {
-    flexDirection: 'row',
+    padding: 32,
     alignItems: 'center',
-    padding: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
   },
-  featureIconContainer: {
+  emptyStateText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#7F8C8D',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: '#95A5A6',
+    marginTop: 4,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  communicationGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  communicationCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    width: (width - 48) / 2,
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    position: 'relative',
+  },
+  communicationIcon: {
     width: 48,
     height: 48,
     borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginBottom: 12,
   },
-  featureDetails: {
-    flex: 1,
-  },
-  featureTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#3A4276',
-    marginBottom: 4,
-  },
-  featureSubtitle: {
+  communicationTitle: {
     fontSize: 14,
-    color: '#8A94A6',
-  },
-  comingSoonBadge: {
-    backgroundColor: 'rgba(247, 104, 91, 0.1)',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-  },
-  comingSoonText: {
-    fontSize: 10,
     fontWeight: '600',
-    color: '#F7685B',
+    color: '#2C3E50',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  communicationSubtitle: {
+    fontSize: 12,
+    color: '#7F8C8D',
+    textAlign: 'center',
+    lineHeight: 16,
   },
 });
 
