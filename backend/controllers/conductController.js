@@ -461,14 +461,29 @@ exports.deleteConduct = async (req, res) => {
       return res.status(403).json({ msg: accessCheck.error });
     }
 
-    // Soft delete conduct record
-    await conduct.softDelete(req.user.id);
+    // Additional permission check - only creator or class admin can delete
+    const teacher = await Teacher.findById(req.user.id);
+    const isCreator = conduct.createdBy.toString() === req.user.id;
+    const isClassAdmin = teacher.adminClassId && 
+                        teacher.adminClassId.toString() === conduct.classId.toString();
 
-    console.log('Conduct record deleted successfully:', conductId);
+    if (!isCreator && !isClassAdmin) {
+      return res.status(403).json({ msg: 'Only the original creator or class admin can delete this record' });
+    }
+
+    // Permanently delete the conduct record from database
+    const deletedConduct = await Conduct.findByIdAndDelete(conductId);
+
+    if (!deletedConduct) {
+      return res.status(404).json({ msg: 'Failed to delete conduct record' });
+    }
+
+    console.log('Conduct record permanently deleted from database:', conductId);
 
     res.json({
-      msg: 'Conduct record deleted successfully',
-      deletedConductId: conductId
+      msg: 'Conduct record permanently deleted from database',
+      deletedConductId: conductId,
+      deletedAt: new Date()
     });
 
   } catch (err) {
