@@ -59,6 +59,32 @@ interface AcademicDetailsTabProps {
   academicData: TeacherAcademicData | null;
 }
 
+// Helper function to safely convert values to strings
+const safeString = (value: any): string => {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return String(value);
+};
+
+// Helper function to safely get string values with fallback
+const safeStringWithFallback = (value: any, fallback: string = ''): string => {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  if (typeof value === 'object') {
+    // If it's an object with name property, use that
+    if (value.name) {
+      return String(value.name);
+    }
+    return fallback;
+  }
+  return String(value);
+};
+
 const AcademicDetailsTab: React.FC<AcademicDetailsTabProps> = ({ academicData }) => {
   if (!academicData) {
     return (
@@ -97,30 +123,30 @@ const AcademicDetailsTab: React.FC<AcademicDetailsTabProps> = ({ academicData })
             style={styles.performanceGradient}
           >
             <View style={styles.performanceContent}>
-              <Text style={styles.performanceTitle}>Overall Performance</Text>
-              <Text style={styles.performanceSubtitle}>Subjects You Teach</Text>
+              <Text style={styles.performanceTitle}>Academic Performance</Text>
+              <Text style={styles.performanceSubtitle}>Overall Percentage By Student</Text>
               <Text style={styles.performancePercentage}>
-                {String(academicData.summary.overallPercentage)}%
+                {safeString(academicData.summary.overallPercentage)}%
               </Text>
               <Text style={styles.performanceGrade}>
-                Grade: {String(academicData.summary.overallGrade)}
+                Grade: {safeString(academicData.summary.overallGrade)}
               </Text>
               <View style={styles.performanceStats}>
                 <View style={styles.performanceStatItem}>
                   <Text style={styles.performanceStatValue}>
-                    {String(academicData.summary.completedExams)}
+                    {safeString(academicData.summary.completedExams)}
                   </Text>
                   <Text style={styles.performanceStatLabel}>Completed Exams</Text>
                 </View>
                 <View style={styles.performanceStatItem}>
                   <Text style={styles.performanceStatValue}>
-                    {String(academicData.summary.completedSubjects)}
+                    {safeString(academicData.summary.completedSubjects)}
                   </Text>
                   <Text style={styles.performanceStatLabel}>Completed Subjects</Text>
                 </View>
                 <View style={styles.performanceStatItem}>
                   <Text style={styles.performanceStatValue}>
-                    {String(academicData.summary.completionRate)}%
+                    {safeString(academicData.summary.completionRate)}%
                   </Text>
                   <Text style={styles.performanceStatLabel}>Completion Rate</Text>
                 </View>
@@ -135,8 +161,12 @@ const AcademicDetailsTab: React.FC<AcademicDetailsTabProps> = ({ academicData })
         <View key={`exam-${exam.examId || index}`} style={styles.examCard}>
           <View style={styles.examHeader}>
             <View style={styles.examTitleContainer}>
-              <Text style={styles.examName}>{String(exam.examName || 'Untitled Exam')}</Text>
-              <Text style={styles.examCode}>({String(exam.examCode || 'No Code')})</Text>
+              <Text style={styles.examName}>
+                {safeStringWithFallback(exam.examName, 'Untitled Exam')}
+              </Text>
+              <Text style={styles.examCode}>
+                ({safeStringWithFallback(exam.examCode, 'No Code')})
+              </Text>
             </View>
             <View style={styles.examDateContainer}>
               <Text style={styles.examDate}>
@@ -159,25 +189,25 @@ const AcademicDetailsTab: React.FC<AcademicDetailsTabProps> = ({ academicData })
           <View style={styles.examSummary}>
             <View style={styles.summaryItem}>
               <Text style={styles.summaryValue}>
-                {String(exam.totalMarksScored || 0)}
+                {safeString(exam.totalMarksScored || 0)}
               </Text>
               <Text style={styles.summaryLabel}>Marks Scored</Text>
             </View>
             <View style={styles.summaryItem}>
               <Text style={styles.summaryValue}>
-                {String(exam.totalFullMarks || 0)}
+                {safeString(exam.totalFullMarks || 0)}
               </Text>
               <Text style={styles.summaryLabel}>Total Marks</Text>
             </View>
             <View style={styles.summaryItem}>
               <Text style={styles.summaryValue}>
-                {String(exam.percentage || '0')}%
+                {safeString(exam.percentage || '0')}%
               </Text>
               <Text style={styles.summaryLabel}>Percentage</Text>
             </View>
             <View style={styles.summaryItem}>
               <Text style={styles.summaryValue}>
-                {String(exam.grade || 'N/A')}
+                {safeStringWithFallback(exam.grade, 'N/A')}
               </Text>
               <Text style={styles.summaryLabel}>Grade</Text>
             </View>
@@ -186,48 +216,25 @@ const AcademicDetailsTab: React.FC<AcademicDetailsTabProps> = ({ academicData })
           <View style={styles.subjectsContainer}>
             <Text style={styles.subjectsTitle}>Your Subjects Performance</Text>
             <Text style={styles.subjectsSubtitle}>
-              {String(exam.completedSubjects || 0)} of {String(exam.totalSubjects || 0)} subjects completed
+              {safeString(exam.completedSubjects || 0)} of {safeString(exam.totalSubjects || 0)} subjects completed
             </Text>
             
             {exam.subjects && exam.subjects.length > 0 && exam.subjects.map((subject, idx) => (
               <View key={`subject-${subject.subjectId || idx}`} style={styles.subjectRow}>
                 <View style={styles.subjectHeader}>
                   <Text style={styles.subjectName}>
-                    {String(subject.subjectName || 'Unknown Subject')}
+                    {safeStringWithFallback(subject.subjectName, 'Unknown Subject')}
                   </Text>
-                  <View style={[
-                    styles.subjectStatus,
-                    { 
-                      backgroundColor: subject.isCompleted 
-                        ? 'rgba(56, 239, 125, 0.1)' 
-                        : 'rgba(180, 183, 195, 0.1)' 
-                    }
-                  ]}>
-                    <Text style={[
-                      styles.subjectStatusText,
-                      { 
-                        color: subject.isCompleted ? '#38EF7D' : '#8A94A6'
-                      }
-                    ]}>
-                      {subject.isCompleted ? 'Graded' : 'Pending'}
-                    </Text>
-                  </View>
                 </View>
                 
                 <View style={styles.subjectDetails}>
                   <Text style={styles.subjectMarks}>
-                    {subject.marksScored !== null ? String(subject.marksScored) : '-'}/{String(subject.fullMarks || 0)}
+                    {subject.marksScored !== null ? safeString(subject.marksScored) : '-'}/{safeString(subject.fullMarks || 0)}
                   </Text>
-                  <Text style={styles.subjectPercentage}>
-                    {subject.percentage !== null ? `${String(subject.percentage)}%` : 'N/A'}
+                  <Text style={styles.subjectTeacher}>
+                    {safeStringWithFallback(subject.teacherName || subject.scoredBy, 'Not Assigned')}
                   </Text>
                 </View>
-                
-                {subject.scoredBy && (
-                  <Text style={styles.scoredByText}>
-                    Graded by: {String(subject.scoredBy)}
-                  </Text>
-                )}
               </View>
             ))}
           </View>
@@ -238,7 +245,7 @@ const AcademicDetailsTab: React.FC<AcademicDetailsTabProps> = ({ academicData })
               <Text style={styles.progressLabel}>Completion Progress</Text>
               <Text style={styles.progressPercentage}>
                 {exam.totalSubjects > 0 
-                  ? String(Math.round((exam.completedSubjects / exam.totalSubjects) * 100))
+                  ? safeString(Math.round((exam.completedSubjects / exam.totalSubjects) * 100))
                   : '0'}%
               </Text>
             </View>
@@ -440,15 +447,6 @@ const styles = StyleSheet.create({
     color: '#3A4276',
     flex: 1,
   },
-  subjectStatus: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  subjectStatusText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
   subjectDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -459,16 +457,10 @@ const styles = StyleSheet.create({
     color: '#3A4276',
     fontWeight: '500',
   },
-  subjectPercentage: {
+  subjectTeacher: {
     fontSize: 14,
     color: '#1CB5E0',
     fontWeight: '600',
-  },
-  scoredByText: {
-    fontSize: 12,
-    color: '#8A94A6',
-    marginTop: 4,
-    fontStyle: 'italic',
   },
   progressContainer: {
     marginTop: 8,
