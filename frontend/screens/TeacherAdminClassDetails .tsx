@@ -263,39 +263,55 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
 
   // Quick actions configuration for overview
   const getQuickActions = (): QuickAction[] => [
-    {
-      id: 'take_attendance',
-      title: 'Take Attendance',
-      description: 'Mark daily attendance',
-      icon: 'clipboard-check',
-      color: '#4299E1',
-      backgroundColor: 'rgba(66, 153, 225, 0.1)'
-    },
-    {
-      id: 'view_reports',
-      title: 'View Reports',
-      description: 'Student performance',
-      icon: 'chart-bar',
-      color: '#48BB78',
-      backgroundColor: 'rgba(72, 187, 120, 0.1)'
-    },
-    {
-      id: 'announcements',
-      title: 'Announcements',
-      description: 'Class notifications',
-      icon: 'bullhorn',
-      color: '#ED8936',
-      backgroundColor: 'rgba(237, 137, 54, 0.1)'
-    },
-    {
-      id: 'chat_room',
-      title: 'Chat Room',
-      description: 'Class discussions',
-      icon: 'comments',
-      color: '#9F7AEA',
-      backgroundColor: 'rgba(159, 122, 234, 0.1)'
-    }
-  ];
+  {
+    id: 'take_attendance',
+    title: 'Take Attendance',
+    description: 'Mark daily attendance',
+    icon: 'clipboard-check',
+    color: '#4299E1',
+    backgroundColor: 'rgba(66, 153, 225, 0.1)'
+  },
+  {
+    id: 'view_reports',
+    title: 'View Reports',
+    description: 'Student performance',
+    icon: 'chart-bar',
+    color: '#48BB78',
+    backgroundColor: 'rgba(72, 187, 120, 0.1)'
+  },
+  {
+    id: 'announcements',
+    title: 'Announcements',
+    description: 'Class notifications',
+    icon: 'bullhorn',
+    color: '#ED8936',
+    backgroundColor: 'rgba(237, 137, 54, 0.1)'
+  },
+  {
+    id: 'chat_room',
+    title: 'Chat Room',
+    description: 'Class discussions',
+    icon: 'comments',
+    color: '#9F7AEA',
+    backgroundColor: 'rgba(159, 122, 234, 0.1)'
+  },
+  {
+    id: 'add_materials',
+    title: 'Add Materials',
+    description: 'Upload resources & files',
+    icon: 'folder-plus',
+    color: '#38B2AC',
+    backgroundColor: 'rgba(56, 178, 172, 0.1)'
+  },
+  {
+    id: 'schedule_events_dates',
+    title: 'Schedule Events & Dates',
+    description: 'Manage calendar & deadlines',
+    icon: 'calendar-alt',
+    color: '#E53E3E',
+    backgroundColor: 'rgba(229, 62, 62, 0.1)'
+  }
+];
 
   // Handle quick action press
   const handleQuickAction = (actionId: string) => {
@@ -588,20 +604,6 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
           </View>
           <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
         </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.optionItem}
-          onPress={() => Alert.alert("Coming Soon", "Chat room feature is under development.")}
-        >
-          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(159, 122, 234, 0.1)' }]}>
-            <FontAwesome5 name="comments" size={20} color="#9F7AEA" />
-          </View>
-          <View style={styles.optionContent}>
-            <Text style={styles.optionTitle}>Chat Room</Text>
-            <Text style={styles.optionDescription}>Class discussion and communication</Text>
-          </View>
-          <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-        </TouchableOpacity>
 
         <TouchableOpacity 
           style={styles.optionItem}
@@ -610,8 +612,8 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
             className: classDetails?.name || className  // or whatever the class name is
            })}
         >
-          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(159, 122, 234, 0.1)' }]}>
-            <FontAwesome5 name="book" size={20} color="#9F7AEA" />
+          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(236, 72, 153, 0.1)' }]}>
+            <FontAwesome5 name="book" size={20} color="#EC4899" />
           </View>
           <View style={styles.optionContent}>
             <Text style={styles.optionTitle}>Subjects & Teachers</Text>
@@ -627,8 +629,8 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
             className: className  // or whatever the class name is
           })}
         >
-          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(159, 122, 234, 0.1)' }]}>
-            <FontAwesome5 name="book-open" size={20} color="#9F7AEA" />
+          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(245, 101, 101, 0.1)' }]}>
+            <FontAwesome5 name="book-open" size={20} color="#F56565" />
           </View>
           <View style={styles.optionContent}>
             <Text style={styles.optionTitle}>Examinations & Assessments</Text>
@@ -644,8 +646,8 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
             className: className  // or whatever the class name is
           })}
         >
-          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(159, 122, 234, 0.1)' }]}>
-            <FontAwesome5 name="poll" size={20} color="#9F7AEA" />
+          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(99, 102, 241, 0.1)' }]}>
+            <FontAwesome5 name="poll" size={20} color="#6366F1" />
           </View>
           <View style={styles.optionContent}>
             <Text style={styles.optionTitle}>Add Marks</Text>

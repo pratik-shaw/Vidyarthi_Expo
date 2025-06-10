@@ -126,14 +126,14 @@ const ConductDetailsTab: React.FC<ConductDetailsTabProps> = ({
         <View style={styles.conductInfo}>
           <Text style={styles.conductTitle}>{item.title}</Text>
           <Text style={styles.conductDate}>{formatDate(item.date)}</Text>
-        </View>
-        <View style={styles.conductBadges}>
-          <Text style={[styles.conductType, { color: getConductTypeColor(item.type) }]}>
-            {item.type.toUpperCase()}
-          </Text>
-          <Text style={[styles.severityBadge, { color: getSeverityColor(item.severity) }]}>
-            {item.severity.toUpperCase()}
-          </Text>
+          <View style={styles.conductBadges}>
+            <Text style={[styles.conductType, { color: getConductTypeColor(item.type) }]}>
+              {item.type.toUpperCase()}
+            </Text>
+            <Text style={[styles.severityBadge, { color: getSeverityColor(item.severity) }]}>
+              {item.severity.toUpperCase()}
+            </Text>
+          </View>
         </View>
         <TouchableOpacity 
           style={styles.deleteButton}
@@ -363,10 +363,11 @@ const styles = StyleSheet.create({
   conductDate: {
     fontSize: 12,
     color: '#8A94A6',
+    marginBottom: 6,
   },
   conductBadges: {
-    alignItems: 'flex-end',
-    marginRight: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   conductType: {
     fontSize: 10,
@@ -375,7 +376,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 8,
     backgroundColor: 'rgba(0, 0, 0, 0.05)',
-    marginBottom: 4,
+    marginRight: 8,
   },
   severityBadge: {
     fontSize: 9,
