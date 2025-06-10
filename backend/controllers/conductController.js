@@ -5,14 +5,58 @@ const Teacher = require('../models/Teacher');
 const Class = require('../models/Class');
 const mongoose = require('mongoose');
 
-// Helper function to verify teacher permissions
-const verifyTeacherPermissions = async (teacherId, classId) => {
+// Helper function to verify teacher has access to student
+const verifyTeacherAccess = async (teacherId, studentId, classId) => {
+  try {
+    const teacher = await Teacher.findById(teacherId);
+    if (!teacher) {
+      return { authorized: false, error: 'Teacher not found' };
+    }
+
+    // Verify student exists and is active
+    const student = await Student.findOne({ _id: studentId, isActive: true });
+    if (!student) {
+      return { authorized: false, error: 'Student not found' };
+    }
+
+    // Verify class exists
+    const classObj = await Class.findById(classId);
+    if (!classObj) {
+      return { authorized: false, error: 'Class not found' };
+    }
+
+    // Check if student belongs to the specified class
+    if (student.classId.toString() !== classId.toString()) {
+      return { authorized: false, error: 'Student does not belong to this class' };
+    }
+
+    // Check if teacher has access to this student/class
+    // Teacher has access if:
+    // 1. They are admin of this class
+    // 2. They teach any subject in this class
+    // 3. They are from the same school as the student
+    const isClassAdmin = teacher.adminClassId && teacher.adminClassId.toString() === classId.toString();
+    const teachesClass = teacher.classesTeaching && teacher.classesTeaching.some(id => id.toString() === classId.toString());
+    const sameSchool = teacher.schoolId && teacher.schoolId.toString() === student.schoolId.toString();
+
+    if (!isClassAdmin && !teachesClass && !sameSchool) {
+      return { authorized: false, error: 'Not authorized to access this student\'s records' };
+    }
+
+    return { authorized: true, teacher, student, classObj };
+  } catch (error) {
+    console.error('Error in verifyTeacherAccess:', error);
+    return { authorized: false, error: 'Authorization check failed' };
+  }
+};
+
+// Helper function for strict permissions (for update/delete operations)
+const verifyStrictTeacherPermissions = async (teacherId, classId) => {
   const teacher = await Teacher.findById(teacherId);
   if (!teacher) {
     return { authorized: false, error: 'Teacher not found' };
   }
 
-  // Check if teacher is class admin or teaches this class
   const classObj = await Class.findById(classId);
   if (!classObj) {
     return { authorized: false, error: 'Class not found' };
@@ -46,19 +90,19 @@ exports.createConduct = async (req, res) => {
       return res.status(400).json({ msg: 'Invalid conduct type' });
     }
 
-    // Verify teacher permissions
-    const authCheck = await verifyTeacherPermissions(req.user.id, classId);
-    if (!authCheck.authorized) {
-      return res.status(403).json({ msg: authCheck.error });
+    // Validate severity if provided
+    if (severity && !['low', 'medium', 'high'].includes(severity)) {
+      return res.status(400).json({ msg: 'Invalid severity level' });
     }
 
-    const { teacher, classObj } = authCheck;
-
-    // Verify student exists and belongs to this class
-    const student = await Student.findOne({ _id: studentId, classId, isActive: true });
-    if (!student) {
-      return res.status(404).json({ msg: 'Student not found in this class' });
+    // Use flexible access verification for creating conduct
+    const accessCheck = await verifyTeacherAccess(req.user.id, studentId, classId);
+    if (!accessCheck.authorized) {
+      console.log('Access denied:', accessCheck.error);
+      return res.status(403).json({ msg: accessCheck.error });
     }
+
+    const { teacher, student, classObj } = accessCheck;
 
     // Create new conduct record
     const newConduct = new Conduct({
@@ -119,17 +163,13 @@ exports.getConductByStudent = async (req, res) => {
 
     console.log('getConductByStudent called:', { studentId, classId, userId: req.user.id });
 
-    // Verify teacher permissions
-    const authCheck = await verifyTeacherPermissions(req.user.id, classId);
-    if (!authCheck.authorized) {
-      return res.status(403).json({ msg: authCheck.error });
+    // Use flexible access verification
+    const accessCheck = await verifyTeacherAccess(req.user.id, studentId, classId);
+    if (!accessCheck.authorized) {
+      return res.status(403).json({ msg: accessCheck.error });
     }
 
-    // Verify student exists and belongs to this class
-    const student = await Student.findOne({ _id: studentId, classId, isActive: true });
-    if (!student) {
-      return res.status(404).json({ msg: 'Student not found in this class' });
-    }
+    const { student, classObj } = accessCheck;
 
     // Get conduct records
     const conducts = await Conduct.getByStudent(studentId, {
@@ -157,9 +197,9 @@ exports.getConductByStudent = async (req, res) => {
         studentId: student.studentId
       },
       classInfo: {
-        id: authCheck.classObj._id,
-        name: authCheck.classObj.name,
-        section: authCheck.classObj.section
+        id: classObj._id,
+        name: classObj.name,
+        section: classObj.section
       },
       totalRecords: conducts.length
     });
@@ -186,8 +226,8 @@ exports.getConductByClass = async (req, res) => {
 
     console.log('getConductByClass called:', { classId, userId: req.user.id });
 
-    // Verify teacher permissions
-    const authCheck = await verifyTeacherPermissions(req.user.id, classId);
+    // Use strict permissions for class-wide access
+    const authCheck = await verifyStrictTeacherPermissions(req.user.id, classId);
     if (!authCheck.authorized) {
       return res.status(403).json({ msg: authCheck.error });
     }
@@ -313,10 +353,10 @@ exports.getConductById = async (req, res) => {
       return res.status(404).json({ msg: 'Conduct record not found' });
     }
 
-    // Verify teacher permissions for this conduct's class
-    const authCheck = await verifyTeacherPermissions(req.user.id, conduct.classId._id);
-    if (!authCheck.authorized) {
-      return res.status(403).json({ msg: authCheck.error });
+    // Use flexible access verification
+    const accessCheck = await verifyTeacherAccess(req.user.id, conduct.studentId._id, conduct.classId._id);
+    if (!accessCheck.authorized) {
+      return res.status(403).json({ msg: accessCheck.error });
     }
 
     res.json({
@@ -356,8 +396,8 @@ exports.updateConduct = async (req, res) => {
       return res.status(404).json({ msg: 'Conduct record not found' });
     }
 
-    // Verify teacher permissions
-    const authCheck = await verifyTeacherPermissions(req.user.id, conduct.classId);
+    // Use strict permissions for updates
+    const authCheck = await verifyStrictTeacherPermissions(req.user.id, conduct.classId);
     if (!authCheck.authorized) {
       return res.status(403).json({ msg: authCheck.error });
     }
@@ -415,19 +455,10 @@ exports.deleteConduct = async (req, res) => {
       return res.status(404).json({ msg: 'Conduct record not found' });
     }
 
-    // Verify teacher permissions
-    const authCheck = await verifyTeacherPermissions(req.user.id, conduct.classId);
-    if (!authCheck.authorized) {
-      return res.status(403).json({ msg: authCheck.error });
-    }
-
-    // Only allow the original creator or class admin to delete
-    const isCreator = conduct.createdBy.toString() === req.user.id;
-    const isClassAdmin = authCheck.teacher.adminClassId && 
-                        authCheck.teacher.adminClassId.toString() === conduct.classId.toString();
-
-    if (!isCreator && !isClassAdmin) {
-      return res.status(403).json({ msg: 'Only the original creator or class admin can delete this record' });
+    // Use flexible access verification (same as other operations)
+    const accessCheck = await verifyTeacherAccess(req.user.id, conduct.studentId, conduct.classId);
+    if (!accessCheck.authorized) {
+      return res.status(403).json({ msg: accessCheck.error });
     }
 
     // Soft delete conduct record

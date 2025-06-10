@@ -104,11 +104,40 @@ interface TeacherAcademicData {
 
 interface ConductEntry {
   _id: string;
-  date: string;
+  studentId: string;
+  teacherId: string;
+  classId: string;
+  schoolId: string;
   type: 'positive' | 'negative' | 'neutral';
   title: string;
   description: string;
-  teacherName: string;
+  date: string;
+  isActive: boolean;
+  severity: 'low' | 'medium' | 'high';
+  actionTaken?: string;
+  parentNotified: boolean;
+  followUpRequired: boolean;
+  followUpDate?: string;
+  createdBy: string;
+  updatedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+  teacherName?: string;
+  studentName?: string;
+}
+
+interface ConductSummary {
+  positive: number;
+  negative: number;
+  neutral: number;
+  total: number;
+  lastEntry: string | null;
+}
+
+interface ConductData {
+  conducts: ConductEntry[];
+  summary: ConductSummary;
+  totalRecords: number;
 }
 
 interface Submission {
@@ -128,7 +157,9 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
   // States
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
   const [academicData, setAcademicData] = useState<TeacherAcademicData | null>(null);
-  const [conductEntries, setConductEntries] = useState<ConductEntry[]>([]);
+  const [conductData, setConductData] = useState<ConductData | null>(null);
+  const [conductLoading, setConductLoading] = useState<boolean>(false);
+  const [conductError, setConductError] = useState<string | null>(null);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -142,6 +173,10 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
   const [newConductType, setNewConductType] = useState<'positive' | 'negative' | 'neutral'>('positive');
   const [newConductTitle, setNewConductTitle] = useState('');
   const [newConductDescription, setNewConductDescription] = useState('');
+  const [newConductSeverity, setNewConductSeverity] = useState<'low' | 'medium' | 'high'>('medium');
+  const [newConductActionTaken, setNewConductActionTaken] = useState('');
+  const [newConductParentNotified, setNewConductParentNotified] = useState(false);
+  const [newConductFollowUpRequired, setNewConductFollowUpRequired] = useState(false);
   const [addingConduct, setAddingConduct] = useState(false);
 
   // Set header title
@@ -219,6 +254,142 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
     return 'F';
   };
 
+// Clean fetchConductData function with proper summary calculation
+const fetchConductData = async (authToken = token) => {
+  setConductLoading(true);
+  setConductError(null);
+  
+  try {
+    if (!authToken) return;
+    
+    const apiClient = getAuthenticatedClient(authToken);
+    const response = await apiClient.get(`/conduct/class/${classId}/student/${studentId}`);
+    
+    if (response.data) {
+      const conducts = response.data.conducts || [];
+      
+      // Calculate summary from conduct records
+      const calculateSummary = (conductRecords: ConductEntry[]): ConductSummary => {
+        const summary = {
+          positive: 0,
+          negative: 0,
+          neutral: 0,
+          total: 0,
+          lastEntry: null as string | null
+        };
+        
+        if (conductRecords.length === 0) {
+          return summary;
+        }
+        
+        // Filter active records
+        const activeRecords = conductRecords.filter(conduct => {
+          return conduct.isActive === undefined || conduct.isActive === null || conduct.isActive === true;
+        });
+        
+        // Count each type from active records
+        activeRecords.forEach((conduct) => {
+          const conductType = conduct.type ? conduct.type.toString().toLowerCase().trim() : '';
+          
+          switch (conductType) {
+            case 'positive':
+              summary.positive++;
+              break;
+            case 'negative':
+              summary.negative++;
+              break;
+            case 'neutral':
+              summary.neutral++;
+              break;
+          }
+        });
+        
+        // Calculate total from individual counts
+        summary.total = summary.positive + summary.negative + summary.neutral;
+        
+        // Find the most recent entry from active records
+        if (activeRecords.length > 0) {
+          const sortedByDate = [...activeRecords].sort((a, b) => {
+            const dateA = new Date(a.createdAt || a.date || a.updatedAt);
+            const dateB = new Date(b.createdAt || b.date || b.updatedAt);
+            return dateB.getTime() - dateA.getTime();
+          });
+          
+          if (sortedByDate.length > 0) {
+            summary.lastEntry = sortedByDate[0].createdAt || sortedByDate[0].date || sortedByDate[0].updatedAt;
+          }
+        }
+        
+        return summary;
+      };
+      
+      // Use API summary if available and valid, otherwise calculate from records
+      let finalSummary;
+      
+      if (response.data.summary && 
+          typeof response.data.summary === 'object' && 
+          response.data.summary !== null) {
+        
+        const apiSummary = response.data.summary;
+        const hasValidNumbers = 
+          typeof apiSummary.positive === 'number' &&
+          typeof apiSummary.negative === 'number' &&
+          typeof apiSummary.neutral === 'number';
+        
+        if (hasValidNumbers) {
+          finalSummary = {
+            positive: Math.max(0, apiSummary.positive || 0),
+            negative: Math.max(0, apiSummary.negative || 0),
+            neutral: Math.max(0, apiSummary.neutral || 0),
+            total: Math.max(0, apiSummary.total || (apiSummary.positive + apiSummary.negative + apiSummary.neutral)),
+            lastEntry: apiSummary.lastEntry || null
+          };
+        } else {
+          finalSummary = calculateSummary(conducts);
+        }
+      } else {
+        finalSummary = calculateSummary(conducts);
+      }
+      
+      // Double-check: if summary total doesn't match active records, recalculate
+      const activeCount = conducts.filter((c: { isActive: boolean; }) => c.isActive !== false).length;
+      if (finalSummary.total !== activeCount && activeCount > 0) {
+        finalSummary = calculateSummary(conducts);
+      }
+      
+      setConductData({
+        conducts: conducts,
+        summary: finalSummary,
+        totalRecords: response.data.totalRecords || conducts.length
+      });
+      
+    } else {
+      setConductData({
+        conducts: [],
+        summary: { positive: 0, negative: 0, neutral: 0, total: 0, lastEntry: null },
+        totalRecords: 0
+      });
+    }
+    
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      if (err.response?.status === 401) {
+        handleSessionExpired();
+      } else if (err.response?.status === 403) {
+        setConductError('Not authorized to view conduct records for this class');
+      } else if (err.response?.status === 404) {
+        setConductError('Student not found in this class');
+      } else {
+        setConductError(err.response?.data?.msg || 'Failed to fetch conduct records');
+      }
+    } else {
+      setConductError('An unknown error occurred while fetching conduct records');
+    }
+  } finally {
+    setConductLoading(false);
+  }
+};
+
   // Fetch all student data
   const fetchAllData = async (authToken = token) => {
     setLoading(true);
@@ -239,8 +410,6 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
         return;
       }
 
-      const apiClient = getAuthenticatedClient(authToken);
-      
       // Fetch student profile (mock for now - you can implement actual API later)
       const mockProfile: StudentProfile = {
         _id: studentId,
@@ -259,6 +428,7 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
       // Fetch academic data from the new endpoint
       try {
         console.log('Fetching academic data for student:', studentId, 'in class:', classId);
+        const apiClient = getAuthenticatedClient(authToken);
         const academicResponse = await apiClient.get(`/marks/class/${classId}/student/${studentId}/details`);
         
         if (academicResponse.data) {
@@ -317,26 +487,8 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
         });
       }
 
-      // Mock conduct entries (will be replaced with actual API)
-      const mockConductEntries: ConductEntry[] = [
-        {
-          _id: '1',
-          date: '2024-03-20',
-          type: 'positive',
-          title: 'Excellent Performance',
-          description: 'Showed exceptional leadership during group project',
-          teacherName: 'Ms. Smith'
-        },
-        {
-          _id: '2',
-          date: '2024-03-18',
-          type: 'neutral',
-          title: 'Regular Attendance',
-          description: 'Good attendance record this month',
-          teacherName: 'Mr. Johnson'
-        }
-      ];
-      setConductEntries(mockConductEntries);
+      // Fetch conduct data
+      await fetchConductData(authToken);
 
       // Mock submissions (will be replaced with actual API)
       const mockSubmissions: Submission[] = [
@@ -387,6 +539,11 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
     fetchAllData();
   };
 
+  // Handle conduct refresh
+  const onConductRefresh = () => {
+    fetchConductData();
+  };
+
   // Handle session expired
   const handleSessionExpired = () => {
     Alert.alert(
@@ -410,37 +567,103 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
   // Add conduct entry
   const addConductEntry = async () => {
     if (!newConductTitle.trim() || !newConductDescription.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
+      Alert.alert('Error', 'Please fill in title and description');
       return;
     }
 
     setAddingConduct(true);
     
     try {
-      // Here you would make an API call to add the conduct entry
-      // For now, we'll add it locally
-      const newEntry: ConductEntry = {
-        _id: Date.now().toString(),
-        date: new Date().toISOString().split('T')[0],
+      if (!token) {
+        handleSessionExpired();
+        return;
+      }
+
+      const apiClient = getAuthenticatedClient(token);
+      
+      const conductData = {
         type: newConductType,
-        title: newConductTitle,
-        description: newConductDescription,
-        teacherName: 'Current Teacher' // You'd get this from the logged-in teacher's data
+        title: newConductTitle.trim(),
+        description: newConductDescription.trim(),
+        severity: newConductSeverity,
+        actionTaken: newConductActionTaken.trim() || undefined,
+        parentNotified: newConductParentNotified,
+        followUpRequired: newConductFollowUpRequired,
       };
+
+      console.log('Creating conduct entry:', conductData);
       
-      setConductEntries(prev => [newEntry, ...prev]);
+      const response = await apiClient.post(`/conduct/class/${classId}/student/${studentId}`, conductData);
       
-      // Reset form
-      setNewConductTitle('');
-      setNewConductDescription('');
-      setNewConductType('positive');
-      setConductModalVisible(false);
-      
-      Alert.alert('Success', 'Conduct entry added successfully');
+      if (response.data) {
+        // Reset form
+        setNewConductTitle('');
+        setNewConductDescription('');
+        setNewConductType('positive');
+        setNewConductSeverity('medium');
+        setNewConductActionTaken('');
+        setNewConductParentNotified(false);
+        setNewConductFollowUpRequired(false);
+        setConductModalVisible(false);
+        
+        // Refresh conduct data
+        await fetchConductData();
+        
+        Alert.alert('Success', 'Conduct entry added successfully');
+      }
     } catch (error) {
-      Alert.alert('Error', 'Failed to add conduct entry');
+      console.error('Error adding conduct entry:', error);
+      
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          handleSessionExpired();
+        } else if (error.response?.status === 403) {
+          Alert.alert('Error', 'Not authorized to add conduct records for this class');
+        } else if (error.response?.status === 404) {
+          Alert.alert('Error', 'Student not found in this class');
+        } else {
+          Alert.alert('Error', error.response?.data?.msg || 'Failed to add conduct entry');
+        }
+      } else {
+        Alert.alert('Error', 'An unknown error occurred');
+      }
     } finally {
       setAddingConduct(false);
+    }
+  };
+
+  // Delete conduct entry
+  const deleteConductEntry = async (conductId: string) => {
+    try {
+      if (!token) {
+        handleSessionExpired();
+        return;
+      }
+
+      const apiClient = getAuthenticatedClient(token);
+      
+      await apiClient.delete(`/conduct/${conductId}`);
+      
+      // Refresh conduct data
+      await fetchConductData();
+      
+      Alert.alert('Success', 'Conduct entry deleted successfully');
+    } catch (error) {
+      console.error('Error deleting conduct entry:', error);
+      
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          handleSessionExpired();
+        } else if (error.response?.status === 403) {
+          Alert.alert('Error', 'Not authorized to delete this conduct record');
+        } else if (error.response?.status === 404) {
+          Alert.alert('Error', 'Conduct record not found');
+        } else {
+          Alert.alert('Error', error.response?.data?.msg || 'Failed to delete conduct entry');
+        }
+      } else {
+        Alert.alert('Error', 'An unknown error occurred');
+      }
     }
   };
 
@@ -486,10 +709,21 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
         onPress={() => setActiveTab('submissions')}
       >
         <FontAwesome5 name="file-alt" size={16} color={activeTab === 'submissions' ? '#1CB5E0' : '#8A94A6'} />
-        <Text style={[styles.tabText, activeTab === 'submissions' && styles.activeTabText]}>Submissions</Text>
+        <Text style={[styles.tabText, activeTab === 'submissions' && styles.activeTabText]}>Submission</Text>
       </TouchableOpacity>
     </View>
   );
+
+  // Reset conduct form
+  const resetConductForm = () => {
+    setNewConductTitle('');
+    setNewConductDescription('');
+    setNewConductType('positive');
+    setNewConductSeverity('medium');
+    setNewConductActionTaken('');
+    setNewConductParentNotified(false);
+    setNewConductFollowUpRequired(false);
+  };
 
   // Show loading indicator
   if (loading && !refreshing) {
@@ -545,8 +779,12 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
         
         {activeTab === 'conduct' && (
           <ConductDetailsTab 
-            conductEntries={conductEntries}
+            conductData={conductData}
+            loading={conductLoading}
+            error={conductError}
             onAddConduct={() => setConductModalVisible(true)}
+            onRefresh={onConductRefresh}
+            onDeleteConduct={deleteConductEntry}
           />
         )}
         
@@ -560,19 +798,25 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
         animationType="slide"
         transparent={true}
         visible={conductModalVisible}
-        onRequestClose={() => setConductModalVisible(false)}
+        onRequestClose={() => {
+          setConductModalVisible(false);
+          resetConductForm();
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Conduct Entry</Text>
-              <TouchableOpacity onPress={() => setConductModalVisible(false)}>
+              <TouchableOpacity onPress={() => {
+                setConductModalVisible(false);
+                resetConductForm();
+              }}>
                 <FontAwesome5 name="times" size={20} color="#8A94A6" />
               </TouchableOpacity>
             </View>
             
-            <View style={styles.modalContent}>
-              <Text style={styles.inputLabel}>Type</Text>
+            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.inputLabel}>Type *</Text>
               <View style={styles.typeSelector}>
                 {['positive', 'neutral', 'negative'].map((type) => (
                   <TouchableOpacity
@@ -594,16 +838,16 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
                 ))}
               </View>
               
-              <Text style={styles.inputLabel}>Title</Text>
+              <Text style={styles.inputLabel}>Title *</Text>
               <TextInput
                 style={styles.textInput}
                 value={newConductTitle}
                 onChangeText={setNewConductTitle}
                 placeholder="Enter title..."
-                maxLength={50}
+                maxLength={100}
               />
               
-              <Text style={styles.inputLabel}>Description</Text>
+              <Text style={styles.inputLabel}>Description *</Text>
               <TextInput
                 style={[styles.textInput, styles.textArea]}
                 value={newConductDescription}
@@ -611,13 +855,72 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
                 placeholder="Enter description..."
                 multiline
                 numberOfLines={4}
-                maxLength={200}
+                maxLength={500}
               />
+
+              <Text style={styles.inputLabel}>Severity</Text>
+              <View style={styles.severitySelector}>
+                {['low', 'medium', 'high'].map((severity) => (
+                  <TouchableOpacity
+                    key={severity}
+                    style={[
+                      styles.severityButton,
+                      newConductSeverity === severity && styles.selectedSeverityButton
+                    ]}
+                    onPress={() => setNewConductSeverity(severity as 'low' | 'medium' | 'high')}
+                  >
+                    <Text style={[
+                      styles.severityButtonText,
+                      newConductSeverity === severity && styles.selectedSeverityButtonText
+                    ]}>
+                      {severity.charAt(0).toUpperCase() + severity.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.inputLabel}>Action Taken (Optional)</Text>
+              <TextInput
+                style={[styles.textInput, styles.textArea]}
+                value={newConductActionTaken}
+                onChangeText={setNewConductActionTaken}
+                placeholder="Describe any action taken..."
+                multiline
+                numberOfLines={3}
+                maxLength={300}
+              />
+
+              <View style={styles.checkboxContainer}>
+                <TouchableOpacity
+                  style={styles.checkbox}
+                  onPress={() => setNewConductParentNotified(!newConductParentNotified)}
+                >
+                  {newConductParentNotified && (
+                    <FontAwesome5 name="check" size={12} color="#1CB5E0" />
+                  )}
+                </TouchableOpacity>
+                <Text style={styles.checkboxLabel}>Parent Notified</Text>
+              </View>
+
+              <View style={styles.checkboxContainer}>
+                <TouchableOpacity
+                  style={styles.checkbox}
+                  onPress={() => setNewConductFollowUpRequired(!newConductFollowUpRequired)}
+                >
+                  {newConductFollowUpRequired && (
+                    <FontAwesome5 name="check" size={12} color="#1CB5E0" />
+                  )}
+                </TouchableOpacity>
+                <Text style={styles.checkboxLabel}>Follow-up Required</Text>
+              </View>
               
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={styles.cancelButton}
-                  onPress={() => setConductModalVisible(false)}
+                  onPress={() => {
+                    setConductModalVisible(false);
+                    resetConductForm();
+                  }}
                 >
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
@@ -634,7 +937,7 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
                   )}
                 </TouchableOpacity>
               </View>
-            </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -701,6 +1004,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: 8,
     marginHorizontal: 2,
+    position: 'relative',
   },
   activeTab: {
     backgroundColor: 'rgba(28, 181, 224, 0.1)',
@@ -714,6 +1018,22 @@ const styles = StyleSheet.create({
   activeTabText: {
     color: '#1CB5E0',
   },
+  badge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: '#F7685B',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '600',
+  },
   scrollContainer: {
     paddingBottom: 20,
   },
@@ -726,15 +1046,18 @@ const styles = StyleSheet.create({
   modalContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 20,
+    padding: 0,
     width: '90%',
     maxWidth: 400,
+    maxHeight: '80%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8EAF0',
   },
   modalTitle: {
     fontSize: 18,
@@ -742,7 +1065,7 @@ const styles = StyleSheet.create({
     color: '#3A4276',
   },
   modalContent: {
-    flex: 1,
+    padding: 20,
   },
   inputLabel: {
     fontSize: 14,
@@ -781,10 +1104,57 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#3A4276',
     marginBottom: 16,
+    backgroundColor: '#FFFFFF',
   },
   textArea: {
     height: 80,
     textAlignVertical: 'top',
+  },
+  severitySelector: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    gap: 8,
+  },
+  severityButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E8EAF0',
+    alignItems: 'center',
+  },
+  selectedSeverityButton: {
+    backgroundColor: 'rgba(247, 104, 91, 0.1)',
+    borderColor: '#F7685B',
+  },
+  severityButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#8A94A6',
+  },
+  selectedSeverityButtonText: {
+    color: '#F7685B',
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: '#1CB5E0',
+    borderRadius: 4,
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    color: '#3A4276',
+    fontWeight: '500',
   },
   modalActions: {
     flexDirection: 'row',
