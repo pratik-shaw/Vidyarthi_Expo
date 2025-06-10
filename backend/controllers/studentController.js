@@ -159,3 +159,51 @@ exports.selectClass = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+
+// Get student details by ID (for teachers) --> whenever you want to fetch student details by ID, you can use this function
+// used in TeacherStudentDetailsScreen.tsx
+exports.getStudentById = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    
+    // Ensure the request is from a teacher
+    if (req.user.role !== 'teacher') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // Find student and populate both class and school details
+    const student = await Student.findById(studentId)
+      .select('-password')
+      .populate('classId', 'name section')
+      .populate('schoolId', 'name code');
+
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    // Format the response to include all requested fields
+    const studentProfile = {
+      _id: student._id,
+      name: student.name,
+      email: student.email,
+      phone: student.phone || '',
+      studentId: student.studentId || '',
+      uniqueId: student.uniqueId || '',
+      schoolCode: student.schoolId ? student.schoolId.code : '',
+      schoolId: student.schoolId ? student.schoolId._id : '',
+      schoolName: student.schoolId ? student.schoolId.name : '',
+      className: student.classId ? student.classId.name : '',
+      section: student.classId ? student.classId.section : '',
+      classId: student.classId ? student.classId._id : '',
+      isActive: student.isActive !== undefined ? student.isActive : true,
+      createdAt: student.createdAt,
+      updatedAt: student.updatedAt
+    };
+
+    res.json(studentProfile);
+  } catch (err) {
+    console.error('Error fetching student details:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+};

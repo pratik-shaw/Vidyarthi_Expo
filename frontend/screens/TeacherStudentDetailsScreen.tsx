@@ -51,7 +51,12 @@ interface StudentProfile {
   className: string;
   section: string;
   schoolId: string;
+  schoolName?: string;
+  schoolCode?: string;
+  classId: string; // Added this property to match PersonalDetailsTab interface
   isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 interface TeacherSubjectMark {
@@ -392,146 +397,165 @@ const fetchConductData = async (authToken = token) => {
 
   // Fetch all student data
   const fetchAllData = async (authToken = token) => {
-    setLoading(true);
-    setError(null);
-    
+  setLoading(true);
+  setError(null);
+  
+  try {
+    if (!authToken) {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'TeacherLogin' }],
+      });
+      return;
+    }
+
+    if (!isConnected) {
+      setError('No internet connection. Please check your network.');
+      setLoading(false);
+      return;
+    }
+
+    const apiClient = getAuthenticatedClient(authToken);
+
+    // Fetch actual student profile from API
     try {
-      if (!authToken) {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'TeacherLogin' }],
-        });
-        return;
-      }
-
-      if (!isConnected) {
-        setError('No internet connection. Please check your network.');
-        setLoading(false);
-        return;
-      }
-
-      // Fetch student profile (mock for now - you can implement actual API later)
-      const mockProfile: StudentProfile = {
-        _id: studentId,
-        name: studentName,
-        email: 'student@example.com',
-        phone: '+91 9876543210',
-        studentId: 'ST001',
-        uniqueId: 'UNIQUE001',
-        className: className,
-        section: 'A',
-        schoolId: 'school123',
-        isActive: true
-      };
-      setStudentProfile(mockProfile);
-
-      // Fetch academic data from the new endpoint
-      try {
-        console.log('Fetching academic data for student:', studentId, 'in class:', classId);
-        const apiClient = getAuthenticatedClient(authToken);
-        const academicResponse = await apiClient.get(`/marks/class/${classId}/student/${studentId}/details`);
-        
-        if (academicResponse.data) {
-          const processedAcademicData: TeacherAcademicData = {
-            hasData: academicResponse.data.exams && academicResponse.data.exams.length > 0,
-            exams: academicResponse.data.exams || [],
-            summary: null, // Will be calculated from exams data
-            message: academicResponse.data.exams?.length === 0 ? 'No academic records found for subjects you teach' : undefined
-          };
-
-          // Calculate summary if we have exam data
-          if (processedAcademicData.exams.length > 0) {
-            let totalMarksScored = 0;
-            let totalFullMarks = 0;
-            let completedExams = 0;
-            let totalSubjects = 0;
-            let completedSubjects = 0;
-
-            processedAcademicData.exams.forEach(exam => {
-              totalMarksScored += exam.totalMarksScored;
-              totalFullMarks += exam.totalFullMarks;
-              totalSubjects += exam.totalSubjects;
-              completedSubjects += exam.completedSubjects;
-              if (exam.isCompleted) {
-                completedExams++;
-              }
-            });
-
-            const overallPercentage = totalFullMarks > 0 ? ((totalMarksScored / totalFullMarks) * 100) : 0;
-            
-            processedAcademicData.summary = {
-              overallPercentage: overallPercentage.toFixed(2),
-              overallGrade: calculateGrade(overallPercentage),
-              totalExams: processedAcademicData.exams.length,
-              completedExams: completedExams,
-              totalSubjects: totalSubjects,
-              completedSubjects: completedSubjects,
-              completionRate: totalSubjects > 0 ? ((completedSubjects / totalSubjects) * 100).toFixed(2) : '0',
-              totalMarksScored: totalMarksScored,
-              totalFullMarks: totalFullMarks,
-              examCompletionRate: processedAcademicData.exams.length > 0 ? ((completedExams / processedAcademicData.exams.length) * 100).toFixed(2) : '0'
-            };
-          }
-
-          setAcademicData(processedAcademicData);
-        }
-      } catch (err) {
-        console.log('Academic data fetch error:', err);
-        
-        // Set empty state with appropriate message
-        setAcademicData({
-          hasData: false,
-          message: 'No academic records available or you do not teach any subjects for this student',
-          exams: [],
-          summary: null
-        });
-      }
-
-      // Fetch conduct data
-      await fetchConductData(authToken);
-
-      // Mock submissions (will be replaced with actual API)
-      const mockSubmissions: Submission[] = [
-        {
-          _id: '1',
-          title: 'Math Assignment Chapter 5',
-          subject: 'Mathematics',
-          submittedDate: '2024-03-19',
-          dueDate: '2024-03-20',
-          status: 'submitted',
-          grade: 'A',
-          feedback: 'Excellent work!'
-        },
-        {
-          _id: '2',
-          title: 'Science Project Report',
-          subject: 'Science',
-          submittedDate: '2024-03-22',
-          dueDate: '2024-03-21',
-          status: 'late',
-          grade: 'B+',
-          feedback: 'Good content but submitted late'
-        }
-      ];
-      setSubmissions(mockSubmissions);
-
-    } catch (error) {
-      console.error('Error fetching student data:', error);
+      console.log('Fetching student profile for ID:', studentId);
+      const profileResponse = await apiClient.get(`/teacher/student/${studentId}/profile`);
       
-      if (axios.isAxiosError(error)) {
-        if (error.response?.status === 401) {
+      if (profileResponse.data) {
+        setStudentProfile(profileResponse.data);
+        console.log('Student profile loaded:', profileResponse.data);
+      }
+    } catch (err) {
+      console.error('Error fetching student profile:', err);
+      
+      if (axios.isAxiosError(err)) {
+        if (err.response?.status === 401) {
           handleSessionExpired();
+          return;
+        } else if (err.response?.status === 404) {
+          setError('Student not found');
+          return;
+        } else if (err.response?.status === 403) {
+          setError('Not authorized to view this student\'s profile');
+          return;
         } else {
-          setError(`Error: ${error.response?.data?.msg || 'Failed to fetch student data'}`);
+          setError(`Failed to load student profile: ${err.response?.data?.message || 'Unknown error'}`);
+          return;
         }
       } else {
-        setError('An unknown error occurred');
+        setError('Failed to load student profile');
+        return;
       }
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
     }
-  };
+
+    // Fetch academic data from the existing endpoint
+    try {
+      console.log('Fetching academic data for student:', studentId, 'in class:', classId);
+      const academicResponse = await apiClient.get(`/marks/class/${classId}/student/${studentId}/details`);
+      
+      if (academicResponse.data) {
+        const processedAcademicData: TeacherAcademicData = {
+          hasData: academicResponse.data.exams && academicResponse.data.exams.length > 0,
+          exams: academicResponse.data.exams || [],
+          summary: null, // Will be calculated from exams data
+          message: academicResponse.data.exams?.length === 0 ? 'No academic records found for subjects you teach' : undefined
+        };
+
+        // Calculate summary if we have exam data
+        if (processedAcademicData.exams.length > 0) {
+          let totalMarksScored = 0;
+          let totalFullMarks = 0;
+          let completedExams = 0;
+          let totalSubjects = 0;
+          let completedSubjects = 0;
+
+          processedAcademicData.exams.forEach(exam => {
+            totalMarksScored += exam.totalMarksScored;
+            totalFullMarks += exam.totalFullMarks;
+            totalSubjects += exam.totalSubjects;
+            completedSubjects += exam.completedSubjects;
+            if (exam.isCompleted) {
+              completedExams++;
+            }
+          });
+
+          const overallPercentage = totalFullMarks > 0 ? ((totalMarksScored / totalFullMarks) * 100) : 0;
+          
+          processedAcademicData.summary = {
+            overallPercentage: overallPercentage.toFixed(2),
+            overallGrade: calculateGrade(overallPercentage),
+            totalExams: processedAcademicData.exams.length,
+            completedExams: completedExams,
+            totalSubjects: totalSubjects,
+            completedSubjects: completedSubjects,
+            completionRate: totalSubjects > 0 ? ((completedSubjects / totalSubjects) * 100).toFixed(2) : '0',
+            totalMarksScored: totalMarksScored,
+            totalFullMarks: totalFullMarks,
+            examCompletionRate: processedAcademicData.exams.length > 0 ? ((completedExams / processedAcademicData.exams.length) * 100).toFixed(2) : '0'
+          };
+        }
+
+        setAcademicData(processedAcademicData);
+      }
+    } catch (err) {
+      console.log('Academic data fetch error:', err);
+      
+      // Set empty state with appropriate message
+      setAcademicData({
+        hasData: false,
+        message: 'No academic records available or you do not teach any subjects for this student',
+        exams: [],
+        summary: null
+      });
+    }
+
+    // Fetch conduct data
+    await fetchConductData(authToken);
+
+    // TODO: Replace with actual submissions API when available
+    // Mock submissions (will be replaced with actual API)
+    const mockSubmissions: Submission[] = [
+      {
+        _id: '1',
+        title: 'Math Assignment Chapter 5',
+        subject: 'Mathematics',
+        submittedDate: '2024-03-19',
+        dueDate: '2024-03-20',
+        status: 'submitted',
+        grade: 'A',
+        feedback: 'Excellent work!'
+      },
+      {
+        _id: '2',
+        title: 'Science Project Report',
+        subject: 'Science',
+        submittedDate: '2024-03-22',
+        dueDate: '2024-03-21',
+        status: 'late',
+        grade: 'B+',
+        feedback: 'Good content but submitted late'
+      }
+    ];
+    setSubmissions(mockSubmissions);
+
+  } catch (error) {
+    console.error('Error fetching student data:', error);
+    
+    if (axios.isAxiosError(error)) {
+      if (error.response?.status === 401) {
+        handleSessionExpired();
+      } else {
+        setError(`Error: ${error.response?.data?.message || error.response?.data?.msg || 'Failed to fetch student data'}`);
+      }
+    } else {
+      setError('An unknown error occurred while loading student data');
+    }
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+};
 
   // Handle refresh
   const onRefresh = () => {
@@ -770,8 +794,11 @@ const fetchConductData = async (authToken = token) => {
         }
       >
         {activeTab === 'personal' && (
-          <PersonalDetailsTab studentProfile={studentProfile} />
-        )}
+          <PersonalDetailsTab 
+            studentProfile={studentProfile} 
+            loading={loading && !refreshing} 
+          />
+      )}
         
         {activeTab === 'academic' && (
           <AcademicDetailsTab academicData={academicData} />
