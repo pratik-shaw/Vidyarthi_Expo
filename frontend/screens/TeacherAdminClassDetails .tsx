@@ -315,23 +315,35 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
 
   // Handle quick action press
   const handleQuickAction = (actionId: string) => {
-    switch (actionId) {
-      case 'take_attendance':
-        Alert.alert("Coming Soon", "Take attendance feature is under development.");
-        break;
-      case 'view_reports':
-        Alert.alert("Coming Soon", "Take attendance feature is under development.");
-        break;
-      case 'announcements':
-        Alert.alert("Coming Soon", "Announcements feature is under development.");
-        break;
-      case 'chat_room':
-        Alert.alert("Coming Soon", "Chat room feature is under development.");
-        break;
-      default:
-        Alert.alert("Coming Soon", "This feature is under development.");
-    }
-  };
+  switch (actionId) {
+    case 'take_attendance':
+      Alert.alert("Coming Soon", "Take attendance feature is under development.");
+      break;
+    case 'view_reports':
+  // If showing reports for all students in class
+  navigation.navigate('TeacherAdminStudentReport', {
+    classId: classDetails?._id || classId,
+    className: classDetails?.name || className,
+    studentId: '', // or undefined if made optional
+    studentName: '' // or undefined if made optional
+  });
+  break;
+    case 'announcements':
+      Alert.alert("Coming Soon", "Announcements feature is under development.");
+      break;
+    case 'chat_room':
+      Alert.alert("Coming Soon", "Chat room feature is under development.");
+      break;
+    case 'add_materials':
+      Alert.alert("Coming Soon", "Add materials feature is under development.");
+      break;
+    case 'schedule_events_dates':
+      Alert.alert("Coming Soon", "Schedule events & dates feature is under development.");
+      break;
+    default:
+      Alert.alert("Coming Soon", "This feature is under development.");
+  }
+};
 
   // Render tab navigation
   const renderTabNavigation = () => (
