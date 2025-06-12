@@ -664,6 +664,15 @@ const StudentAcademicsScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+
+      {/* Header */}
+            <View style={styles.header}>
+              <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                <Ionicons name="arrow-back" size={24} color="#374151" />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>My Academics</Text>
+              <View style={styles.headerRight} />
+            </View>
       {/* Tab Navigation */}
       <Animated.View style={[styles.tabContainer, { opacity: fadeAnim }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScrollView}>
@@ -1267,6 +1276,9 @@ const styles = StyleSheet.create({
   recentMarks: {
     fontSize: 12,
     color: '#6B7280',
+  },
+  headerRight: {
+    width: 40,
   },
 });
 export default StudentAcademicsScreen;

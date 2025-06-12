@@ -31,10 +31,6 @@ const verifyTeacherAccess = async (teacherId, studentId, classId) => {
     }
 
     // Check if teacher has access to this student/class
-    // Teacher has access if:
-    // 1. They are admin of this class
-    // 2. They teach any subject in this class
-    // 3. They are from the same school as the student
     const isClassAdmin = teacher.adminClassId && teacher.adminClassId.toString() === classId.toString();
     const teachesClass = teacher.classesTeaching && teacher.classesTeaching.some(id => id.toString() === classId.toString());
     const sameSchool = teacher.schoolId && teacher.schoolId.toString() === student.schoolId.toString();
@@ -70,6 +66,120 @@ const verifyStrictTeacherPermissions = async (teacherId, classId) => {
   }
 
   return { authorized: true, teacher, classObj };
+};
+
+// NEW: Get student's own conduct records
+exports.getStudentConductRecords = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const { type, startDate, endDate, limit = 50, skip = 0 } = req.query;
+
+    console.log('getStudentConductRecords called:', { studentId });
+
+    // Verify student exists and is active
+    const student = await Student.findOne({ _id: studentId, isActive: true });
+    if (!student) {
+      return res.status(404).json({ msg: 'Student not found' });
+    }
+
+    // Build query
+    let query = { studentId, isActive: true };
+    
+    if (type && ['positive', 'negative', 'neutral'].includes(type)) {
+      query.type = type;
+    }
+
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) {
+        query.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        query.createdAt.$lte = new Date(endDate);
+      }
+    }
+
+    // Get conduct records
+    const conducts = await Conduct.find(query)
+      .populate('teacherId', 'name email')
+      .populate('classId', 'name section')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip(parseInt(skip));
+
+    // Get summary statistics
+    const totalRecords = await Conduct.countDocuments({ studentId, isActive: true });
+    const positiveCount = await Conduct.countDocuments({ studentId, type: 'positive', isActive: true });
+    const negativeCount = await Conduct.countDocuments({ studentId, type: 'negative', isActive: true });
+    const neutralCount = await Conduct.countDocuments({ studentId, type: 'neutral', isActive: true });
+
+    // Get recent trends (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const recentRecords = await Conduct.find({
+      studentId,
+      isActive: true,
+      createdAt: { $gte: thirtyDaysAgo }
+    }).sort({ createdAt: -1 });
+
+    // Calculate monthly trends
+    const monthlyTrends = {};
+    recentRecords.forEach(record => {
+      const month = record.createdAt.toISOString().substring(0, 7); // YYYY-MM
+      if (!monthlyTrends[month]) {
+        monthlyTrends[month] = { positive: 0, negative: 0, neutral: 0 };
+      }
+      monthlyTrends[month][record.type]++;
+    });
+
+    const summary = {
+      totalRecords,
+      positiveCount,
+      negativeCount,
+      neutralCount,
+      positivePercentage: totalRecords > 0 ? ((positiveCount / totalRecords) * 100).toFixed(1) : '0.0',
+      negativePercentage: totalRecords > 0 ? ((negativeCount / totalRecords) * 100).toFixed(1) : '0.0',
+      neutralPercentage: totalRecords > 0 ? ((neutralCount / totalRecords) * 100).toFixed(1) : '0.0',
+      recentTrends: Object.entries(monthlyTrends).map(([month, data]) => ({
+        month,
+        ...data,
+        total: data.positive + data.negative + data.neutral
+      }))
+    };
+
+    // Get class information
+    const classInfo = await Class.findById(student.classId).select('name section');
+
+    console.log('Student conduct records retrieved:', conducts.length);
+
+    res.json({
+      hasData: conducts.length > 0,
+      conducts,
+      summary,
+      studentInfo: {
+        id: student._id,
+        name: student.name,
+        studentId: student.studentId,
+        className: classInfo?.name || 'Unknown',
+        section: classInfo?.section || 'Unknown'
+      },
+      totalRecords: conducts.length,
+      lastUpdated: new Date().toISOString()
+    });
+
+  } catch (err) {
+    console.error('Error in getStudentConductRecords:', err);
+    
+    if (err instanceof mongoose.Error.CastError) {
+      return res.status(400).json({ msg: 'Invalid ID format' });
+    }
+
+    res.status(500).json({ 
+      msg: 'Server error', 
+      error: err.message 
+    });
+  }
 };
 
 // Create a new conduct record
