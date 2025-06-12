@@ -248,6 +248,14 @@ const TeacherClassDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
     });
   };
 
+  // Navigate to event calendar
+  const handleViewSchedule = () => {
+    navigation.navigate('TeacherEventCalendar', {
+      classId: classId,
+      className: className,
+    });
+  };
+
   // Show coming soon alerts
   const showComingSoon = (feature: string) => {
     Alert.alert(
@@ -391,7 +399,7 @@ const TeacherClassDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
             {renderActionButton('poll', 'Add Marks', handleAddMarks, '#3498DB')}
             {renderActionButton('file-alt', 'Materials', () => showComingSoon('Class Materials'), '#9B59B6')}
             {renderActionButton('chart-bar', 'Reports', () => showComingSoon('Performance Reports'), '#E67E22')}
-            {renderActionButton('calendar', 'Schedule', () => showComingSoon('Class Schedule'), '#1ABC9C')}
+            {renderActionButton('calendar', 'Schedule', handleViewSchedule, '#1ABC9C')}
           </View>
         </View>
 
@@ -475,65 +483,21 @@ const TeacherClassDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
   );
 };
 
+// Add your existing styles here
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8F9FC',
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#7F8C8D',
-    fontWeight: '500',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#2C3E50',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  errorMessage: {
-    fontSize: 16,
-    color: '#7F8C8D',
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 22,
-  },
-  retryButton: {
-    backgroundColor: '#3498DB',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
+    paddingBottom: 20,
   },
   headerCard: {
-    marginTop: 16,
-    marginBottom: 24,
+    margin: 16,
     borderRadius: 16,
-    overflow: 'hidden',
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -541,6 +505,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   headerGradient: {
+    borderRadius: 16,
     padding: 20,
   },
   headerContent: {
@@ -548,9 +513,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   classIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -560,14 +525,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   classTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 4,
   },
   classSection: {
     fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255, 255, 255, 0.9)',
     marginBottom: 8,
   },
   studentCountContainer: {
@@ -576,15 +541,15 @@ const styles = StyleSheet.create({
   },
   studentCount: {
     fontSize: 14,
-    color: '#FFFFFF',
+    color: 'rgba(255, 255, 255, 0.9)',
     marginLeft: 6,
-    fontWeight: '500',
   },
   section: {
+    marginHorizontal: 16,
     marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
     color: '#2C3E50',
     marginBottom: 16,
@@ -596,9 +561,9 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     width: (width - 48) / 2,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
+    backgroundColor: '#3498DB',
     borderRadius: 12,
+    padding: 16,
     alignItems: 'center',
     marginBottom: 12,
     elevation: 2,
@@ -610,26 +575,27 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: 14,
     fontWeight: '600',
+    color: '#FFFFFF',
     marginTop: 8,
   },
   teacherCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
+    marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
   },
   teacherIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#34495E',
+    backgroundColor: '#3498DB',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -641,28 +607,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#2C3E50',
-    marginBottom: 2,
   },
   teacherEmail: {
     fontSize: 14,
     color: '#7F8C8D',
+    marginTop: 2,
   },
   studentsContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    overflow: 'hidden',
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
   },
   studentRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    justifyContent: 'space-between',
+    padding: 16,
   },
   evenRow: {
     backgroundColor: '#FFFFFF',
@@ -677,22 +640,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#2C3E50',
-    marginBottom: 2,
   },
   studentId: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#7F8C8D',
-    marginBottom: 2,
+    marginTop: 2,
   },
   studentEmail: {
-    fontSize: 13,
-    color: '#95A5A6',
+    fontSize: 14,
+    color: '#7F8C8D',
+    marginTop: 2,
   },
   viewButton: {
     backgroundColor: '#3498DB',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
     borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -707,68 +670,99 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8E8E8',
     marginHorizontal: 16,
   },
-  emptyState: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 32,
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#7F8C8D',
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#95A5A6',
-    marginTop: 4,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
   communicationGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   communicationCard: {
+    width: (width - 48) / 2,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
-    width: (width - 48) / 2,
     alignItems: 'center',
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
-    position: 'relative',
   },
   communicationIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   communicationTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: '#2C3E50',
-    marginBottom: 4,
     textAlign: 'center',
   },
   communicationSubtitle: {
     fontSize: 12,
     color: '#7F8C8D',
     textAlign: 'center',
-    lineHeight: 16,
+    marginTop: 4,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#7F8C8D',
+    marginTop: 12,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: '#BDC3C7',
+    textAlign: 'center',
+    marginTop: 4,
+    paddingHorizontal: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#7F8C8D',
+    marginTop: 12,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#2C3E50',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: '#7F8C8D',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 24,
+  },
+  retryButton: {
+    backgroundColor: '#3498DB',
+    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    marginTop: 20,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

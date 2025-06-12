@@ -13,6 +13,7 @@ const subjectRoutes = require('./routes/subjectRoutes'); // NEW ROUTE
 const examRoutes = require('./routes/examRoutes'); // NEW ROUTE
 const markRoutes = require('./routes/markRoutes'); // NEW ROUTE
 const conductRoutes = require('./routes/conductRoutes'); // NEW ROUTE
+const eventRoutes = require('./routes/eventRoutes'); // Uncomment if using events
 // Initialize express app
 const app = express();
 
@@ -32,6 +33,7 @@ app.use('/api/subjects', subjectRoutes); // NEW ROUTE USAGE
 app.use('/api/exams', examRoutes); // NEW ROUTE USAGE
 app.use('/api/marks', markRoutes); // NEW ROUTE USAGE
 app.use('/api/conduct', conductRoutes); // NEW ROUTE USAGE
+app.use('/api/events', eventRoutes); // Uncomment if using events
 
 // Simple test route
 app.get('/', (req, res) => {

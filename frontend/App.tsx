@@ -42,6 +42,7 @@ import TeacherAdminExamsScreen from './screens/TeacherAdminExamsScreen';
 import TeacherScoringScreen from './screens/TeacherScoringScreen';
 import TeacherStudentDetailsScreen from './screens/TeacherStudentDetailsScreen';
 import TeacherAdminStudentReportScreen from './screens/TeacherAdminStudentReport';
+import TeacherEventCalendarScreen from './screens/TeacherEventCalendarScreen';
 
 
 export type RootStackParamList = {
@@ -92,6 +93,7 @@ export type RootStackParamList = {
     classId: string;
     className: string;
   };
+  TeacherEventCalendar: { classId: string; className: string };
   AdminAddClassTeacher: undefined;
   AdminAllTeachersData: undefined;
   AdminAllStudentsData: undefined;
@@ -142,6 +144,7 @@ export default function App() {
         <Stack.Screen name="TeacherScoring" component={TeacherScoringScreen} />
         <Stack.Screen name="TeacherStudentDetailsScreen" component={TeacherStudentDetailsScreen} />
         <Stack.Screen name="TeacherAdminStudentReport" component={TeacherAdminStudentReportScreen} />
+        <Stack.Screen name="TeacherEventCalendar" component={TeacherEventCalendarScreen} />
         
         {/* Add any other screens you need here */}
       </Stack.Navigator>
