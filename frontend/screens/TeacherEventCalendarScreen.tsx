@@ -105,6 +105,7 @@ const TeacherEventCalendarScreen: React.FC<Props> = ({ route, navigation }) => {
   const [currentMonth, setCurrentMonth] = useState<number>(new Date().getMonth() + 1);
   const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
   const [markedDates, setMarkedDates] = useState<MarkedDates>({});
+  const [isLoadingMonth, setIsLoadingMonth] = useState<boolean>(false);
   
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
@@ -112,18 +113,16 @@ const TeacherEventCalendarScreen: React.FC<Props> = ({ route, navigation }) => {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [modalLoading, setModalLoading] = useState<boolean>(false);
   
-  // Updated date picker states
+  // Simple date picker states
   const [showStartDatePicker, setShowStartDatePicker] = useState<boolean>(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState<boolean>(false);
-  const [tempStartDate, setTempStartDate] = useState<Date>(new Date());
-  const [tempEndDate, setTempEndDate] = useState<Date>(new Date());
   
   // Form states
   const [formData, setFormData] = useState({
     title: '',
     category: 'other',
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0],
+    startDate: new Date(),
+    endDate: new Date(),
     description: '',
   });
 
@@ -168,12 +167,18 @@ const TeacherEventCalendarScreen: React.FC<Props> = ({ route, navigation }) => {
     initializeScreen();
   }, [classId]);
 
-  // Update events when month/year changes
-  useEffect(() => {
-    if (token) {
-      fetchEvents();
-    }
-  }, [currentMonth, currentYear, token]);
+  // Create authenticated API client
+  const createApiClient = useCallback((authToken: string) => {
+    return axios.create({
+      baseURL: API_URL,
+      timeout: API_TIMEOUT,
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'x-auth-token': authToken,
+        'Content-Type': 'application/json',
+      },
+    });
+  }, []);
 
   const initializeScreen = async () => {
     try {
@@ -187,7 +192,7 @@ const TeacherEventCalendarScreen: React.FC<Props> = ({ route, navigation }) => {
       setToken(storedToken);
       await Promise.all([
         fetchEventCategories(storedToken),
-        fetchEvents(storedToken),
+        fetchEvents(storedToken, currentMonth, currentYear),
       ]);
     } catch (error) {
       console.error('Error initializing screen:', error);
@@ -195,19 +200,6 @@ const TeacherEventCalendarScreen: React.FC<Props> = ({ route, navigation }) => {
       setLoading(false);
     }
   };
-
-  // Create authenticated API client
-  const createApiClient = useCallback((authToken: string) => {
-    return axios.create({
-      baseURL: API_URL,
-      timeout: API_TIMEOUT,
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-        'x-auth-token': authToken,
-        'Content-Type': 'application/json',
-      },
-    });
-  }, []);
 
   // Fetch event categories
   const fetchEventCategories = async (authToken: string = token!) => {
@@ -223,8 +215,8 @@ const TeacherEventCalendarScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
-  // Fetch events
-  const fetchEvents = async (authToken: string = token!) => {
+  // Fixed fetch events function with proper month handling
+  const fetchEvents = async (authToken: string = token!, month: number = currentMonth, year: number = currentYear) => {
     if (!authToken) {
       handleSessionExpired();
       return;
@@ -234,25 +226,30 @@ const TeacherEventCalendarScreen: React.FC<Props> = ({ route, navigation }) => {
       setError('No internet connection. Please check your network and try again.');
       setLoading(false);
       setRefreshing(false);
+      setIsLoadingMonth(false);
       return;
     }
 
     try {
-      setLoading(!refreshing);
+      // Only show main loading for initial load, not for month changes
+      if (!refreshing && !isLoadingMonth) {
+        setLoading(true);
+      }
       setError(null);
 
       const apiClient = createApiClient(authToken);
       const response = await apiClient.get(`/events/class/${classId}`, {
         params: {
-          month: currentMonth,
-          year: currentYear,
+          month: month,
+          year: year,
         },
       });
       
       if (response.data) {
-        setEvents(response.data.events || []);
-        updateMarkedDates(response.data.events || []);
-        console.log('Events loaded:', response.data.events?.length || 0);
+        const eventsList = response.data.events || [];
+        setEvents(eventsList);
+        updateMarkedDates(eventsList);
+        console.log('Events loaded for', `${month}/${year}:`, eventsList.length);
       }
     } catch (error) {
       console.error('Error fetching events:', error);
@@ -260,106 +257,128 @@ const TeacherEventCalendarScreen: React.FC<Props> = ({ route, navigation }) => {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setIsLoadingMonth(false);
     }
   };
 
-  // Update marked dates for calendar
-  const updateMarkedDates = (eventList: Event[]) => {
-    const marked: MarkedDates = {};
-    
-    eventList.forEach(event => {
-      const startDate = new Date(event.startDate);
-      const endDate = new Date(event.endDate);
-      const categoryColor = categoryColors[event.category] || categoryColors.other;
-      
-      // Mark single day or range
-      if (startDate.toDateString() === endDate.toDateString()) {
-        // Single day event
-        const dateStr = startDate.toISOString().split('T')[0];
-        marked[dateStr] = {
-          marked: true,
-          dotColor: categoryColor,
-          selected: dateStr === selectedDate,
-          selectedColor: dateStr === selectedDate ? categoryColor : undefined,
-        };
-      } else {
-        // Multi-day event
-        const currentDate = new Date(startDate);
-        while (currentDate <= endDate) {
-          const dateStr = currentDate.toISOString().split('T')[0];
-          marked[dateStr] = {
-            marked: true,
-            dotColor: categoryColor,
-            selected: dateStr === selectedDate,
-            selectedColor: dateStr === selectedDate ? categoryColor : undefined,
-          };
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-      }
-    });
-    
-    setMarkedDates(marked);
-  };
-
-  // Fixed date picker handlers
-  const handleStartDateChange = (event: any, selectedDate?: Date) => {
-  setShowStartDatePicker(false);
+  // Fixed month change handler
+  const handleMonthChange = useCallback((month: { month: number; year: number }) => {
+  console.log('Month changed to:', month.month, month.year);
   
-  if (selectedDate && event.type !== 'dismissed') {
-    const dateString = selectedDate.toISOString().split('T')[0];
-    setFormData(prev => ({
-      ...prev,
-      startDate: dateString,
-      // Auto-adjust end date if it's before start date
-      endDate: new Date(prev.endDate) < selectedDate ? dateString : prev.endDate,
-    }));
+  // Update state immediately
+  setCurrentMonth(month.month);
+  setCurrentYear(month.year);
+  setIsLoadingMonth(true);
+  
+  // Fetch events for the new month
+  if (token) {
+    fetchEvents(token, month.month, month.year);
   }
+}, [token]);
+
+  // Update marked dates for calendar - FIXED
+  const updateMarkedDates = (eventList: Event[]) => {
+  const marked: MarkedDates = {};
+  
+  eventList.forEach(event => {
+    const startDate = new Date(event.startDate);
+    const endDate = new Date(event.endDate);
+    const categoryColor = categoryColors[event.category] || categoryColors.other;
+    
+    // Mark single day or range
+    if (startDate.toDateString() === endDate.toDateString()) {
+      // Single day event
+      const dateStr = startDate.toISOString().split('T')[0];
+      marked[dateStr] = {
+        selected: true,
+        selectedColor: categoryColor,
+      };
+    } else {
+      // Multi-day event
+      const currentDate = new Date(startDate);
+      while (currentDate <= endDate) {
+        const dateStr = currentDate.toISOString().split('T')[0];
+        marked[dateStr] = {
+          selected: true,
+          selectedColor: categoryColor,
+        };
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+    }
+  });
+
+   if (!marked[selectedDate]) {
+    marked[selectedDate] = {
+      selected: true,
+      selectedColor: '#3498DB',
+    };
+  }
+  
+  setMarkedDates(marked);
 };
 
-const handleEndDateChange = (event: any, selectedDate?: Date) => {
-  setShowEndDatePicker(false);
-  
-  if (selectedDate && event.type !== 'dismissed') {
-    const startDate = new Date(formData.startDate);
-    if (selectedDate >= startDate) {
-      const dateString = selectedDate.toISOString().split('T')[0];
+  // Fixed date picker handlers to prevent date offset issues
+  const handleStartDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowStartDatePicker(false);
+    }
+    
+    if (selectedDate && event.type !== 'dismissed') {
+      // Create new date without timezone offset issues
+      const localDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+      
       setFormData(prev => ({
         ...prev,
-        endDate: dateString,
+        startDate: localDate,
+        // Auto-adjust end date if it's before start date
+        endDate: prev.endDate < localDate ? localDate : prev.endDate,
       }));
-    } else {
-      Alert.alert('Invalid Date', 'End date must be after or equal to start date');
+      
+      if (Platform.OS === 'ios') {
+        setShowStartDatePicker(false);
+      }
+    } else if (event.type === 'dismissed' && Platform.OS === 'ios') {
+      setShowStartDatePicker(false);
     }
-  }
-};
+  };
 
+  const handleEndDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowEndDatePicker(false);
+    }
+    
+    if (selectedDate && event.type !== 'dismissed') {
+      // Create new date without timezone offset issues
+      const localDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+      
+      if (localDate >= formData.startDate) {
+        setFormData(prev => ({
+          ...prev,
+          endDate: localDate,
+        }));
+        
+        if (Platform.OS === 'ios') {
+          setShowEndDatePicker(false);
+        }
+      } else {
+        Alert.alert('Invalid Date', 'End date must be after or equal to start date');
+        if (Platform.OS === 'ios') {
+          setShowEndDatePicker(false);
+        }
+      }
+    } else if (event.type === 'dismissed' && Platform.OS === 'ios') {
+      setShowEndDatePicker(false);
+    }
+  };
 
-  // Fixed date picker trigger functions
-  const showStartDatePickerModal = () => {
-  if (Platform.OS === 'ios') {
-    setTempStartDate(new Date(formData.startDate));
-  }
-  setShowStartDatePicker(true);
-};
-
-const showEndDatePickerModal = () => {
-  if (Platform.OS === 'ios') {
-    setTempEndDate(new Date(formData.endDate));
-  }
-  setShowEndDatePicker(true);
-};
-
-  // Create new event
+  // Create new event with fixed date formatting
   const handleCreateEvent = async () => {
     if (!formData.title.trim()) {
       Alert.alert('Error', 'Please enter event title');
       return;
     }
 
-    const startDate = new Date(formData.startDate);
-    const endDate = new Date(formData.endDate);
-
-    if (endDate < startDate) {
+    if (formData.endDate < formData.startDate) {
       Alert.alert('Error', 'End date must be after start date');
       return;
     }
@@ -368,12 +387,17 @@ const showEndDatePickerModal = () => {
       setModalLoading(true);
       const apiClient = createApiClient(token!);
       
+      // Format dates properly to avoid timezone issues
+      const formatDateForAPI = (date: Date) => {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      };
+      
       const response = await apiClient.post('/events/create', {
         classId,
         title: formData.title.trim(),
         category: formData.category,
-        startDate: formData.startDate,
-        endDate: formData.endDate,
+        startDate: formatDateForAPI(formData.startDate),
+        endDate: formatDateForAPI(formData.endDate),
         description: formData.description.trim(),
       });
 
@@ -381,7 +405,8 @@ const showEndDatePickerModal = () => {
         Alert.alert('Success', 'Event created successfully');
         setShowCreateModal(false);
         resetForm();
-        fetchEvents();
+        // Refresh events for current month
+        fetchEvents(token!, currentMonth, currentYear);
       }
     } catch (error) {
       console.error('Error creating event:', error);
@@ -411,7 +436,7 @@ const showEndDatePickerModal = () => {
               
               Alert.alert('Success', 'Event deleted successfully');
               setShowEventDetailsModal(false);
-              fetchEvents();
+              fetchEvents(token!, currentMonth, currentYear);
             } catch (error) {
               console.error('Error deleting event:', error);
               const message = axios.isAxiosError(error) && error.response?.data?.msg 
@@ -426,11 +451,12 @@ const showEndDatePickerModal = () => {
   };
 
   const resetForm = () => {
+    const today = new Date();
     setFormData({
       title: '',
       category: 'other',
-      startDate: selectedDate,
-      endDate: selectedDate,
+      startDate: today,
+      endDate: today,
       description: '',
     });
   };
@@ -478,25 +504,18 @@ const showEndDatePickerModal = () => {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchEvents();
+    fetchEvents(token!, currentMonth, currentYear);
   }, [token, currentMonth, currentYear]);
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+  const formatDate = (date: Date | string) => {
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    return dateObj.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
     });
   };
 
-  const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  // Fixed getCategoryIcon function with valid Feather icon names
   const getCategoryIcon = (category: string): keyof typeof Feather.glyphMap => {
     const icons: { [key: string]: keyof typeof Feather.glyphMap } = {
       exam: 'file-text',
@@ -511,139 +530,6 @@ const showEndDatePickerModal = () => {
     return icons[category] || 'calendar';
   };
 
-  // Fixed date picker rendering function
-  const renderDatePickers = () => {
-  if (Platform.OS === 'ios') {
-    return (
-      <>
-        {/* iOS Start Date Picker Modal */}
-        <Modal
-          visible={showStartDatePicker}
-          animationType="slide"
-          presentationStyle="formSheet"
-          onRequestClose={() => setShowStartDatePicker(false)}
-        >
-          <SafeAreaView style={styles.datePickerModalContainer}>
-            <View style={styles.datePickerHeader}>
-              <TouchableOpacity
-                onPress={() => setShowStartDatePicker(false)}
-                style={styles.datePickerButton}
-              >
-                <Text style={styles.datePickerButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <Text style={styles.datePickerTitle}>Select Start Date</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  const dateString = tempStartDate.toISOString().split('T')[0];
-                  setFormData(prev => ({
-                    ...prev,
-                    startDate: dateString,
-                    endDate: new Date(prev.endDate) < tempStartDate ? dateString : prev.endDate,
-                  }));
-                  setShowStartDatePicker(false);
-                }}
-                style={[styles.datePickerButton, { backgroundColor: '#3498DB' }]}
-              >
-                <Text style={[styles.datePickerButtonText, { color: '#FFFFFF' }]}>Done</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.datePickerContent}>
-              <DateTimePicker
-                value={tempStartDate}
-                mode="date"
-                display="spinner"
-                onChange={(event, date) => {
-                  if (date && event.type !== 'dismissed') {
-                    setTempStartDate(date);
-                  }
-                }}
-                minimumDate={new Date()}
-                style={styles.datePicker}
-              />
-            </View>
-          </SafeAreaView>
-        </Modal>
-
-        {/* iOS End Date Picker Modal */}
-        <Modal
-          visible={showEndDatePicker}
-          animationType="slide"
-          presentationStyle="formSheet"
-          onRequestClose={() => setShowEndDatePicker(false)}
-        >
-          <SafeAreaView style={styles.datePickerModalContainer}>
-            <View style={styles.datePickerHeader}>
-              <TouchableOpacity
-                onPress={() => setShowEndDatePicker(false)}
-                style={styles.datePickerButton}
-              >
-                <Text style={styles.datePickerButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <Text style={styles.datePickerTitle}>Select End Date</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  const startDate = new Date(formData.startDate);
-                  if (tempEndDate >= startDate) {
-                    const dateString = tempEndDate.toISOString().split('T')[0];
-                    setFormData(prev => ({
-                      ...prev,
-                      endDate: dateString,
-                    }));
-                    setShowEndDatePicker(false);
-                  } else {
-                    Alert.alert('Invalid Date', 'End date must be after or equal to start date');
-                  }
-                }}
-                style={[styles.datePickerButton, { backgroundColor: '#3498DB' }]}
-              >
-                <Text style={[styles.datePickerButtonText, { color: '#FFFFFF' }]}>Done</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.datePickerContent}>
-              <DateTimePicker
-                value={tempEndDate}
-                mode="date"
-                display="spinner"
-                onChange={(event, date) => {
-                  if (date && event.type !== 'dismissed') {
-                    setTempEndDate(date);
-                  }
-                }}
-                minimumDate={new Date(formData.startDate)}
-                style={styles.datePicker}
-              />
-            </View>
-          </SafeAreaView>
-        </Modal>
-      </>
-    );
-  } else {
-    // Android Date Pickers
-    return (
-      <>
-        {showStartDatePicker && (
-          <DateTimePicker
-            value={new Date(formData.startDate)}
-            mode="date"
-            display="default"
-            onChange={handleStartDateChange}
-            minimumDate={new Date()}
-          />
-        )}
-        {showEndDatePicker && (
-          <DateTimePicker
-            value={new Date(formData.endDate)}
-            mode="date"
-            display="default"
-            onChange={handleEndDateChange}
-            minimumDate={new Date(formData.startDate)}
-          />
-        )}
-      </>
-    );
-  }
-};
-
   // Render event item
   const renderEventItem = ({ item }: { item: Event }) => {
     const categoryColor = categoryColors[item.category] || categoryColors.other;
@@ -656,7 +542,7 @@ const showEndDatePickerModal = () => {
           setSelectedEvent(item);
           setShowEventDetailsModal(true);
         }}
-        activeOpacity={0.8}
+        activeOpacity={0.7}
       >
         <View style={[styles.eventIndicator, { backgroundColor: categoryColor }]} />
         <View style={styles.eventContent}>
@@ -725,6 +611,7 @@ const showEndDatePickerModal = () => {
         </View>
 
         <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+          {/* Event Title */}
           <View style={styles.formGroup}>
             <Text style={styles.formLabel}>Event Title *</Text>
             <TextInput
@@ -736,6 +623,7 @@ const showEndDatePickerModal = () => {
             />
           </View>
 
+          {/* Category Selection */}
           <View style={styles.formGroup}>
             <Text style={styles.formLabel}>Category</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryContainer}>
@@ -748,6 +636,9 @@ const showEndDatePickerModal = () => {
                       backgroundColor: formData.category === category.value 
                         ? categoryColors[category.value] 
                         : '#F8F9FC',
+                      borderColor: formData.category === category.value 
+                        ? categoryColors[category.value] 
+                        : '#E8E8E8',
                     },
                   ]}
                   onPress={() => setFormData({ ...formData, category: category.value })}
@@ -772,13 +663,13 @@ const showEndDatePickerModal = () => {
             </ScrollView>
           </View>
 
-          {/* Fixed date input section */}
+          {/* Date Selection */}
           <View style={styles.dateRow}>
             <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
               <Text style={styles.formLabel}>Start Date *</Text>
               <TouchableOpacity
                 style={styles.dateInput}
-                onPress={showStartDatePickerModal}
+                onPress={() => setShowStartDatePicker(true)}
                 activeOpacity={0.7}
               >
                 <Text style={styles.dateInputText}>{formatDate(formData.startDate)}</Text>
@@ -790,7 +681,7 @@ const showEndDatePickerModal = () => {
               <Text style={styles.formLabel}>End Date *</Text>
               <TouchableOpacity
                 style={styles.dateInput}
-                onPress={showEndDatePickerModal}
+                onPress={() => setShowEndDatePicker(true)}
                 activeOpacity={0.7}
               >
                 <Text style={styles.dateInputText}>{formatDate(formData.endDate)}</Text>
@@ -799,6 +690,7 @@ const showEndDatePickerModal = () => {
             </View>
           </View>
 
+          {/* Description */}
           <View style={styles.formGroup}>
             <Text style={styles.formLabel}>Description</Text>
             <TextInput
@@ -814,8 +706,82 @@ const showEndDatePickerModal = () => {
           </View>
         </ScrollView>
 
-        {/* Fixed Date Pickers - Place at the end of the modal */}
-        {renderDatePickers()}
+        {/* Native Date Pickers */}
+        {showStartDatePicker && (
+          <Modal
+            visible={showStartDatePicker}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowStartDatePicker(false)}
+          >
+            <View style={styles.datePickerOverlay}>
+              <View style={styles.datePickerContainer}>
+                <View style={styles.datePickerHeader}>
+                  <TouchableOpacity
+                    onPress={() => setShowStartDatePicker(false)}
+                    style={styles.datePickerButton}
+                  >
+                    <Text style={styles.datePickerButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.datePickerTitle}>Select Start Date</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowStartDatePicker(false)}
+                    style={styles.datePickerButton}
+                  >
+                    <Text style={[styles.datePickerButtonText, styles.datePickerConfirmText]}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={formData.startDate}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handleStartDateChange}
+                  minimumDate={new Date()}
+                  style={styles.datePickerStyle}
+                  textColor="#2C3E50"
+                />
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {showEndDatePicker && (
+          <Modal
+            visible={showEndDatePicker}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowEndDatePicker(false)}
+          >
+            <View style={styles.datePickerOverlay}>
+              <View style={styles.datePickerContainer}>
+                <View style={styles.datePickerHeader}>
+                  <TouchableOpacity
+                    onPress={() => setShowEndDatePicker(false)}
+                    style={styles.datePickerButton}
+                  >
+                    <Text style={styles.datePickerButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.datePickerTitle}>Select End Date</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowEndDatePicker(false)}
+                    style={styles.datePickerButton}
+                  >
+                    <Text style={[styles.datePickerButtonText, styles.datePickerConfirmText]}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={formData.endDate}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handleEndDateChange}
+                  minimumDate={formData.startDate}
+                  style={styles.datePickerStyle}
+                  textColor="#2C3E50"
+                />
+              </View>
+            </View>
+          </Modal>
+        )}
       </SafeAreaView>
     </Modal>
   );
@@ -916,7 +882,6 @@ const showEndDatePickerModal = () => {
         )}
       </SafeAreaView>
     </Modal>
-
   );
 
   // Loading state
@@ -971,40 +936,37 @@ const showEndDatePickerModal = () => {
       >
         {/* Calendar */}
         <View style={styles.calendarContainer}>
-          <Calendar
-            onDayPress={(day: { dateString: React.SetStateAction<string>; }) => {
-              setSelectedDate(day.dateString);
-            }}
-            onMonthChange={(month: { month: React.SetStateAction<number>; year: React.SetStateAction<number>; }) => {
-              setCurrentMonth(month.month);
-              setCurrentYear(month.year);
-            }}
-            markedDates={markedDates}
-            theme={{
-              backgroundColor: '#FFFFFF',
-              calendarBackground: '#FFFFFF',
-              textSectionTitleColor: '#2C3E50',
-              selectedDayBackgroundColor: '#3498DB',
-              selectedDayTextColor: '#FFFFFF',
-              todayTextColor: '#3498DB',
-              dayTextColor: '#2C3E50',
-              textDisabledColor: '#BDC3C7',
-              dotColor: '#3498DB',
-              selectedDotColor: '#FFFFFF',
-              arrowColor: '#3498DB',
-              monthTextColor: '#2C3E50',
-              indicatorColor: '#3498DB',
-              textDayFontFamily: 'System',
-              textMonthFontFamily: 'System',
-              textDayHeaderFontFamily: 'System',
-              textDayFontWeight: '400',
-              textMonthFontWeight: '600',
-              textDayHeaderFontWeight: '600',
-              textDayFontSize: 16,
-              textMonthFontSize: 18,
-              textDayHeaderFontSize: 14,
-            }}
-          />
+         <Calendar
+  onDayPress={(day) => {
+    setSelectedDate(day.dateString);
+  }}
+  onMonthChange={handleMonthChange}
+  markedDates={markedDates}
+  current={`${currentYear}-${String(currentMonth).padStart(2, '0')}-01`}
+  theme={{
+    backgroundColor: '#FFFFFF',
+    calendarBackground: '#FFFFFF',
+    textSectionTitleColor: '#2C3E50',
+    selectedDayBackgroundColor: '#3498DB',
+    selectedDayTextColor: '#FFFFFF',
+    todayTextColor: '#3498DB',
+    dayTextColor: '#2C3E50',
+    textDisabledColor: '#BDC3C7',
+    arrowColor: '#3498DB',
+    monthTextColor: '#2C3E50',
+    indicatorColor: '#3498DB',
+    textDayFontFamily: 'System',
+    textMonthFontFamily: 'System',
+    textDayHeaderFontFamily: 'System',
+    textDayFontWeight: '400',
+    textMonthFontWeight: '600',
+    textDayHeaderFontWeight: '600',
+    textDayFontSize: 16,
+    textMonthFontSize: 18,
+    textDayHeaderFontSize: 14,
+    // Remove dot-related properties
+  }}
+/>
         </View>
 
         {/* Events List */}
@@ -1024,16 +986,16 @@ const showEndDatePickerModal = () => {
               data={events}
               renderItem={renderEventItem}
               keyExtractor={(item) => item.eventId}
-              scrollEnabled={false}
               showsVerticalScrollIndicator={false}
-              ItemSeparatorComponent={() => <View style={styles.eventSeparator} />}
+              scrollEnabled={false}
+              contentContainerStyle={styles.eventsList}
             />
           ) : (
-            <View style={styles.emptyState}>
-              <FontAwesome5 name="calendar-times" size={48} color="#BDC3C7" />
-              <Text style={styles.emptyStateTitle}>No Events This Month</Text>
-              <Text style={styles.emptyStateSubtitle}>
-                Tap the + button to create your first event
+            <View style={styles.emptyEventsContainer}>
+              <Feather name="calendar" size={48} color="#BDC3C7" />
+              <Text style={styles.emptyEventsTitle}>No Events This Month</Text>
+              <Text style={styles.emptyEventsMessage}>
+                There are no events scheduled for this month. Tap the + button to create your first event.
               </Text>
             </View>
           )}
@@ -1043,23 +1005,93 @@ const showEndDatePickerModal = () => {
       {/* Modals */}
       {renderCreateEventModal()}
       {renderEventDetailsModal()}
+
+      {/* Network Status */}
+      {!networkState.isConnected && (
+        <View style={styles.networkStatusBar}>
+          <Feather name="wifi-off" size={16} color="#FFFFFF" />
+          <Text style={styles.networkStatusText}>No Internet Connection</Text>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
 
-// Styles (truncated for brevity - the full styles would include all the styling)
 const styles = StyleSheet.create({
+  datePickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  datePickerContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    width: '90%',
+    maxWidth: 400,
+    elevation: 8,
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8E8E8',
+    backgroundColor: '#F8F9FC',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  datePickerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#2C3E50',
+  },
+  datePickerButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  datePickerButtonText: {
+    fontSize: 16,
+    color: '#7F8C8D',
+    fontWeight: '500',
+  },
+  datePickerConfirmText: {
+    color: '#3498DB',
+    fontWeight: '600',
+  },
+  datePickerStyle: {
+    backgroundColor: '#FFFFFF',
+    marginVertical: 20,
+  },
   container: {
     flex: 1,
     backgroundColor: '#F8F9FC',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  headerButton: {
+    padding: 8,
+    marginRight: 8,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   loadingText: {
-    marginTop: 16,
+    marginTop: 12,
     fontSize: 16,
     color: '#7F8C8D',
     fontWeight: '500',
@@ -1068,7 +1100,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
+    padding: 20,
   },
   errorTitle: {
     fontSize: 20,
@@ -1076,6 +1108,7 @@ const styles = StyleSheet.create({
     color: '#2C3E50',
     marginTop: 16,
     marginBottom: 8,
+    textAlign: 'center',
   },
   errorMessage: {
     fontSize: 16,
@@ -1089,23 +1122,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
   },
   retryButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-  },
-  headerButton: {
-    marginRight: 16,
-    padding: 8,
-  },
-  scrollView: {
-    flex: 1,
   },
   calendarContainer: {
     backgroundColor: '#FFFFFF',
@@ -1113,26 +1134,27 @@ const styles = StyleSheet.create({
     marginTop: 16,
     borderRadius: 12,
     elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    overflow: 'hidden',
   },
   eventsSection: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 24,
-    paddingBottom: 32,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 20,
   },
   eventsSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   eventsSectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
     color: '#2C3E50',
   },
@@ -1141,20 +1163,27 @@ const styles = StyleSheet.create({
     color: '#7F8C8D',
     fontWeight: '500',
   },
+  eventsList: {
+    paddingBottom: 20,
+  },
   eventCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    overflow: 'hidden',
+    marginBottom: 12,
     elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     flexDirection: 'row',
+    overflow: 'hidden',
   },
   eventIndicator: {
     width: 4,
-    backgroundColor: '#3498DB',
+    height: '100%',
   },
   eventContent: {
     flex: 1,
@@ -1171,7 +1200,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#2C3E50',
     flex: 1,
-    marginRight: 8,
+    marginRight: 12,
   },
   categoryBadge: {
     flexDirection: 'row',
@@ -1179,7 +1208,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
-    backgroundColor: '#3498DB',
   },
   categoryText: {
     fontSize: 12,
@@ -1189,12 +1217,11 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   eventDetails: {
-    marginTop: 4,
+    gap: 8,
   },
   dateContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
   },
   dateText: {
     fontSize: 14,
@@ -1207,26 +1234,32 @@ const styles = StyleSheet.create({
     color: '#7F8C8D',
     lineHeight: 20,
   },
-  eventSeparator: {
-    height: 12,
-  },
-  emptyState: {
+  emptyEventsContainer: {
     alignItems: 'center',
-    paddingVertical: 48,
-    paddingHorizontal: 32,
+    padding: 40,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  emptyStateTitle: {
+  emptyEventsTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#2C3E50',
     marginTop: 16,
     marginBottom: 8,
   },
-  emptyStateSubtitle: {
-    fontSize: 14,
+  emptyEventsMessage: {
+    fontSize: 16,
     color: '#7F8C8D',
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 22,
   },
   modalContainer: {
     flex: 1,
@@ -1237,28 +1270,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E8E8E8',
   },
   modalCloseButton: {
     padding: 8,
-    width: 40,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#2C3E50',
-    flex: 1,
-    textAlign: 'center',
   },
   modalSaveButton: {
     backgroundColor: '#3498DB',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
-    minWidth: 70,
+    minWidth: 60,
     alignItems: 'center',
   },
   modalSaveText: {
@@ -1268,16 +1298,13 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     padding: 8,
-    width: 40,
-    alignItems: 'center',
   },
   modalContent: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 24,
+    padding: 16,
   },
   formGroup: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   formLabel: {
     fontSize: 16,
@@ -1287,20 +1314,21 @@ const styles = StyleSheet.create({
   },
   formInput: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E8E8E8',
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
     color: '#2C3E50',
+    borderWidth: 1,
+    borderColor: '#E8E8E8',
   },
   textArea: {
     height: 100,
     textAlignVertical: 'top',
   },
   categoryContainer: {
-    marginTop: 8,
+    flexDirection: 'row',
+    gap: 8,
   },
   categoryChip: {
     flexDirection: 'row',
@@ -1308,10 +1336,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
-    marginRight: 8,
-    backgroundColor: '#F8F9FC',
     borderWidth: 1,
-    borderColor: '#E8E8E8',
+    marginRight: 8,
   },
   categoryChipText: {
     fontSize: 14,
@@ -1321,15 +1347,15 @@ const styles = StyleSheet.create({
   },
   dateRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    marginBottom: 20,
   },
   dateInput: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E8E8E8',
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#E8E8E8',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1342,19 +1368,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 20,
-    marginBottom: 24,
+    elevation: 2,
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   eventDetailsHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 24,
   },
   eventDetailsBadge: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 16,
   },
   eventDetailsInfo: {
@@ -1367,19 +1400,20 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   eventDetailsCategory: {
-    fontSize: 14,
+    fontSize: 16,
     color: '#7F8C8D',
-    fontWeight: '500',
     textTransform: 'capitalize',
   },
   eventDetailsSection: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   eventDetailsSectionTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#2C3E50',
-    marginBottom: 12,
+    color: '#7F8C8D',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
   },
   eventDetailsRow: {
     flexDirection: 'row',
@@ -1387,64 +1421,32 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   eventDetailsText: {
-    fontSize: 14,
-    color: '#7F8C8D',
-    marginLeft: 8,
-    fontWeight: '500',
+    fontSize: 16,
+    color: '#2C3E50',
+    marginLeft: 12,
+    flex: 1,
   },
   eventDetailsDescription: {
-    fontSize: 14,
-    color: '#7F8C8D',
-    lineHeight: 20,
+    fontSize: 16,
+    color: '#2C3E50',
+    lineHeight: 22,
   },
-  datePickerHeader: {
+  networkStatusBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#E74C3C',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E8E8E8',
-    backgroundColor: '#FFFFFF',
-  },
-  datePickerButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-    minWidth: 60,
-    alignItems: 'center',
-  },
-  datePickerButtonText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#7F8C8D',
-  },
-  datePickerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#2C3E50',
-    textAlign: 'center',
-    flex: 1,
-  },
-  datePicker: {
-    backgroundColor: '#FFFFFF',
-    height: 200,
-  },
-  datePickerModalContainer: {
-    flex: 1,
-    backgroundColor: '#F8F9FC',
-  },
-  datePickerContent: {
-    flex: 1,
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
+    paddingVertical: 8,
   },
-  datePickerContainer: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 40,
-    maxHeight: '50%',
+  networkStatusText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
   },
 });
 
