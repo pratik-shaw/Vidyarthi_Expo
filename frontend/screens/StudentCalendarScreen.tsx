@@ -23,6 +23,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Calendar } from 'react-native-calendars';
+import { STUDENT_API } from '../config/api';
 
 import { RootStackParamList } from '../App';
 
@@ -31,7 +32,7 @@ const PRIMARY_COLOR = '#4F46E5';
 const SECONDARY_COLOR = '#E0E7FF';
 
 // API configuration
-const API_URL = 'http://192.168.29.148:5000';
+const API_URL = STUDENT_API; // Replace with your actual API URL
 const apiClient = axios.create({
   baseURL: API_URL,
   timeout: 15000,

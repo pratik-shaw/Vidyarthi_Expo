@@ -20,9 +20,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { API_BASE_URL} from '../config/api';
+
 const { width } = Dimensions.get('window');
-const API_URL = 'http://192.168.29.148:5000/api'; // Replace with your actual backend URL
-const API_TIMEOUT = 15000;
+
+
+// API URL with configurable timeout
+const API_URL = API_BASE_URL; // Change this to your server IP/domain
+const API_TIMEOUT = 15000; // 15 seconds timeout
 
 type TeacherAdminStudentReportParams = {
   classId: string;

@@ -23,8 +23,10 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 
+import { STUDENT_API } from '../config/api';
+
 // UPDATED: API URL configuration
-const API_URL = 'http://192.168.29.148:5000'; // Remove the '/api' part
+const API_URL = STUDENT_API; // Remove the '/api' part
 const API_TIMEOUT = 15000; // 15 seconds timeout
 
 // Create an axios instance with timeout configuration

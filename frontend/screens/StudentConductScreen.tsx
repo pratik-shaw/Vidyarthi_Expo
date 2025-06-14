@@ -22,6 +22,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
+import { STUDENT_API } from '../config/api';
+
 import { RootStackParamList } from '../App';
 
 const { width } = Dimensions.get('window');
@@ -31,7 +33,7 @@ const NEGATIVE_COLOR = '#EF4444';
 const NEUTRAL_COLOR = '#6B7280';
 
 // API configuration
-const API_URL = 'http://192.168.29.148:5000';
+const API_URL = STUDENT_API;
 const apiClient = axios.create({
   baseURL: API_URL,
   timeout: 15000,

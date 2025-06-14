@@ -22,8 +22,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// API base URL - replace with your actual backend URL
-const API_URL = 'http://192.168.29.148:5000/api'; // Change this to your actual API URL
+import { API_BASE_URL} from '../config/api';
+
+// API URL with configurable timeout
+const API_URL = API_BASE_URL; // Change this to your server IP/domain
+const API_TIMEOUT = 15000; // 15 seconds timeout
+
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSignup'>;
 

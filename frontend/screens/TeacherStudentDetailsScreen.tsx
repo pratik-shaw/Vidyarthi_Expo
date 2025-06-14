@@ -26,9 +26,12 @@ import AcademicDetailsTab from '../components/AcademicDetailsTab';
 import ConductDetailsTab from '../components/ConductDetailsTab';
 import SubmissionDetailsTab from '../components/SubmissionDetailsTab';
 
-// API base URL - replace with your actual backend URL
-const API_URL = 'http://192.168.29.148:5000/api';
+import { API_BASE_URL} from '../config/api';
+
+// API URL with configurable timeout
+const API_URL = API_BASE_URL; // Change this to your server IP/domain
 const API_TIMEOUT = 15000; // 15 seconds timeout
+
 
 // Route params type
 type TeacherStudentDetailsParams = {

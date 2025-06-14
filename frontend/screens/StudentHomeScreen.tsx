@@ -32,13 +32,18 @@ import FeatureCard from '../components/FeatureCard';
 import ProfileBanner from '../components/ProfileBanner';
 import NotificationBadge from '../components/NotificationBadge';
 import StatsCard from '../components/StatsCard';
+import { STUDENT_API } from '../config/api';
+
 
 const { width } = Dimensions.get('window');
 const PRIMARY_COLOR = '#4F46E5'; // Standardized primary color
 
 // API configuration
-const API_URL = 'http://192.168.29.148:5000'; // Change this to your server IP/domain
+
+// API URL with configurable timeout
+const API_URL = STUDENT_API; // Change this to your server IP/domain
 const API_TIMEOUT = 15000; // 15 seconds timeout
+
 
 // Create an axios instance with timeout configuration
 const apiClient = axios.create({

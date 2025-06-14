@@ -21,9 +21,11 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 
-// Constants
-const API_URL = 'http://192.168.29.148:5000/api';
-const API_TIMEOUT = 15000;
+import { API_BASE_URL} from '../config/api';
+
+// API URL with configurable timeout
+const API_URL = API_BASE_URL; // Change this to your server IP/domain
+const API_TIMEOUT = 15000; // 15 seconds timeout
 const { width } = Dimensions.get('window');
 
 // Types
