@@ -338,7 +338,10 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
       Alert.alert("Coming Soon", "Add materials feature is under development.");
       break;
     case 'schedule_events_dates':
-      Alert.alert("Coming Soon", "Schedule events & dates feature is under development.");
+      navigation.navigate('TeacherEventCalendar', {
+      classId: classId,
+      className: className,
+    });
       break;
     default:
       Alert.alert("Coming Soon", "This feature is under development.");

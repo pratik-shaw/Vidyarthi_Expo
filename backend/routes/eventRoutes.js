@@ -1,4 +1,4 @@
-// routes/eventRoutes.js
+// routes/eventRoutes.js - Updated with the missing student route
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
@@ -6,6 +6,10 @@ const eventController = require('../controllers/eventController');
 
 // Get event categories (public for authenticated users)
 router.get('/categories', auth, eventController.getEventCategories);
+
+// Get calendar data for student dashboard (student only)
+// This is the missing route that your frontend is calling
+router.get('/student/calendar-data', auth, eventController.getStudentCalendarData);
 
 // Create a new event (teacher only)
 router.post('/create', auth, eventController.createEvent);

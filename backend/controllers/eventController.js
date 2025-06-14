@@ -402,3 +402,135 @@ exports.getEventCategories = async (req, res) => {
     });
   }
 };
+
+exports.getStudentCalendarData = async (req, res) => {
+  try {
+    console.log('getStudentCalendarData called with:', { userId: req.user?.id, userRole: req.user?.role });
+
+    // Verify user is a student
+    if (!req.user || req.user.role !== 'student') {
+      return res.status(403).json({ msg: 'Not authorized - Student access required' });
+    }
+
+    // Find student
+    const Student = require('../models/Student');
+    const student = await Student.findById(req.user.id).populate('classId', 'name section');
+    if (!student) {
+      return res.status(404).json({ msg: 'Student not found' });
+    }
+
+    // Check if student has a class assigned
+    if (!student.classId) {
+      return res.json({
+        msg: 'No class assigned to student',
+        hasData: false,
+        studentInfo: {
+          classId: null,
+          className: 'Not Assigned',
+          section: 'N/A'
+        },
+        events: [],
+        categories: await getEventCategoriesData(),
+        currentMonth: new Date().getMonth() + 1,
+        currentYear: new Date().getFullYear(),
+        totalEvents: 0,
+        upcomingEvents: 0,
+        lastUpdated: new Date().toISOString(),
+        message: 'You have not been assigned to any class yet. Please contact your administrator.'
+      });
+    }
+
+    console.log('Student found:', { 
+      studentId: student._id, 
+      classId: student.classId._id, 
+      className: student.classId.name 
+    });
+
+    // Get current month and year
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth() + 1;
+    const currentYear = currentDate.getFullYear();
+
+    // Find events for student's class
+    const eventDoc = await Event.findOne({ 
+      schoolId: student.schoolId, 
+      classId: student.classId._id 
+    }).populate('events.createdBy', 'name email');
+
+    let events = [];
+    let totalEvents = 0;
+    let upcomingEvents = 0;
+
+    if (eventDoc && eventDoc.events.length > 0) {
+      // Get current month events
+      events = eventDoc.events.filter(event => {
+        const eventDate = new Date(event.startDate);
+        return eventDate.getMonth() + 1 === currentMonth && eventDate.getFullYear() === currentYear;
+      });
+
+      // Sort events by start date
+      events.sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+
+      // Calculate total events (all time)
+      totalEvents = eventDoc.events.length;
+
+      // Calculate upcoming events (from today onwards)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      upcomingEvents = eventDoc.events.filter(event => {
+        const eventStartDate = new Date(event.startDate);
+        eventStartDate.setHours(0, 0, 0, 0);
+        return eventStartDate >= today;
+      }).length;
+    }
+
+    const hasData = totalEvents > 0;
+
+    console.log('Calendar data prepared:', { 
+      hasData, 
+      totalEvents, 
+      upcomingEvents, 
+      currentMonthEvents: events.length 
+    });
+
+    res.json({
+      msg: 'Calendar data retrieved successfully',
+      hasData: hasData,
+      studentInfo: {
+        classId: student.classId._id,
+        className: student.classId.name,
+        section: student.classId.section
+      },
+      events: events,
+      categories: await getEventCategoriesData(),
+      currentMonth: currentMonth,
+      currentYear: currentYear,
+      totalEvents: totalEvents,
+      upcomingEvents: upcomingEvents,
+      lastUpdated: new Date().toISOString(),
+      message: hasData ? null : 'No events have been created for your class yet.'
+    });
+
+  } catch (err) {
+    console.error('Error in getStudentCalendarData:', err);
+    res.status(500).json({ 
+      msg: 'Server error', 
+      error: err.message 
+    });
+  }
+};
+
+// Helper function to get event categories data
+const getEventCategoriesData = async () => {
+  return [
+    { value: 'exam', label: 'Exam' },
+    { value: 'assignment', label: 'Assignment' },
+    { value: 'project', label: 'Project' },
+    { value: 'meeting', label: 'Meeting' },
+    { value: 'holiday', label: 'Holiday' },
+    { value: 'sports', label: 'Sports' },
+    { value: 'cultural', label: 'Cultural' },
+    { value: 'other', label: 'Other' }
+  ];
+};
