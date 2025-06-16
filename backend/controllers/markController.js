@@ -490,6 +490,223 @@ exports.getClassMarksSummary = async (req, res) => {
 };
 
 // Add this to controllers/markController.js
+// Add this new method to your markController.js
+
+// Get subject-wise marks report for a teacher
+exports.getTeacherSubjectReport = async (req, res) => {
+  try {
+    const { classId } = req.params;
+    const teacherId = req.user.id;
+
+    console.log('getTeacherSubjectReport called:', { classId, teacherId });
+
+    // Verify teacher access
+    const authCheck = await verifyTeacherAccess(teacherId, classId);
+    if (!authCheck.authorized) {
+      return res.status(403).json({ msg: authCheck.error });
+    }
+
+    // Get current subject assignments to validate teacher's subjects
+    const subjectDoc = await Subject.findOne({ classId });
+    if (!subjectDoc) {
+      return res.status(404).json({ msg: 'No subjects found for this class' });
+    }
+
+    // Get subjects taught by this teacher
+    const teacherSubjects = subjectDoc.subjects.filter(subject => 
+      subject.teacherId && subject.teacherId.toString() === teacherId
+    );
+
+    if (teacherSubjects.length === 0) {
+      return res.json({
+        classInfo: {
+          id: authCheck.classObj._id,
+          name: authCheck.classObj.name,
+          section: authCheck.classObj.section
+        },
+        teacherInfo: {
+          id: authCheck.teacher._id,
+          name: authCheck.teacher.name
+        },
+        subjects: [],
+        message: 'No subjects assigned to you in this class'
+      });
+    }
+
+    // Get all mark records for this class
+    const markRecords = await Mark.find({ classId })
+      .populate('studentId', 'name studentId')
+      .sort({ 'studentId.name': 1 });
+
+    // Process data for each subject taught by the teacher
+    const subjectReports = teacherSubjects.map(subject => {
+      const subjectData = {
+        subjectId: subject._id,
+        subjectName: subject.subjectName,
+        students: [],
+        exams: [],
+        summary: {
+          totalStudents: 0,
+          averagePerformance: 0,
+          completionRate: 0,
+          highestScore: 0,
+          lowestScore: 100,
+          passCount: 0,
+          failCount: 0
+        }
+      };
+
+      const examMap = new Map();
+      const studentPerformanceMap = new Map();
+      let totalScores = 0;
+      let totalPossibleScores = 0;
+      let completedAssessments = 0;
+      let passCount = 0;
+      let failCount = 0;
+
+      // Process each student's marks for this subject
+      markRecords.forEach(record => {
+        const studentId = record.studentId._id.toString();
+        const studentName = record.studentId.name;
+        const studentNumber = record.studentId.studentId;
+
+        if (!studentPerformanceMap.has(studentId)) {
+          studentPerformanceMap.set(studentId, {
+            studentId: studentId,
+            studentName: studentName,
+            studentNumber: studentNumber,
+            exams: [],
+            overallPerformance: {
+              totalMarks: 0,
+              totalFullMarks: 0,
+              averagePercentage: 0,
+              grade: 'N/A',
+              completedExams: 0,
+              totalExams: 0
+            }
+          });
+        }
+
+        const studentData = studentPerformanceMap.get(studentId);
+
+        // Check each exam for this subject
+        record.exams.forEach(exam => {
+          const subjectMark = exam.subjects.find(sub => 
+            sub.subjectId.toString() === subject._id.toString()
+          );
+
+          if (subjectMark) {
+            // Track unique exams
+            if (!examMap.has(exam.examId.toString())) {
+              examMap.set(exam.examId.toString(), {
+                examId: exam.examId,
+                examName: exam.examName,
+                examCode: exam.examCode,
+                examDate: exam.examDate,
+                fullMarks: subjectMark.fullMarks,
+                studentsCompleted: 0,
+                averageScore: 0,
+                highestScore: 0,
+                lowestScore: subjectMark.fullMarks
+              });
+            }
+
+            const examData = examMap.get(exam.examId.toString());
+            studentData.overallPerformance.totalExams++;
+
+            if (subjectMark.marksScored !== null) {
+              const percentage = (subjectMark.marksScored / subjectMark.fullMarks) * 100;
+              
+              studentData.exams.push({
+                examId: exam.examId,
+                examName: exam.examName,
+                examCode: exam.examCode,
+                examDate: exam.examDate,
+                marksScored: subjectMark.marksScored,
+                fullMarks: subjectMark.fullMarks,
+                percentage: percentage,
+                grade: calculateGrade(percentage),
+                scoredAt: subjectMark.scoredAt
+              });
+
+              // Update student overall performance
+              studentData.overallPerformance.totalMarks += subjectMark.marksScored;
+              studentData.overallPerformance.totalFullMarks += subjectMark.fullMarks;
+              studentData.overallPerformance.completedExams++;
+
+              // Update exam statistics
+              examData.studentsCompleted++;
+              examData.averageScore = (examData.averageScore * (examData.studentsCompleted - 1) + subjectMark.marksScored) / examData.studentsCompleted;
+              examData.highestScore = Math.max(examData.highestScore, subjectMark.marksScored);
+              examData.lowestScore = Math.min(examData.lowestScore, subjectMark.marksScored);
+
+              // Update subject summary
+              totalScores += subjectMark.marksScored;
+              totalPossibleScores += subjectMark.fullMarks;
+              completedAssessments++;
+
+              // Track pass/fail (assuming 40% is pass)
+              if (percentage >= 40) {
+                passCount++;
+              } else {
+                failCount++;
+              }
+
+              // Update highest/lowest for subject
+              subjectData.summary.highestScore = Math.max(subjectData.summary.highestScore, percentage);
+              subjectData.summary.lowestScore = Math.min(subjectData.summary.lowestScore, percentage);
+            }
+          }
+        });
+
+        // Calculate student's overall performance for this subject
+        if (studentData.overallPerformance.totalFullMarks > 0) {
+          studentData.overallPerformance.averagePercentage = 
+            (studentData.overallPerformance.totalMarks / studentData.overallPerformance.totalFullMarks) * 100;
+          studentData.overallPerformance.grade = calculateGrade(studentData.overallPerformance.averagePercentage);
+        }
+      });
+
+      // Finalize subject data
+      subjectData.students = Array.from(studentPerformanceMap.values());
+      subjectData.exams = Array.from(examMap.values());
+      
+      // Calculate subject summary
+      subjectData.summary.totalStudents = subjectData.students.length;
+      subjectData.summary.averagePerformance = totalPossibleScores > 0 ? 
+        ((totalScores / totalPossibleScores) * 100).toFixed(2) : 0;
+      subjectData.summary.completionRate = subjectData.students.length > 0 ? 
+        ((completedAssessments / (subjectData.students.length * subjectData.exams.length)) * 100).toFixed(2) : 0;
+      subjectData.summary.passCount = passCount;
+      subjectData.summary.failCount = failCount;
+
+      return subjectData;
+    });
+
+    console.log('Teacher subject report generated:', subjectReports.length, 'subjects');
+
+    res.json({
+      classInfo: {
+        id: authCheck.classObj._id,
+        name: authCheck.classObj.name,
+        section: authCheck.classObj.section
+      },
+      teacherInfo: {
+        id: authCheck.teacher._id,
+        name: authCheck.teacher.name
+      },
+      subjects: subjectReports,
+      totalSubjects: subjectReports.length
+    });
+
+  } catch (err) {
+    console.error('Error in getTeacherSubjectReport:', err);
+    res.status(500).json({ 
+      msg: 'Server error', 
+      error: err.message 
+    });
+  }
+};
 
 // Get comprehensive academic data for a student
 exports.getStudentAcademicReport = async (req, res) => {

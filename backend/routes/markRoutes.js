@@ -21,6 +21,10 @@ router.get('/class/:classId/student/:studentId/details',
 // Get class-wise marks summary (class admin only)
 router.get('/class/:classId/summary', markController.getClassMarksSummary);
 
+// Get subject-wise report for teacher
+router.get('/class/:classId/subject-report', markController.getTeacherSubjectReport);
+
+// Get student academic report
 router.get('/student/academic-report', markController.getStudentAcademicReport);
 
 module.exports = router;

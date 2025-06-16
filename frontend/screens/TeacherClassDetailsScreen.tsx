@@ -258,6 +258,15 @@ const TeacherClassDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
     });
   };
 
+  const handleViewReports = () => {
+  navigation.navigate('TeacherSubjectReport', {
+    subjectId: classDetails?._id || classId, // Using classId as subjectId if not available
+    subjectName: classDetails?.name || className,
+    classId: classId,
+    className: className,
+  });
+};
+
   // Show coming soon alerts
   const showComingSoon = (feature: string) => {
     Alert.alert(
@@ -400,7 +409,7 @@ const TeacherClassDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
           <View style={styles.actionsGrid}>
             {renderActionButton('poll', 'Add Marks', handleAddMarks, '#3498DB')}
             {renderActionButton('file-alt', 'Materials', () => showComingSoon('Class Materials'), '#9B59B6')}
-            {renderActionButton('chart-bar', 'Reports', () => showComingSoon('Performance Reports'), '#E67E22')}
+            {renderActionButton('chart-bar', 'Reports', handleViewReports, '#E67E22')}
             {renderActionButton('calendar', 'Schedule', handleViewSchedule, '#1ABC9C')}
           </View>
         </View>

@@ -616,7 +616,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerCell: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     color: '#2D3748',
     textAlign: 'center',
