@@ -104,6 +104,70 @@ interface TeacherInfo {
   name: string;
 }
 
+interface GradeDistributionItem {
+  count?: number;
+  marksRange?: string;
+}
+
+interface ExamPerformanceData {
+  examInfo: {
+    examId: string;
+    examName: string;
+    examCode: string;
+    examDate: string;
+  };
+  subjectInfo: {
+    subjectId: string;
+    subjectName: string;
+  };
+  classInfo: {
+    id: string;
+    name: string;
+    section: string;
+  };
+  statistics: {
+    totalStudents: number;
+    averageMarks: string;
+    averagePercentage: string;
+    medianMarks: number;
+    medianPercentage: string;
+    minMarks: number;
+    maxMarks: number;
+    minPercentage: string;
+    maxPercentage: string;
+    fullMarks: number;
+    minPerformer: {
+      studentId: string;
+      studentName: string;
+      studentNumber: string;
+      marksScored: number;
+      percentage: string;
+      grade: string;
+    };
+    maxPerformer: {
+      studentId: string;
+      studentName: string;
+      studentNumber: string;
+      marksScored: number;
+      percentage: string;
+      grade: string;
+    };
+    passCount: number;
+    failCount: number;
+    gradeDistribution: {
+      'A+': number | GradeDistributionItem;
+      'A': number | GradeDistributionItem;
+      'B+': number | GradeDistributionItem;
+      'B': number | GradeDistributionItem;
+      'C+': number | GradeDistributionItem;
+      'C': number | GradeDistributionItem;
+      'D': number | GradeDistributionItem;
+      'F': number | GradeDistributionItem;
+    };
+  } | null;
+  students: any[];
+}
+
 const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
   const { classId, className } = route.params as unknown as TeacherSubjectReportParams;
   
@@ -118,6 +182,10 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
   const [selectedStudent, setSelectedStudent] = useState<StudentPerformance | null>(null);
   const [modalVisible, setModalVisible] = useState<boolean>(false);
   const [loadingDetails, setLoadingDetails] = useState<boolean>(false);
+  const [examPerformanceData, setExamPerformanceData] = useState<ExamPerformanceData | null>(null);
+  const [examPerformanceModalVisible, setExamPerformanceModalVisible] = useState<boolean>(false);
+  const [loadingExamPerformance, setLoadingExamPerformance] = useState<boolean>(false);
+
 
   // Set header
   React.useLayoutEffect(() => {
@@ -171,6 +239,43 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
       }
     });
   };
+
+  const fetchExamPerformanceDetails = async (examId: string, subjectId: string, subjectName: string) => {
+  setLoadingExamPerformance(true);
+  try {
+    if (!token) {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'TeacherLogin' }],
+      });
+      return;
+    }
+
+    const apiClient = getAuthenticatedClient();
+    const response = await apiClient.get(`/marks/class/${classId}/exam/${examId}/subject/${subjectId}/performance`);
+    
+    setExamPerformanceData(response.data);
+    setExamPerformanceModalVisible(true);
+    
+    console.log('Exam performance details fetched:', response.data.totalStudents || 0, 'students');
+  } catch (error) {
+    console.error('Error fetching exam performance details:', error);
+    
+    if (axios.isAxiosError(error)) {
+      if (error.response?.status === 401) {
+        handleSessionExpired();
+      } else if (error.response?.status === 403) {
+        Alert.alert('Error', 'Not authorized to view exam performance details');
+      } else {
+        Alert.alert('Error', `Failed to fetch exam performance details: ${error.response?.data?.msg || 'Unknown error'}`);
+      }
+    } else {
+      Alert.alert('Error', 'An unknown error occurred');
+    }
+  } finally {
+    setLoadingExamPerformance(false);
+  }
+};
 
   // Fetch subject reports
   const fetchSubjectReports = async (authToken = token) => {
@@ -239,18 +344,32 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
     );
   };
 
-  // Get grade based on percentage
-  const getGrade = (percentage: number): string => {
-    if (percentage >= 90) return 'A+';
-    if (percentage >= 80) return 'A';
-    if (percentage >= 70) return 'B+';
-    if (percentage >= 60) return 'B';
-    if (percentage >= 50) return 'C+';
-    if (percentage >= 40) return 'C';
-    if (percentage >= 33) return 'D';
-    return 'F';
-  };
+  const getGradePercentage = (grade: string): number => {
+  switch (grade) {
+    case 'A+': return 95;
+    case 'A': return 85;
+    case 'B+': return 75;
+    case 'B': return 65;
+    case 'C+': return 55;
+    case 'C': return 45;
+    case 'D': return 36;
+    case 'F': return 20;
+    default: return 0;
+  }
+};
+  const getGradeCount = (gradeData: number | GradeDistributionItem): number => {
+  if (typeof gradeData === 'number') {
+    return gradeData;
+  }
+  return gradeData.count || 0;
+};
 
+const getGradeMarksRange = (gradeData: number | GradeDistributionItem): string | null => {
+  if (typeof gradeData === 'object' && gradeData.marksRange) {
+    return gradeData.marksRange;
+  }
+  return null;
+};
   // Get grade color
   const getGradeColor = (percentage: number): string => {
     if (percentage >= 90) return '#10B981';
@@ -330,9 +449,15 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
               <Text style={[styles.examHeaderCell, styles.examNameHeader]}>Exam</Text>
               <Text style={[styles.examHeaderCell, styles.examScoreHeader]}>Avg Score</Text>
               <Text style={[styles.examHeaderCell, styles.examCompletedHeader]}>Completed</Text>
+              <Text style={[styles.examHeaderCell, styles.examActionHeader]}>Details</Text>
             </View>
             {subject.exams.map((exam, index) => (
-              <View key={exam.examId} style={[styles.examTableRow, index % 2 === 0 && styles.evenRow]}>
+              <TouchableOpacity 
+                key={exam.examId} 
+                style={[styles.examTableRow, index % 2 === 0 && styles.evenRow]}
+                onPress={() => fetchExamPerformanceDetails(exam.examId, subject.subjectId, subject.subjectName)}
+                activeOpacity={0.7}
+              >
                 <View style={styles.examNameCell}>
                   <Text style={styles.examName}>{exam.examName}</Text>
                   <Text style={styles.examCode}>{exam.examCode}</Text>
@@ -345,7 +470,10 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
                 <View style={styles.examCompletedCell}>
                   <Text style={styles.examCompleted}>{exam.studentsCompleted}</Text>
                 </View>
-              </View>
+                <View style={styles.examActionCell}>
+                  <FontAwesome5 name="chart-line" size={14} color="#4299E1" />
+                </View>
+              </TouchableOpacity>
             ))}
           </View>
         </View>
@@ -409,6 +537,218 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
       </View>
     );
   };
+
+  const renderExamPerformanceModal = () => (
+  <Modal
+    animationType="slide"
+    transparent={false}
+    visible={examPerformanceModalVisible}
+    onRequestClose={() => setExamPerformanceModalVisible(false)}
+  >
+    <SafeAreaView style={styles.modalContainer}>
+      <View style={styles.modalHeader}>
+        <TouchableOpacity
+          style={styles.modalCloseButton}
+          onPress={() => setExamPerformanceModalVisible(false)}
+        >
+          <FontAwesome5 name="times" size={20} color="#4A5568" />
+        </TouchableOpacity>
+        <Text style={styles.modalTitle}>
+          {examPerformanceData?.examInfo.examName} - Performance Details
+        </Text>
+        <View style={styles.placeholder} />
+      </View>
+      
+      {loadingExamPerformance ? (
+        <View style={styles.modalLoadingContainer}>
+          <ActivityIndicator size="large" color="#4299E1" />
+          <Text style={styles.loadingText}>Loading exam performance...</Text>
+        </View>
+      ) : (
+        <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+          {examPerformanceData && examPerformanceData.statistics && (
+            <>
+              {/* Exam Info Card */}
+              <View style={styles.examInfoCard}>
+                <View style={styles.examInfoHeader}>
+                  <FontAwesome5 name="file-alt" size={20} color="#4299E1" />
+                  <Text style={styles.examInfoTitle}>{examPerformanceData.examInfo.examName}</Text>
+                </View>
+                <Text style={styles.examInfoCode}>Code: {examPerformanceData.examInfo.examCode}</Text>
+                <Text style={styles.examInfoDate}>
+                  Date: {new Date(examPerformanceData.examInfo.examDate).toLocaleDateString()}
+                </Text>
+                <Text style={styles.examInfoSubject}>
+                  Subject: {examPerformanceData.subjectInfo.subjectName}
+                </Text>
+              </View>
+
+              {/* Statistics Overview */}
+              <View style={styles.statsOverviewCard}>
+                <Text style={styles.cardTitle}>Performance Statistics</Text>
+                <View style={styles.statsGrid}>
+                  <View style={styles.statGridItem}>
+                    <Text style={styles.statGridValue}>{examPerformanceData.statistics.totalStudents}</Text>
+                    <Text style={styles.statGridLabel}>Total Students</Text>
+                  </View>
+                  <View style={styles.statGridItem}>
+                    <Text style={[styles.statGridValue, { color: '#4299E1' }]}>
+                      {examPerformanceData.statistics.averageMarks}
+                    </Text>
+                    <Text style={styles.statGridLabel}>Average Marks</Text>
+                  </View>
+                  <View style={styles.statGridItem}>
+                    <Text style={[styles.statGridValue, { color: '#10B981' }]}>
+                      {examPerformanceData.statistics.averagePercentage}%
+                    </Text>
+                    <Text style={styles.statGridLabel}>Average %</Text>
+                  </View>
+                  <View style={styles.statGridItem}>
+                    <Text style={styles.statGridValue}>{examPerformanceData.statistics.medianMarks}</Text>
+                    <Text style={styles.statGridLabel}>Median Marks</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Top and Bottom Performers */}
+              <View style={styles.performersCard}>
+                <Text style={styles.cardTitle}>Top & Bottom Performers</Text>
+                
+                {/* Top Performer */}
+                <View style={styles.performerSection}>
+                  <View style={styles.performerHeader}>
+                    <FontAwesome5 name="trophy" size={16} color="#F6AD55" />
+                    <Text style={styles.performerTitle}>Highest Score</Text>
+                  </View>
+                  <View style={styles.performerInfo}>
+                    <View style={styles.performerAvatar}>
+                      <Text style={styles.performerAvatarText}>
+                        {examPerformanceData.statistics.maxPerformer.studentName.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={styles.performerDetails}>
+                      <Text style={styles.performerName}>
+                        {examPerformanceData.statistics.maxPerformer.studentName}
+                      </Text>
+                      <Text style={styles.performerID}>
+                        ID: {examPerformanceData.statistics.maxPerformer.studentNumber}
+                      </Text>
+                    </View>
+                    <View style={styles.performerScore}>
+                      <Text style={[styles.performerMarks, { color: '#10B981' }]}>
+                        {examPerformanceData.statistics.maxPerformer.marksScored}/{examPerformanceData.statistics.fullMarks}
+                      </Text>
+                      <Text style={[styles.performerPercentage, { color: '#10B981' }]}>
+                        {examPerformanceData.statistics.maxPerformer.percentage}%
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Divider */}
+                <View style={styles.performerDivider} />
+
+                {/* Bottom Performer */}
+                <View style={styles.performerSection}>
+                  <View style={styles.performerHeader}>
+                    <FontAwesome5 name="arrow-down" size={16} color="#F56565" />
+                    <Text style={styles.performerTitle}>Lowest Score</Text>
+                  </View>
+                  <View style={styles.performerInfo}>
+                    <View style={styles.performerAvatar}>
+                      <Text style={styles.performerAvatarText}>
+                        {examPerformanceData.statistics.minPerformer.studentName.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={styles.performerDetails}>
+                      <Text style={styles.performerName}>
+                        {examPerformanceData.statistics.minPerformer.studentName}
+                      </Text>
+                      <Text style={styles.performerID}>
+                        ID: {examPerformanceData.statistics.minPerformer.studentNumber}
+                      </Text>
+                    </View>
+                    <View style={styles.performerScore}>
+                      <Text style={[styles.performerMarks, { color: '#F56565' }]}>
+                        {examPerformanceData.statistics.minPerformer.marksScored}/{examPerformanceData.statistics.fullMarks}
+                      </Text>
+                      <Text style={[styles.performerPercentage, { color: '#F56565' }]}>
+                        {examPerformanceData.statistics.minPerformer.percentage}%
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+                {/* Grade Distribution */}
+                  <View style={styles.gradeDistributionCard}>
+                    <Text style={styles.cardTitle}>Grade Distribution</Text>
+                    <View style={styles.gradeGrid}>
+                      {Object.entries(examPerformanceData.statistics.gradeDistribution).map(([grade, data]) => {
+                        const count = getGradeCount(data);
+                        const marksRange = getGradeMarksRange(data);
+                        
+                        return (
+                          <View key={grade} style={styles.gradeItem}>
+                            <View style={[styles.gradeBadgeDistribution, { backgroundColor: getGradeColor(getGradePercentage(grade)) }]}>
+                              <Text style={styles.gradeTextDistribution}>{grade}</Text>
+                            </View>
+                            <Text style={styles.gradeCount}>{count}</Text>
+                            {marksRange && (
+                              <Text style={styles.gradeMarksRange}>({marksRange})</Text>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+              {/* Pass/Fail Summary */}
+              <View style={styles.passFailCard}>
+                <Text style={styles.cardTitle}>Pass/Fail Summary</Text>
+                <View style={styles.passFailContainer}>
+                  <View style={styles.passFailItem}>
+                    <View style={[styles.passFailIcon, { backgroundColor: '#10B981' }]}>
+                      <FontAwesome5 name="check" size={20} color="#FFFFFF" />
+                    </View>
+                    <View>
+                      <Text style={[styles.passFailValue, { color: '#10B981' }]}>
+                        {examPerformanceData.statistics.passCount}
+                      </Text>
+                      <Text style={styles.passFailLabel}>Passed (≥40%)</Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.passFailItem}>
+                    <View style={[styles.passFailIcon, { backgroundColor: '#F56565' }]}>
+                      <FontAwesome5 name="times" size={20} color="#FFFFFF" />
+                    </View>
+                    <View>
+                      <Text style={[styles.passFailValue, { color: '#F56565' }]}>
+                        {examPerformanceData.statistics.failCount}
+                      </Text>
+                      <Text style={styles.passFailLabel}>Failed (≤40%)</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </>
+          )}
+
+          {examPerformanceData && !examPerformanceData.statistics && (
+            <View style={styles.emptyPerformanceContainer}>
+              <FontAwesome5 name="chart-line" size={48} color="#CBD5E0" />
+              <Text style={styles.emptyPerformanceText}>No Performance Data</Text>
+              <Text style={styles.emptyPerformanceSubtext}>
+                No students have completed this exam yet
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+      )}
+    </SafeAreaView>
+  </Modal>
+);
 
   // Render student detail modal
   const renderStudentDetailModal = () => (
@@ -614,6 +954,7 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
       
       {/* Student Detail Modal */}
       {renderStudentDetailModal()}
+      {renderExamPerformanceModal()}
     </SafeAreaView>
   );
 };
@@ -1178,6 +1519,273 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  examActionHeader: {
+  flex: 0.8,
+  textAlign: 'center',
+},
+examActionCell: {
+  flex: 0.8,
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+
+// Exam Performance Modal Styles
+examInfoCard: {
+  backgroundColor: '#FFFFFF',
+  borderRadius: 12,
+  padding: 16,
+  marginBottom: 16,
+  elevation: 2,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.05,
+  shadowRadius: 2,
+},
+examInfoHeader: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginBottom: 12,
+},
+examInfoTitle: {
+  fontSize: 18,
+  fontWeight: '700',
+  color: '#2D3748',
+  marginLeft: 8,
+  flex: 1,
+},
+examInfoCode: {
+  fontSize: 14,
+  color: '#718096',
+  marginBottom: 4,
+},
+examInfoDate: {
+  fontSize: 14,
+  color: '#718096',
+  marginBottom: 4,
+},
+examInfoSubject: {
+  fontSize: 14,
+  color: '#4299E1',
+  fontWeight: '600',
+},
+statsOverviewCard: {
+  backgroundColor: '#FFFFFF',
+  borderRadius: 12,
+  padding: 16,
+  marginBottom: 16,
+  elevation: 2,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.05,
+  shadowRadius: 2,
+},
+cardTitle: {
+  fontSize: 16,
+  fontWeight: '600',
+  color: '#2D3748',
+  marginBottom: 16,
+},
+statsGrid: {
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  justifyContent: 'space-between',
+},
+statGridItem: {
+  width: '48%',
+  alignItems: 'center',
+  backgroundColor: '#F7FAFC',
+  padding: 12,
+  borderRadius: 8,
+  marginBottom: 8,
+},
+statGridValue: {
+  fontSize: 18,
+  fontWeight: '700',
+  color: '#2D3748',
+  marginBottom: 4,
+},
+statGridLabel: {
+  fontSize: 12,
+  color: '#718096',
+  textAlign: 'center',
+},
+performersCard: {
+  backgroundColor: '#FFFFFF',
+  borderRadius: 12,
+  padding: 16,
+  marginBottom: 16,
+  elevation: 2,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.05,
+  shadowRadius: 2,
+},
+performerSection: {
+  marginBottom: 8,
+},
+performerHeader: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginBottom: 12,
+},
+performerTitle: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#2D3748',
+  marginLeft: 8,
+},
+performerInfo: {
+  flexDirection: 'row',
+  alignItems: 'center',
+},
+performerAvatar: {
+  width: 40,
+  height: 40,
+  borderRadius: 20,
+  backgroundColor: '#667EEA',
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginRight: 12,
+},
+performerAvatarText: {
+  color: '#FFFFFF',
+  fontSize: 16,
+  fontWeight: '700',
+},
+performerDetails: {
+  flex: 1,
+},
+performerName: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#2D3748',
+  marginBottom: 2,
+},
+performerID: {
+  fontSize: 12,
+  color: '#718096',
+},
+performerScore: {
+  alignItems: 'flex-end',
+},
+performerMarks: {
+  fontSize: 16,
+  fontWeight: '700',
+  marginBottom: 2,
+},
+performerPercentage: {
+  fontSize: 12,
+  fontWeight: '600',
+},
+performerDivider: {
+  height: 1,
+  backgroundColor: '#E2E8F0',
+  marginVertical: 16,
+},
+gradeDistributionCard: {
+  backgroundColor: '#FFFFFF',
+  borderRadius: 12,
+  padding: 16,
+  marginBottom: 16,
+  elevation: 2,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.05,
+  shadowRadius: 2,
+},
+gradeGrid: {
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  justifyContent: 'space-between',
+},
+gradeItem: {
+  width: '23%',
+  alignItems: 'center',
+  marginBottom: 12,
+},
+gradeBadgeDistribution: {
+  width: 32,
+  height: 32,
+  borderRadius: 16,
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginBottom: 4,
+},
+gradeTextDistribution: {
+  color: '#FFFFFF',
+  fontSize: 12,
+  fontWeight: '700',
+},
+gradeCount: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#2D3748',
+},
+passFailCard: {
+  backgroundColor: '#FFFFFF',
+  borderRadius: 12,
+  padding: 16,
+  marginBottom: 16,
+  elevation: 2,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.05,
+  shadowRadius: 2,
+},
+passFailContainer: {
+  flexDirection: 'row',
+  justifyContent: 'space-around',
+},
+passFailItem: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  flex: 1,
+  justifyContent: 'center',
+},
+passFailIcon: {
+  width: 40,
+  height: 40,
+  borderRadius: 20,
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginRight: 12,
+},
+passFailValue: {
+  fontSize: 20,
+  fontWeight: '700',
+  marginBottom: 2,
+},
+passFailLabel: {
+  fontSize: 12,
+  color: '#718096',
+},
+emptyPerformanceContainer: {
+  alignItems: 'center',
+  justifyContent: 'center',
+  paddingVertical: 64,
+  paddingHorizontal: 32,
+},
+emptyPerformanceText: {
+  fontSize: 18,
+  fontWeight: '600',
+  color: '#4A5568',
+  marginTop: 16,
+  textAlign: 'center',
+},
+emptyPerformanceSubtext: {
+  fontSize: 14,
+  color: '#718096',
+  marginTop: 8,
+  textAlign: 'center',
+  lineHeight: 20,
+},
+gradeMarksRange: {
+    fontSize: 10,
+    color: '#718096',
+    textAlign: 'center',
+    marginTop: 2,
+    fontWeight: '500',
   },
 });
 

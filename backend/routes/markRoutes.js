@@ -27,4 +27,6 @@ router.get('/class/:classId/subject-report', markController.getTeacherSubjectRep
 // Get student academic report
 router.get('/student/academic-report', markController.getStudentAcademicReport);
 
+router.get('/class/:classId/exam/:examId/subject/:subjectId/performance', auth, markController.getExamPerformanceDetails);
+
 module.exports = router;

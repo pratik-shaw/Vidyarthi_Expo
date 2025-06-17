@@ -916,6 +916,221 @@ exports.getStudentAcademicReport = async (req, res) => {
     });
   }
 };
+// Get exam performance details for a specific exam and subject
+// Replace the existing getExamPerformanceDetails function with this updated version:
+
+exports.getExamPerformanceDetails = async (req, res) => {
+  try {
+    const { classId, examId, subjectId } = req.params;
+    const teacherId = req.user.id;
+
+    console.log('getExamPerformanceDetails called:', { classId, examId, subjectId, teacherId });
+
+    // Verify teacher access
+    const authCheck = await verifyTeacherAccess(teacherId, classId);
+    if (!authCheck.authorized) {
+      return res.status(403).json({ msg: authCheck.error });
+    }
+
+    // Get subject document and find the specific subject
+    const subjectDoc = await Subject.findOne({ classId });
+    let subjectName = 'Unknown';
+    
+    if (subjectDoc) {
+      const subject = subjectDoc.subjects.find(sub => sub._id.toString() === subjectId);
+      if (subject) {
+        subjectName = subject.subjectName;
+        // VALIDATION: Check if teacher is currently assigned to this subject
+        if (!subject.teacherId || subject.teacherId.toString() !== teacherId) {
+          return res.status(403).json({ msg: 'You are not currently assigned to this subject' });
+        }
+      } else {
+        return res.status(404).json({ msg: 'Subject not found in this class' });
+      }
+    } else {
+      return res.status(404).json({ msg: 'Subject document not found for this class' });
+    }
+
+    // Get exam details
+    const exam = await Exam.findById(examId);
+    if (!exam) {
+      return res.status(404).json({ msg: 'Exam not found' });
+    }
+
+    // Get all mark records for this class
+    const markRecords = await Mark.find({ classId })
+      .populate('studentId', 'name studentId')
+      .sort({ 'studentId.name': 1 });
+
+    // Extract performance data for this specific exam and subject
+    const studentPerformances = [];
+    
+    markRecords.forEach(record => {
+      const examData = record.exams.find(e => e.examId.toString() === examId);
+      if (examData) {
+        const subjectData = examData.subjects.find(s => s.subjectId.toString() === subjectId);
+        if (subjectData && subjectData.marksScored !== null) {
+          studentPerformances.push({
+            studentId: record.studentId._id,
+            studentName: record.studentId.name,
+            studentNumber: record.studentId.studentId,
+            marksScored: subjectData.marksScored,
+            fullMarks: subjectData.fullMarks,
+            percentage: (subjectData.marksScored / subjectData.fullMarks) * 100,
+            grade: calculateGrade((subjectData.marksScored / subjectData.fullMarks) * 100),
+            scoredAt: subjectData.scoredAt,
+            scoredBy: subjectData.scoredBy
+          });
+        }
+      }
+    });
+
+    if (studentPerformances.length === 0) {
+      return res.json({
+        examInfo: {
+          examId: exam._id,
+          examName: exam.examName,
+          examCode: exam.examCode,
+          examDate: exam.examDate
+        },
+        subjectInfo: {
+          subjectId: subjectId,
+          subjectName: subjectName
+        },
+        classInfo: {
+          id: authCheck.classObj._id,
+          name: authCheck.classObj.name,
+          section: authCheck.classObj.section
+        },
+        statistics: null,
+        students: [],
+        message: 'No student performances found for this exam and subject'
+      });
+    }
+
+    // Calculate statistics
+    const marks = studentPerformances.map(p => p.marksScored);
+    const percentages = studentPerformances.map(p => p.percentage);
+    const fullMarks = studentPerformances[0].fullMarks;
+    
+    // Sort marks for median calculation
+    const sortedMarks = [...marks].sort((a, b) => a - b);
+    const sortedPercentages = [...percentages].sort((a, b) => a - b);
+    
+    // Calculate median
+    const getMedian = (arr) => {
+      const mid = Math.floor(arr.length / 2);
+      return arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+    };
+
+    // Find min and max performers
+    const minPerformer = studentPerformances.find(p => p.marksScored === Math.min(...marks));
+    const maxPerformer = studentPerformances.find(p => p.marksScored === Math.max(...marks));
+
+    // Helper function to get marks range for percentage
+    const getMarksRange = (minPerc, maxPerc) => {
+      const minMarks = Math.ceil((minPerc / 100) * fullMarks);
+      const maxMarks = maxPerc === 100 ? fullMarks : Math.floor((maxPerc / 100) * fullMarks);
+      return `${minMarks}-${maxMarks}`;
+    };
+
+    const statistics = {
+      totalStudents: studentPerformances.length,
+      averageMarks: (marks.reduce((sum, mark) => sum + mark, 0) / marks.length).toFixed(2),
+      averagePercentage: (percentages.reduce((sum, perc) => sum + perc, 0) / percentages.length).toFixed(2),
+      medianMarks: getMedian(sortedMarks),
+      medianPercentage: getMedian(sortedPercentages).toFixed(2),
+      minMarks: Math.min(...marks),
+      maxMarks: Math.max(...marks),
+      minPercentage: Math.min(...percentages).toFixed(2),
+      maxPercentage: Math.max(...percentages).toFixed(2),
+      fullMarks: fullMarks,
+      minPerformer: {
+        studentId: minPerformer.studentId,
+        studentName: minPerformer.studentName,
+        studentNumber: minPerformer.studentNumber,
+        marksScored: minPerformer.marksScored,
+        percentage: minPerformer.percentage.toFixed(2),
+        grade: minPerformer.grade
+      },
+      maxPerformer: {
+        studentId: maxPerformer.studentId,
+        studentName: maxPerformer.studentName,
+        studentNumber: maxPerformer.studentNumber,
+        marksScored: maxPerformer.marksScored,
+        percentage: maxPerformer.percentage.toFixed(2),
+        grade: maxPerformer.grade
+      },
+      passCount: studentPerformances.filter(p => p.percentage >= 40).length,
+      failCount: studentPerformances.filter(p => p.percentage < 40).length,
+      gradeDistribution: {
+        'A+': {
+          count: studentPerformances.filter(p => p.percentage >= 90).length,
+          marksRange: getMarksRange(90, 100)
+        },
+        'A': {
+          count: studentPerformances.filter(p => p.percentage >= 80 && p.percentage < 90).length,
+          marksRange: getMarksRange(80, 89)
+        },
+        'B+': {
+          count: studentPerformances.filter(p => p.percentage >= 70 && p.percentage < 80).length,
+          marksRange: getMarksRange(70, 79)
+        },
+        'B': {
+          count: studentPerformances.filter(p => p.percentage >= 60 && p.percentage < 70).length,
+          marksRange: getMarksRange(60, 69)
+        },
+        'C+': {
+          count: studentPerformances.filter(p => p.percentage >= 50 && p.percentage < 60).length,
+          marksRange: getMarksRange(50, 59)
+        },
+        'C': {
+          count: studentPerformances.filter(p => p.percentage >= 40 && p.percentage < 50).length,
+          marksRange: getMarksRange(40, 49)
+        },
+        'D': {
+          count: studentPerformances.filter(p => p.percentage >= 33 && p.percentage < 40).length,
+          marksRange: getMarksRange(33, 39)
+        },
+        'F': {
+          count: studentPerformances.filter(p => p.percentage < 33).length,
+          marksRange: getMarksRange(0, 32)
+        }
+      }
+    };
+
+    console.log('Exam performance details retrieved:', studentPerformances.length, 'students');
+
+    res.json({
+      examInfo: {
+        examId: exam._id,
+        examName: exam.examName,
+        examCode: exam.examCode,
+        examDate: exam.examDate
+      },
+      subjectInfo: {
+        subjectId: subjectId,
+        subjectName: subjectName
+      },
+      classInfo: {
+        id: authCheck.classObj._id,
+        name: authCheck.classObj.name,
+        section: authCheck.classObj.section
+      },
+      statistics,
+      students: studentPerformances.sort((a, b) => b.marksScored - a.marksScored), // Sort by marks descending
+      totalStudents: studentPerformances.length
+    });
+
+  } catch (err) {
+    console.error('Error in getExamPerformanceDetails:', err);
+    res.status(500).json({ 
+      msg: 'Server error', 
+      error: err.message 
+    });
+  }
+};
+
 
 // Helper function to calculate grade based on percentage
 const calculateGrade = (percentage) => {
