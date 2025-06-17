@@ -117,6 +117,7 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
   const [selectedSubject, setSelectedSubject] = useState<SubjectReport | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<StudentPerformance | null>(null);
   const [modalVisible, setModalVisible] = useState<boolean>(false);
+  const [loadingDetails, setLoadingDetails] = useState<boolean>(false);
 
   // Set header
   React.useLayoutEffect(() => {
@@ -238,6 +239,18 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
     );
   };
 
+  // Get grade based on percentage
+  const getGrade = (percentage: number): string => {
+    if (percentage >= 90) return 'A+';
+    if (percentage >= 80) return 'A';
+    if (percentage >= 70) return 'B+';
+    if (percentage >= 60) return 'B';
+    if (percentage >= 50) return 'C+';
+    if (percentage >= 40) return 'C';
+    if (percentage >= 33) return 'D';
+    return 'F';
+  };
+
   // Get grade color
   const getGradeColor = (percentage: number): string => {
     if (percentage >= 90) return '#10B981';
@@ -254,115 +267,143 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
   const handleStudentPress = (student: StudentPerformance, subject: SubjectReport) => {
     setSelectedStudent(student);
     setSelectedSubject(subject);
+    setLoadingDetails(true);
     setModalVisible(true);
+    // Simulate loading delay
+    setTimeout(() => setLoadingDetails(false), 500);
   };
 
-  // Render subject overview cards
-  const renderSubjectOverview = (subject: SubjectReport) => {
+  // Render subject card
+  const renderSubjectCard = (subject: SubjectReport) => {
     const averagePerf = parseFloat(subject.summary.averagePerformance);
     const completionRate = parseFloat(subject.summary.completionRate);
     
     return (
-      <View key={subject.subjectId} style={styles.subjectSection}>
+      <View key={subject.subjectId} style={styles.subjectCard}>
         {/* Subject Header */}
         <View style={styles.subjectHeader}>
-          <View style={styles.subjectTitleContainer}>
-            <FontAwesome5 name="book" size={20} color="#667EEA" style={styles.subjectIcon} />
+          <LinearGradient
+            colors={['#667EEA', '#764BA2']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.subjectHeaderGradient}
+          >
+            <FontAwesome5 name="book" size={24} color="#FFFFFF" />
             <Text style={styles.subjectTitle}>{subject.subjectName}</Text>
-          </View>
+            <Text style={styles.subjectSubtitle}>
+              {subject.summary.totalStudents} students • {subject.exams.length} exams
+            </Text>
+          </LinearGradient>
         </View>
 
         {/* Statistics Overview */}
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{subject.summary.totalStudents}</Text>
-            <Text style={styles.statLabel}>Total Students</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{subject.exams.length}</Text>
-            <Text style={styles.statLabel}>Total Exams</Text>
-          </View>
-          <View style={styles.statCard}>
             <Text style={[styles.statValue, { color: getGradeColor(averagePerf) }]}>
               {averagePerf.toFixed(1)}%
             </Text>
-            <Text style={styles.statLabel}>Average</Text>
+            <Text style={styles.statLabel}>Average Score</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{completionRate}%</Text>
-            <Text style={styles.statLabel}>Completion</Text>
+            <Text style={styles.statLabel}>Completion Rate</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={[styles.statValue, { color: '#10B981' }]}>
+              {subject.summary.passCount}
+            </Text>
+            <Text style={styles.statLabel}>Pass Count</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={[styles.statValue, { color: '#EF4444' }]}>
+              {subject.summary.failCount}
+            </Text>
+            <Text style={styles.statLabel}>Fail Count</Text>
           </View>
         </View>
 
-        {/* Exam Performance Table */}
-        <View style={styles.tableSection}>
-          <Text style={styles.tableSectionTitle}>Exam Performance</Text>
-          <View style={styles.tableContainer}>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.tableHeaderText, { flex: 2 }]}>Exam</Text>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Avg Score</Text>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Completed</Text>
+        {/* Exam Performance Section */}
+        <View style={styles.examSection}>
+          <Text style={styles.sectionTitle}>Exam Performance</Text>
+          <View style={styles.examTable}>
+            <View style={styles.examTableHeader}>
+              <Text style={[styles.examHeaderCell, styles.examNameHeader]}>Exam</Text>
+              <Text style={[styles.examHeaderCell, styles.examScoreHeader]}>Avg Score</Text>
+              <Text style={[styles.examHeaderCell, styles.examCompletedHeader]}>Completed</Text>
             </View>
             {subject.exams.map((exam, index) => (
-              <View key={exam.examId} style={styles.tableRow}>
-                <View style={{ flex: 2 }}>
+              <View key={exam.examId} style={[styles.examTableRow, index % 2 === 0 && styles.evenRow]}>
+                <View style={styles.examNameCell}>
                   <Text style={styles.examName}>{exam.examName}</Text>
                   <Text style={styles.examCode}>{exam.examCode}</Text>
                 </View>
-                <Text style={[styles.tableText, { flex: 1 }]}>
-                  {exam.averageScore.toFixed(1)}/{exam.fullMarks}
-                </Text>
-                <Text style={[styles.tableText, { flex: 1 }]}>
-                  {exam.studentsCompleted}
-                </Text>
+                <View style={styles.examScoreCell}>
+                  <Text style={styles.examScore}>
+                    {exam.averageScore.toFixed(1)}/{exam.fullMarks}
+                  </Text>
+                </View>
+                <View style={styles.examCompletedCell}>
+                  <Text style={styles.examCompleted}>{exam.studentsCompleted}</Text>
+                </View>
               </View>
             ))}
           </View>
         </View>
 
         {/* Student Performance Table */}
-        <View style={styles.tableSection}>
-          <Text style={styles.tableSectionTitle}>Student Performance</Text>
-          <View style={styles.tableContainer}>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.tableHeaderText, { flex: 2 }]}>Student</Text>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Exams</Text>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Average</Text>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Grade</Text>
-            </View>
-            <FlatList
-              data={subject.students}
-              keyExtractor={(item) => item.studentId}
-              scrollEnabled={false}
-              renderItem={({ item: student }) => (
-                <TouchableOpacity
-                  style={styles.tableRow}
-                  onPress={() => handleStudentPress(student, subject)}
-                >
-                  <View style={{ flex: 2 }}>
-                    <Text style={styles.studentName}>{student.studentName}</Text>
-                    <Text style={styles.studentId}>ID: {student.studentNumber}</Text>
+        <View style={styles.tableContainer}>
+          <Text style={styles.sectionTitle}>Student Performance</Text>
+          <View style={styles.tableHeader}>
+            <Text style={[styles.headerCell, styles.studentHeaderCell]}>Student</Text>
+            <Text style={[styles.headerCell, styles.examHeaderCell]}>Exams</Text>
+            <Text style={[styles.headerCell, styles.performanceHeaderCell]}>Performance</Text>
+            <Text style={[styles.headerCell, styles.actionHeaderCell]}>Action</Text>
+          </View>
+          
+          <View style={styles.tableBody}>
+            {subject.students.map((student, index) => (
+              <TouchableOpacity
+                key={student.studentId}
+                style={[styles.tableRow, index % 2 === 0 && styles.evenRow]}
+                onPress={() => handleStudentPress(student, subject)}
+              >
+                <View style={styles.studentCell}>
+                  <View style={styles.studentAvatar}>
+                    <Text style={styles.avatarText}>
+                      {student.studentName.charAt(0).toUpperCase()}
+                    </Text>
                   </View>
-                  <Text style={[styles.tableText, { flex: 1 }]}>
+                  <View style={styles.studentInfo}>
+                    <Text style={styles.studentName} numberOfLines={1} ellipsizeMode="tail">
+                      {student.studentName}
+                    </Text>
+                    <Text style={styles.studentId} numberOfLines={1}>
+                      ID: {student.studentNumber}
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.examCountCell}>
+                  <Text style={styles.examCount}>
                     {student.overallPerformance.completedExams}/{student.overallPerformance.totalExams}
                   </Text>
-                  <Text style={[
-                    styles.tableText,
-                    { flex: 1, color: getGradeColor(student.overallPerformance.averagePercentage) }
-                  ]}>
+                  <Text style={styles.examLabel}>Completed</Text>
+                </View>
+                
+                <View style={styles.performanceCell}>
+                  <Text style={[styles.percentage, { color: getGradeColor(student.overallPerformance.averagePercentage) }]}>
                     {student.overallPerformance.averagePercentage.toFixed(1)}%
                   </Text>
-                  <View style={[styles.gradeContainer, { flex: 1 }]}>
-                    <View style={[
-                      styles.gradeBadge,
-                      { backgroundColor: getGradeColor(student.overallPerformance.averagePercentage) }
-                    ]}>
-                      <Text style={styles.gradeText}>{student.overallPerformance.grade}</Text>
-                    </View>
+                  <View style={[styles.gradeBadge, { backgroundColor: getGradeColor(student.overallPerformance.averagePercentage) }]}>
+                    <Text style={styles.gradeText}>{student.overallPerformance.grade}</Text>
                   </View>
-                </TouchableOpacity>
-              )}
-            />
+                </View>
+                
+                <View style={styles.actionCell}>
+                  <FontAwesome5 name="eye" size={16} color="#4299E1" />
+                </View>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
       </View>
@@ -385,190 +426,192 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
           >
             <FontAwesome5 name="times" size={20} color="#4A5568" />
           </TouchableOpacity>
-          <View style={styles.modalTitleContainer}>
-            <Text style={styles.modalTitle} numberOfLines={1}>
-              {selectedStudent?.studentName}
-            </Text>
-            <Text style={styles.modalSubtitle} numberOfLines={1}>
-              {selectedSubject?.subjectName}
-            </Text>
-          </View>
+          <Text style={styles.modalTitle}>
+            {selectedStudent?.studentName} - {selectedSubject?.subjectName}
+          </Text>
           <View style={styles.placeholder} />
         </View>
         
-        <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-          {selectedStudent && selectedSubject && (
-            <>
-              {/* Student Overview */}
-              <View style={styles.studentOverviewCard}>
-                <View style={styles.studentHeader}>
-                  <View style={styles.largeAvatar}>
-                    <Text style={styles.largeAvatarText}>
-                      {selectedStudent.studentName.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={styles.studentDetails}>
-                    <Text style={styles.studentDetailName}>{selectedStudent.studentName}</Text>
-                    <Text style={styles.studentDetailId}>ID: {selectedStudent.studentNumber}</Text>
-                    <Text style={styles.subjectDetailName}>{selectedSubject.subjectName}</Text>
-                  </View>
-                </View>
-                
-                <View style={styles.performanceSummary}>
-                  <View style={styles.summaryItem}>
-                    <Text style={[
-                      styles.summaryValue,
-                      { color: getGradeColor(selectedStudent.overallPerformance.averagePercentage) }
-                    ]}>
-                      {selectedStudent.overallPerformance.averagePercentage.toFixed(1)}%
-                    </Text>
-                    <Text style={styles.summaryLabel}>Overall Average</Text>
-                  </View>
-                  <View style={styles.summaryItem}>
-                    <Text style={styles.summaryValue}>
-                      {selectedStudent.overallPerformance.completedExams}/{selectedStudent.overallPerformance.totalExams}
-                    </Text>
-                    <Text style={styles.summaryLabel}>Exams Completed</Text>
-                  </View>
-                  <View style={styles.summaryItem}>
-                    <View style={[
-                      styles.gradeBadgeLarge,
-                      { backgroundColor: getGradeColor(selectedStudent.overallPerformance.averagePercentage) }
-                    ]}>
-                      <Text style={styles.gradeTextLarge}>{selectedStudent.overallPerformance.grade}</Text>
+        {loadingDetails ? (
+          <View style={styles.modalLoadingContainer}>
+            <ActivityIndicator size="large" color="#4299E1" />
+            <Text style={styles.loadingText}>Loading student details...</Text>
+          </View>
+        ) : (
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            {selectedStudent && selectedSubject && (
+              <>
+                {/* Student Summary Card */}
+                <View style={styles.studentSummaryCard}>
+                  <View style={styles.studentHeader}>
+                    <View style={styles.largeAvatar}>
+                      <Text style={styles.largeAvatarText}>
+                        {selectedStudent.studentName.charAt(0).toUpperCase()}
+                      </Text>
                     </View>
-                    <Text style={styles.summaryLabel}>Current Grade</Text>
+                    <View style={styles.studentDetails}>
+                      <Text style={styles.studentDetailName}>{selectedStudent.studentName}</Text>
+                      <Text style={styles.studentDetailId}>ID: {selectedStudent.studentNumber}</Text>
+                      <Text style={styles.subjectDetailName}>{selectedSubject.subjectName}</Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.performanceSummary}>
+                    <View style={styles.summaryItem}>
+                      <Text style={[
+                        styles.summaryValue,
+                        { color: getGradeColor(selectedStudent.overallPerformance.averagePercentage) }
+                      ]}>
+                        {selectedStudent.overallPerformance.averagePercentage.toFixed(1)}%
+                      </Text>
+                      <Text style={styles.summaryLabel}>Overall Average</Text>
+                    </View>
+                    <View style={styles.summaryItem}>
+                      <Text style={styles.summaryValue}>
+                        {selectedStudent.overallPerformance.completedExams}/{selectedStudent.overallPerformance.totalExams}
+                      </Text>
+                      <Text style={styles.summaryLabel}>Exams Completed</Text>
+                    </View>
+                    <View style={styles.summaryItem}>
+                      <View style={[
+                        styles.gradeBadgeLarge,
+                        { backgroundColor: getGradeColor(selectedStudent.overallPerformance.averagePercentage) }
+                      ]}>
+                        <Text style={styles.gradeTextLarge}>{selectedStudent.overallPerformance.grade}</Text>
+                      </View>
+                      <Text style={styles.summaryLabel}>Current Grade</Text>
+                    </View>
                   </View>
                 </View>
-              </View>
 
-              {/* Exam Results Table */}
-              <View style={styles.examResultsCard}>
-                <Text style={styles.sectionTitle}>Exam Results</Text>
-                {selectedStudent.exams.length > 0 ? (
-                  <View style={styles.tableContainer}>
-                    <View style={styles.tableHeader}>
-                      <Text style={[styles.tableHeaderText, { flex: 2 }]}>Exam</Text>
-                      <Text style={[styles.tableHeaderText, { flex: 1 }]}>Score</Text>
-                      <Text style={[styles.tableHeaderText, { flex: 1 }]}>%</Text>
-                      <Text style={[styles.tableHeaderText, { flex: 1 }]}>Grade</Text>
-                    </View>
-                    {selectedStudent.exams.map((exam, index) => (
-                      <View key={exam.examId} style={styles.tableRow}>
-                        <View style={{ flex: 2 }}>
-                          <Text style={styles.examName}>{exam.examName}</Text>
-                          <Text style={styles.examCode}>{exam.examCode}</Text>
-                          <Text style={styles.examDate}>
-                            {new Date(exam.examDate).toLocaleDateString()}
-                          </Text>
-                        </View>
-                        <Text style={[
-                          styles.tableText,
-                          { flex: 1, color: getGradeColor(exam.percentage) }
-                        ]}>
-                          {exam.marksScored}/{exam.fullMarks}
+                {/* Exam Results */}
+                {selectedStudent.exams.map((exam, examIndex) => (
+                  <View key={exam.examId} style={styles.examCard}>
+                    <View style={styles.examHeader}>
+                      <View style={styles.examInfo}>
+                        <Text style={styles.examName}>{exam.examName}</Text>
+                        <Text style={styles.examCode}>Code: {exam.examCode}</Text>
+                        <Text style={styles.examDate}>
+                          Date: {new Date(exam.examDate).toLocaleDateString()}
                         </Text>
-                        <Text style={[
-                          styles.tableText,
-                          { flex: 1, color: getGradeColor(exam.percentage) }
-                        ]}>
+                      </View>
+                      <View style={styles.examSummary}>
+                        <Text style={[styles.examPercentage, { color: getGradeColor(exam.percentage) }]}>
                           {exam.percentage.toFixed(1)}%
                         </Text>
-                        <View style={[styles.gradeContainer, { flex: 1 }]}>
-                          <View style={[
-                            styles.gradeBadge,
-                            { backgroundColor: getGradeColor(exam.percentage) }
-                          ]}>
-                            <Text style={styles.gradeText}>{exam.grade}</Text>
-                          </View>
+                        <View style={[styles.examGradeBadge, { backgroundColor: getGradeColor(exam.percentage) }]}>
+                          <Text style={styles.examGradeText}>{exam.grade}</Text>
                         </View>
                       </View>
-                    ))}
+                    </View>
+                    
+                    <View style={styles.examStats}>
+                      <View style={styles.statItem}>
+                        <Text style={styles.statValue}>{exam.marksScored}</Text>
+                        <Text style={styles.statLabel}>Marks Scored</Text>
+                      </View>
+                      <View style={styles.statItem}>
+                        <Text style={styles.statValue}>{exam.fullMarks}</Text>
+                        <Text style={styles.statLabel}>Total Marks</Text>
+                      </View>
+                      <View style={styles.statItem}>
+                        <Text style={styles.statValue}>
+                          {new Date(exam.scoredAt).toLocaleDateString()}
+                        </Text>
+                        <Text style={styles.statLabel}>Scored Date</Text>
+                      </View>
+                    </View>
                   </View>
-                ) : (
-                  <View style={styles.noExamsContainer}>
+                ))}
+
+                {selectedStudent.exams.length === 0 && (
+                  <View style={styles.emptyExamsContainer}>
                     <FontAwesome5 name="clipboard-list" size={48} color="#CBD5E0" />
-                    <Text style={styles.noExamsText}>No exam results available</Text>
+                    <Text style={styles.emptyExamsText}>No exam results available</Text>
+                    <Text style={styles.emptyExamsSubtext}>
+                      This student hasn't completed any exams in this subject yet
+                    </Text>
                   </View>
                 )}
-              </View>
-            </>
-          )}
-        </ScrollView>
+              </>
+            )}
+          </ScrollView>
+        )}
       </SafeAreaView>
     </Modal>
   );
 
-  // Loading screen
-  if (loading) {
+  // Show loading indicator
+  if (loading && !refreshing) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F7FAFC" />
-        <ActivityIndicator size="large" color="#667EEA" />
+        <StatusBar hidden={true} />
+        <ActivityIndicator size="large" color="#4299E1" />
         <Text style={styles.loadingText}>Loading subject reports...</Text>
       </SafeAreaView>
     );
   }
 
-  // Error screen
+  // Show error message
   if (error) {
     return (
       <SafeAreaView style={styles.errorContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F7FAFC" />
-        <FontAwesome5 name="exclamation-triangle" size={48} color="#EF4444" />
+        <StatusBar hidden={true} />
+        <FontAwesome5 name="exclamation-triangle" size={48} color="#F56565" />
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => fetchSubjectReports()}>
-          <Text style={styles.retryButtonText}>Retry</Text>
+        <TouchableOpacity 
+          style={styles.retryButton}
+          onPress={() => fetchSubjectReports()}
+        >
+          <Text style={styles.retryButtonText}>Try Again</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
-  // Empty state
-  if (subjects.length === 0) {
-    return (
-      <SafeAreaView style={styles.emptyContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F7FAFC" />
-        <ScrollView
-          contentContainerStyle={styles.emptyScrollContainer}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-        >
-          <FontAwesome5 name="book-open" size={64} color="#CBD5E0" />
-          <Text style={styles.emptyTitle}>No Subject Reports</Text>
-          <Text style={styles.emptyMessage}>
-            No subject reports are available for this class yet.
-          </Text>
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
-  // Main render
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F7FAFC" />
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar hidden={true} />
       
-      {/* Header Info */}
-      {classInfo && (
-        <View style={styles.headerInfo}>
-          <Text style={styles.className}>{classInfo.name}</Text>
-          <Text style={styles.classSection}>Section: {classInfo.section}</Text>
-        </View>
-      )}
-
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        style={styles.container}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#4299E1', '#48BB78']}
+          />
         }
       >
-        {subjects.map((subject) => renderSubjectOverview(subject))}
-      </ScrollView>
+        {/* Header Card */}
+        <View style={styles.headerCard}>
+          <LinearGradient
+            colors={['#667EEA', '#764BA2']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.headerGradient}
+          >
+            <FontAwesome5 name="chart-bar" size={24} color="#FFFFFF" />
+            <Text style={styles.headerTitle}>Subject Performance Reports</Text>
+            <Text style={styles.headerSubtitle}>
+              {subjects.length} subjects
+            </Text>
+          </LinearGradient>
+        </View>
 
+        {subjects.length > 0 ? (
+          subjects.map((subject) => renderSubjectCard(subject))
+        ) : (
+          <View style={styles.emptyStateContainer}>
+            <FontAwesome5 name="book-open" size={48} color="#CBD5E0" />
+            <Text style={styles.emptyStateText}>No Subject Reports Available</Text>
+            <Text style={styles.emptyStateSubtext}>
+              Subject reports will appear here once exams are conducted and marks are entered
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+      
       {/* Student Detail Modal */}
       {renderStudentDetailModal()}
     </SafeAreaView>
@@ -576,9 +619,12 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
     backgroundColor: '#F7FAFC',
+  },
+  container: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
@@ -590,25 +636,24 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     color: '#4A5568',
-    fontWeight: '500',
+    textAlign: 'center',
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#F7FAFC',
-    paddingHorizontal: 20,
+    paddingHorizontal: 32,
   },
   errorText: {
     marginTop: 16,
     fontSize: 16,
     color: '#4A5568',
     textAlign: 'center',
-    lineHeight: 24,
+    marginBottom: 24,
   },
   retryButton: {
-    marginTop: 20,
-    backgroundColor: '#667EEA',
+    backgroundColor: '#4299E1',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
@@ -618,59 +663,39 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  emptyContainer: {
-    flex: 1,
-    backgroundColor: '#F7FAFC',
+  headerCard: {
+    margin: 16,
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  emptyScrollContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  headerGradient: {
+    padding: 20,
     alignItems: 'center',
-    paddingHorizontal: 20,
   },
-  emptyTitle: {
-    marginTop: 24,
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#2D3748',
-    textAlign: 'center',
-  },
-  emptyMessage: {
-    marginTop: 8,
-    fontSize: 16,
-    color: '#718096',
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  headerInfo: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  className: {
+  headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#2D3748',
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: 8,
+    textAlign: 'center',
   },
-  classSection: {
+  headerSubtitle: {
     fontSize: 14,
-    color: '#718096',
-    marginTop: 2,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: 4,
+    textAlign: 'center',
   },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-  },
-  
-  // Subject Section Styles
-  subjectSection: {
+  subjectCard: {
+    margin: 16,
+    marginTop: 0,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    marginBottom: 20,
+    overflow: 'hidden',
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -678,130 +703,268 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
   },
   subjectHeader: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderRadius: 12,
+    overflow: 'hidden',
   },
-  subjectTitleContainer: {
-    flexDirection: 'row',
+  subjectHeaderGradient: {
+    padding: 16,
     alignItems: 'center',
-  },
-  subjectIcon: {
-    marginRight: 12,
   },
   subjectTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#2D3748',
-    flex: 1,
+    color: '#FFFFFF',
+    marginTop: 8,
+    textAlign: 'center',
   },
-  
-  // Statistics Overview
-  statsContainer: {
-    flexDirection: 'row',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  statCard: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#667EEA',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#718096',
+  subjectSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 4,
     textAlign: 'center',
   },
-  
-  // Table Styles
-  tableSection: {
-    padding: 20,
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    backgroundColor: '#F8F9FA',
   },
-  tableSectionTitle: {
+  statCard: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#2D3748',
+    lineHeight: 20,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#718096',
+    marginTop: 2,
+    textAlign: 'center',
+    lineHeight: 14,
+  },
+  sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#2D3748',
     marginBottom: 12,
+    paddingHorizontal: 16,
   },
-  tableContainer: {
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+  examSection: {
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 16,
+  },
+  examTable: {
+    marginHorizontal: 16,
     borderRadius: 8,
+    backgroundColor: '#F8F9FA',
     overflow: 'hidden',
   },
-  tableHeader: {
+  examTableHeader: {
     flexDirection: 'row',
-    backgroundColor: '#F7FAFC',
+    backgroundColor: '#EDF2F7',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  examHeaderCell: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2D3748',
+  },
+  examNameHeader: {
+    flex: 2,
+  },
+  examScoreHeader: {
+    flex: 1,
+    textAlign: 'center',
+  },
+  examCompletedHeader: {
+    flex: 1,
+    textAlign: 'center',
+  },
+  examTableRow: {
+    flexDirection: 'row',
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
-  tableHeaderText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4A5568',
-    textAlign: 'left',
+  evenRow: {
+    backgroundColor: '#F8F9FA',
   },
-  tableRow: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    alignItems: 'center',
-    minHeight: 60,
-  },
-  tableText: {
-    fontSize: 14,
-    color: '#4A5568',
-    textAlign: 'left',
+  examNameCell: {
+    flex: 2,
   },
   examName: {
     fontSize: 14,
     fontWeight: '600',
     color: '#2D3748',
+    marginBottom: 2,
   },
   examCode: {
     fontSize: 12,
     color: '#718096',
-    marginTop: 2,
   },
-  examDate: {
+  examScoreCell: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  examScore: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2D3748',
+  },
+  examCompletedCell: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  examCompleted: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2D3748',
+  },
+  tableContainer: {
+    backgroundColor: '#FFFFFF',
+    paddingTop: 16,
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#EDF2F7',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    marginHorizontal: 16,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+  },
+  headerCell: {
     fontSize: 12,
-    color: '#718096',
-    marginTop: 2,
+    fontWeight: '600',
+    color: '#2D3748',
+    textAlign: 'center',
+  },
+  studentHeaderCell: {
+    flex: 2.5,
+    textAlign: 'left',
+  },
+  performanceHeaderCell: {
+    flex: 1.3,
+  },
+  actionHeaderCell: {
+    flex: 0.8,
+  },
+  tableBody: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    overflow: 'hidden',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  studentCell: {
+    flex: 2.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  studentAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#667EEA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  studentInfo: {
+    flex: 1,
   },
   studentName: {
     fontSize: 14,
     fontWeight: '600',
     color: '#2D3748',
+    marginBottom: 2,
   },
   studentId: {
     fontSize: 12,
     color: '#718096',
-    marginTop: 2,
   },
-  gradeContainer: {
+  examCountCell: {
+    flex: 1.2,
     alignItems: 'center',
+  },
+  examCount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2D3748',
+    marginBottom: 2,
+  },
+  examLabel: {
+    fontSize: 10,
+    color: '#718096',
+  },
+  performanceCell: {
+    flex: 1.3,
+    alignItems: 'center',
+  },
+  percentage: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
   },
   gradeBadge: {
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 2,
     borderRadius: 12,
-    minWidth: 32,
+    minWidth: 24,
     alignItems: 'center',
   },
   gradeText: {
-    fontSize: 12,
-    fontWeight: '700',
     color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  actionCell: {
+    flex: 0.8,
+    alignItems: 'center',
+  },
+  emptyStateContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 64,
+    paddingHorizontal: 32,
+  },
+  emptyStateText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#4A5568',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: '#718096',
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   
   // Modal Styles
@@ -813,48 +976,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 16,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
   modalCloseButton: {
-    width: 40,
-    height: 40,
+    padding: 8,
     borderRadius: 20,
     backgroundColor: '#F7FAFC',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalTitleContainer: {
-    flex: 1,
-    alignItems: 'center',
-    marginHorizontal: 16,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#2D3748',
-    textAlign: 'center',
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: '#667EEA',
+    fontSize: 16,
     fontWeight: '600',
-    marginTop: 2,
+    color: '#2D3748',
+    flex: 1,
     textAlign: 'center',
+    paddingHorizontal: 16,
   },
   placeholder: {
-    width: 40,
+    width: 36,
+  },
+  modalLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalContent: {
     flex: 1,
     padding: 16,
   },
   
-  // Student Detail Modal Styles
-  studentOverviewCard: {
+  // Student Summary Card
+  studentSummaryCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 20,
@@ -875,14 +1035,14 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 30,
     backgroundColor: '#667EEA',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 16,
   },
   largeAvatarText: {
+    color: '#FFFFFF',
     fontSize: 24,
     fontWeight: '700',
-    color: '#FFFFFF',
   },
   studentDetails: {
     flex: 1,
@@ -891,36 +1051,38 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#2D3748',
+    marginBottom: 4,
   },
   studentDetailId: {
     fontSize: 14,
     color: '#718096',
-    marginTop: 2,
+    marginBottom: 2,
   },
   subjectDetailName: {
     fontSize: 14,
-    color: '#667EEA',
+    color: '#4299E1',
     fontWeight: '600',
-    marginTop: 4,
   },
   performanceSummary: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    alignItems: 'center',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
   },
   summaryItem: {
     alignItems: 'center',
     flex: 1,
   },
   summaryValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: '#2D3748',
+    marginBottom: 4,
   },
   summaryLabel: {
     fontSize: 12,
     color: '#718096',
-    marginTop: 4,
     textAlign: 'center',
   },
   gradeBadgeLarge: {
@@ -929,42 +1091,93 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     minWidth: 40,
     alignItems: 'center',
-    justifyContent: 'center',
+    marginBottom: 4,
   },
   gradeTextLarge: {
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFFFFF',
   },
   
-  // Exam Results Card
-  examResultsCard: {
+  // Exam Cards
+  examCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
-    elevation: 2,
+    padding: 16,
+    marginBottom: 12,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowOpacity: 0.03,
+    shadowRadius: 1,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#2D3748',
+  examHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 16,
   },
-  noExamsContainer: {
+  examInfo: {
+    flex: 1,
+    marginRight: 16,
+  },
+  examDate: {
+    fontSize: 12,
+    color: '#718096',
+    marginTop: 4,
+  },
+  examSummary: {
+    alignItems: 'flex-end',
+  },
+  examPercentage: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  examGradeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    minWidth: 32,
+    alignItems: 'center',
+  },
+  examGradeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  examStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  
+  // Empty States
+  emptyExamsContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 40,
+    paddingVertical: 48,
+    paddingHorizontal: 32,
   },
-  noExamsText: {
+  emptyExamsText: {
     fontSize: 16,
-    color: '#718096',
-    marginTop: 12,
+    fontWeight: '600',
+    color: '#4A5568',
+    marginTop: 16,
     textAlign: 'center',
+  },
+  emptyExamsSubtext: {
+    fontSize: 14,
+    color: '#718096',
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
 
