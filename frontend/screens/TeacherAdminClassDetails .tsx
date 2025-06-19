@@ -338,7 +338,12 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
       Alert.alert("Coming Soon", "Chat room feature is under development.");
       break;
     case 'add_materials':
-      Alert.alert("Coming Soon", "Add materials feature is under development.");
+      navigation.navigate('TeacherPostMaterial', {
+        subjectId: classDetails?._id || classId,
+        subjectName: classDetails?.name || className,
+        classId: classId,
+        className: className,
+      });
       break;
     case 'schedule_events_dates':
       navigation.navigate('TeacherEventCalendar', {
