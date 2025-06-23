@@ -381,7 +381,8 @@ const StudentHomeScreen: React.FC = () => {
     { id: "4", title: "Conduct", icon: "medal", destination: "StudentConduct" },
     { id: "5", title: "Chatroom", icon: "comments", destination: "StudentChatroom" },
     { id: "6", title: "Query", icon: "question-circle", destination: "StudentQuery" },
-    { id: "7", title: "Submission", icon: "file-upload", destination: "StudentSubmission" }
+    { id: "7", title: "Submission", icon: "file-upload", destination: "StudentSubmission" },
+    { id: "8", title: "Study Material", icon: "file-upload", destination: "StudentStudyMaterial" }
   ];
 
   // Handle navigation to screens

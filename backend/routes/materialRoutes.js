@@ -123,4 +123,18 @@ router.use((error, req, res, next) => {
   next(error);
 });
 
+router.get('/student-class-materials', 
+  auth, 
+  requireStudent,
+  [
+    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+    query('skip').optional().isInt({ min: 0 }).withMessage('Skip must be a non-negative integer'),
+    query('category').optional().isIn(categories).withMessage('Invalid category'),
+    query('search').optional().trim().isLength({ min: 1, max: 100 }).withMessage('Search query must be between 1 and 100 characters'),
+    query('subjectId').optional().isMongoId().withMessage('Invalid subjectId format')
+  ],
+  handleValidationErrors, 
+  materialController.getStudentClassMaterials
+);
+
 module.exports = router;

@@ -423,3 +423,140 @@ exports.getMaterialStatistics = async (req, res) => {
     });
   }
 };
+// Get all materials for student's class
+exports.getStudentClassMaterials = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const { limit = 50, skip = 0, category, search, subjectId } = req.query;
+
+    console.log('Fetching materials for student:', studentId);
+
+    // First, get the student and their class information
+    const student = await Student.findOne({ _id: studentId, isActive: true })
+      .populate('classId', 'name section schoolId');
+
+    if (!student) {
+      return res.status(404).json({ msg: 'Student not found or inactive' });
+    }
+
+    if (!student.classId) {
+      return res.status(400).json({ msg: 'Student is not assigned to any class' });
+    }
+
+    const classId = student.classId._id;
+    console.log('Student class:', classId.toString());
+
+    // Build query filters
+    const filters = {
+      classId: classId,
+      isActive: true,
+      schoolId: student.classId.schoolId
+    };
+
+    // Add optional filters
+    if (category && validCategories.includes(category)) {
+      filters.documentCategory = category;
+    }
+
+    if (subjectId && mongoose.Types.ObjectId.isValid(subjectId)) {
+      filters.subjectId = subjectId;
+    }
+
+    let materials;
+
+    if (search && search.trim().length > 0) {
+      // If search query is provided, use search functionality
+      const searchOptions = {
+        classId: classId.toString(),
+        category: category || null,
+        subjectId: subjectId || null,
+        limit: parseInt(limit),
+        skip: parseInt(skip)
+      };
+      materials = await Material.searchMaterials(search.trim(), searchOptions);
+    } else {
+      // Regular query without search
+      materials = await Material.find(filters)
+        .populate('teacherId', 'name email')
+        .populate('subjectId', 'name code')
+        .populate('classId', 'name section')
+        .populate('createdBy', 'name email')
+        .select('-documentData') // Exclude the actual file data
+        .sort({ createdAt: -1 }) // Most recent first
+        .limit(parseInt(limit))
+        .skip(parseInt(skip));
+    }
+
+    // Get total count for pagination
+    const totalCount = await Material.countDocuments(filters);
+
+    // Get materials grouped by category for summary
+    const categoryStats = await Material.aggregate([
+      { $match: filters },
+      { $group: { _id: '$documentCategory', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    // Get materials grouped by subject for summary
+    const subjectStats = await Material.aggregate([
+      { $match: { ...filters, subjectId: { $exists: true } } },
+      { 
+        $lookup: {
+          from: 'subjects',
+          localField: 'subjectId',
+          foreignField: '_id',
+          as: 'subject'
+        }
+      },
+      { $unwind: '$subject' },
+      { $group: { _id: '$subjectId', name: { $first: '$subject.name' }, count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    console.log(`✅ Found ${materials.length} materials for student's class`);
+
+    res.json({
+      success: true,
+      materials,
+      pagination: {
+        total: totalCount,
+        limit: parseInt(limit),
+        skip: parseInt(skip),
+        hasMore: (parseInt(skip) + materials.length) < totalCount
+      },
+      studentInfo: {
+        id: student._id,
+        name: student.name,
+        studentId: student.studentId,
+        rollNumber: student.rollNumber
+      },
+      classInfo: {
+        id: student.classId._id,
+        name: student.classId.name,
+        section: student.classId.section
+      },
+      summary: {
+        totalMaterials: totalCount,
+        categoriesBreakdown: categoryStats,
+        subjectsBreakdown: subjectStats
+      },
+      appliedFilters: {
+        category: category || 'all',
+        subjectId: subjectId || 'all',
+        search: search || null
+      }
+    });
+
+  } catch (err) {
+    console.error('❌ Error fetching student class materials:', err);
+    
+    if (err instanceof mongoose.Error.CastError) {
+      return res.status(400).json({ msg: 'Invalid ID format' });
+    }
+    
+    res.status(500).json({ 
+      msg: 'Server error while fetching materials', 
+      error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error' 
+    });
+  }
+};
