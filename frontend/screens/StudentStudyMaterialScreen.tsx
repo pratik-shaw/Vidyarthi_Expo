@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -139,47 +139,14 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [appliedSearchQuery, setAppliedSearchQuery] = useState<string>('');
   const [searchModalVisible, setSearchModalVisible] = useState(false);
-  const [selectedTab, setSelectedTab] = useState<'materials' | 'summary'>('materials');
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const isInitialMount = useRef(true);
 
-  useEffect(() => {
-    navigation.setOptions({
-      title: 'Study Materials',
-      headerRight: () => (
-        <TouchableOpacity onPress={() => setSearchModalVisible(true)} style={styles.searchButton}>
-          <FontAwesome5 name="search" size={18} color="#007AFF" />
-        </TouchableOpacity>
-      ),
-    });
-    fetchMaterials();
-    startAnimations();
-  }, []);
-
-  useEffect(() => {
-    if (materialsData) {
-      fetchMaterials();
-    }
-  }, [selectedCategory, selectedSubject, searchQuery]);
-
-  const startAnimations = () => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      })
-    ]).start();
-  };
-
-  const getAuthToken = async () => {
+  const getAuthToken = useCallback(async () => {
     const token = await AsyncStorage.getItem('studentToken');
     if (!token) {
       Alert.alert('Session Expired', 'Please login again');
@@ -187,9 +154,15 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
       return null;
     }
     return token;
-  };
+  }, [navigation]);
 
-  const fetchMaterials = async (loadMore = false) => {
+  // Memoize the fetch function to prevent infinite loops
+  const fetchMaterials = useCallback(async (
+    loadMore = false,
+    category = selectedCategory,
+    subject = selectedSubject,
+    search = appliedSearchQuery
+  ) => {
     const token = await getAuthToken();
     if (!token) return;
 
@@ -205,17 +178,19 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
         skip: loadMore ? materialsData?.materials.length || 0 : 0,
       };
 
-      if (selectedCategory !== 'all') {
-        params.category = selectedCategory;
+      if (category !== 'all') {
+        params.category = category;
       }
 
-      if (selectedSubject !== 'all') {
-        params.subjectId = selectedSubject;
+      if (subject !== 'all') {
+        params.subjectId = subject;
       }
 
-      if (searchQuery.trim()) {
-        params.search = searchQuery.trim();
+      if (search.trim()) {
+        params.search = search.trim();
       }
+
+      console.log('Fetching materials with params:', params);
 
       const response = await axios.get(`${API_BASE_URL}/materials/student-class-materials`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -223,10 +198,14 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
       });
 
       if (loadMore && materialsData) {
-        setMaterialsData({
+        // Ensure unique keys by filtering out duplicates
+        const existingIds = new Set(materialsData.materials.map(m => m._id));
+        const newMaterials = response.data.materials.filter((m: Material) => !existingIds.has(m._id));
+        
+        setMaterialsData(prevData => ({
           ...response.data,
-          materials: [...materialsData.materials, ...response.data.materials]
-        });
+          materials: [...(prevData?.materials || []), ...newMaterials]
+        }));
       } else {
         setMaterialsData(response.data);
       }
@@ -244,20 +223,83 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
       setLoadingMore(false);
       setRefreshing(false);
     }
-  };
+  }, [getAuthToken]); // Remove dependencies that cause infinite loops
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchMaterials();
-  };
+  const startAnimations = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, [fadeAnim, slideAnim]);
 
-  const loadMoreMaterials = () => {
-    if (materialsData?.pagination.hasMore && !loadingMore) {
-      fetchMaterials(true);
+  // Initial setup
+  useEffect(() => {
+    navigation.setOptions({
+      title: 'Study Materials',
+      headerRight: () => (
+        <TouchableOpacity onPress={() => setSearchModalVisible(true)} style={styles.searchIconButton}>
+          <FontAwesome5 name="search" size={18} color="#007AFF" />
+        </TouchableOpacity>
+      ),
+    });
+    
+    // Only fetch on initial mount
+    if (isInitialMount.current) {
+      fetchMaterials(false, 'all', 'all', '');
+      startAnimations();
+      isInitialMount.current = false;
     }
-  };
+  }, [navigation, startAnimations]); // Remove fetchMaterials from dependencies
 
-  const openMaterial = async (material: Material) => {
+  // Handle filter changes - use separate effect with stable dependencies
+  useEffect(() => {
+    // Skip if it's the initial mount
+    if (isInitialMount.current) return;
+    
+    console.log('Filter changed:', { selectedCategory, selectedSubject, appliedSearchQuery });
+    
+    // Reset to first page when filters change
+    fetchMaterials(false, selectedCategory, selectedSubject, appliedSearchQuery);
+  }, [selectedCategory, selectedSubject, appliedSearchQuery]); // Keep only the state values
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchMaterials(false, selectedCategory, selectedSubject, appliedSearchQuery);
+  }, [fetchMaterials, selectedCategory, selectedSubject, appliedSearchQuery]);
+
+  const loadMoreMaterials = useCallback(() => {
+    if (materialsData?.pagination.hasMore && !loadingMore && !loading) {
+      fetchMaterials(true, selectedCategory, selectedSubject, appliedSearchQuery);
+    }
+  }, [materialsData?.pagination.hasMore, loadingMore, loading, fetchMaterials, selectedCategory, selectedSubject, appliedSearchQuery]);
+
+  // Handle search with proper state management
+  const handleSearch = useCallback(() => {
+    setSearchModalVisible(false);
+    setAppliedSearchQuery(searchQuery); // This will trigger the useEffect above
+  }, [searchQuery]);
+
+  const clearSearch = useCallback(() => {
+    setSearchQuery('');
+    setAppliedSearchQuery('');
+  }, []);
+
+  const clearAllFilters = useCallback(() => {
+    setSelectedCategory('all');
+    setSelectedSubject('all');
+    setSearchQuery('');
+    setAppliedSearchQuery('');
+  }, []);
+
+  const openMaterial = useCallback(async (material: Material) => {
     const token = await getAuthToken();
     if (!token) return;
 
@@ -296,9 +338,9 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
     } finally {
       setDownloading(null);
     }
-  };
+  }, [getAuthToken]);
 
-  const shareMaterial = async (material: Material) => {
+  const shareMaterial = useCallback(async (material: Material) => {
     try {
       await Share.share({
         message: `Check out this study material: ${material.documentTitle}`,
@@ -307,13 +349,13 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
     } catch (error) {
       console.error('Share error:', error);
     }
-  };
+  }, []);
 
-  const getCategoryInfo = (category: string) => {
+  const getCategoryInfo = useCallback((category: string) => {
     return CATEGORIES.find(cat => cat.value === category) || CATEGORIES[CATEGORIES.length - 1];
-  };
+  }, []);
 
-  const getFileIcon = (fileName: string, mimeType?: string) => {
+  const getFileIcon = useCallback((fileName: string, mimeType?: string) => {
     const extension = fileName.toLowerCase().split('.').pop();
     const type = mimeType?.toLowerCase();
     
@@ -332,9 +374,9 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
     } else {
       return 'file';
     }
-  };
+  }, []);
 
-  const formatFileSize = (bytes: number) => {
+  const formatFileSize = useCallback((bytes: number) => {
     const units = ['B', 'KB', 'MB', 'GB'];
     let size = bytes;
     let unitIndex = 0;
@@ -345,17 +387,17 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
     }
     
     return `${size.toFixed(1)} ${units[unitIndex]}`;
-  };
+  }, []);
 
-  const formatDate = (dateString: string) => {
+  const formatDate = useCallback((dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric'
     });
-  };
+  }, []);
 
-  const renderFilters = () => {
+  const renderFilters = useCallback(() => {
     if (!materialsData) return null;
 
     return (
@@ -442,9 +484,9 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
         )}
       </View>
     );
-  };
+  }, [materialsData, selectedCategory, selectedSubject, getCategoryInfo]);
 
-  const renderMaterial = ({ item }: { item: Material }) => {
+  const renderMaterial = useCallback(({ item }: { item: Material }) => {
     const categoryInfo = getCategoryInfo(item.documentCategory);
     
     return (
@@ -519,111 +561,9 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
         </TouchableOpacity>
       </Animated.View>
     );
-  };
+  }, [fadeAnim, downloading, getCategoryInfo, getFileIcon, formatFileSize, formatDate, openMaterial, shareMaterial]);
 
-  const renderSummaryCard = () => {
-    if (!materialsData) return null;
-
-    const { summary, studentInfo, classInfo } = materialsData;
-
-    return (
-      <Animated.View style={[styles.summaryContainer, { opacity: fadeAnim }]}>
-        {/* Student Info Card */}
-        <LinearGradient
-          colors={[PRIMARY_COLOR, '#6366F1']}
-          style={styles.studentInfoCard}
-        >
-          <Text style={styles.studentInfoTitle}>Student Information</Text>
-          <View style={styles.studentInfoGrid}>
-            <View style={styles.studentInfoItem}>
-              <Text style={styles.studentInfoLabel}>Name</Text>
-              <Text style={styles.studentInfoValue}>{studentInfo.name}</Text>
-            </View>
-            <View style={styles.studentInfoItem}>
-              <Text style={styles.studentInfoLabel}>Student ID</Text>
-              <Text style={styles.studentInfoValue}>{studentInfo.studentId}</Text>
-            </View>
-            <View style={styles.studentInfoItem}>
-              <Text style={styles.studentInfoLabel}>Roll Number</Text>
-              <Text style={styles.studentInfoValue}>{studentInfo.rollNumber}</Text>
-            </View>
-            <View style={styles.studentInfoItem}>
-              <Text style={styles.studentInfoLabel}>Class</Text>
-              <Text style={styles.studentInfoValue}>{classInfo.name} - {classInfo.section}</Text>
-            </View>
-          </View>
-        </LinearGradient>
-
-        {/* Overview Stats */}
-        <View style={styles.overviewStats}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{summary.totalMaterials}</Text>
-            <Text style={styles.statLabel}>Total Materials</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{summary.categoriesBreakdown.length}</Text>
-            <Text style={styles.statLabel}>Categories</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{summary.subjectsBreakdown.length}</Text>
-            <Text style={styles.statLabel}>Subjects</Text>
-          </View>
-        </View>
-
-        {/* Categories Breakdown */}
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryCardTitle}>Categories Breakdown</Text>
-          {summary.categoriesBreakdown.map((category, index) => {
-            const categoryInfo = getCategoryInfo(category._id);
-            const percentage = ((category.count / summary.totalMaterials) * 100).toFixed(1);
-            
-            return (
-              <View key={category._id} style={styles.categoryBreakdownItem}>
-                <View style={styles.categoryBreakdownHeader}>
-                  <View style={[styles.categoryBreakdownIcon, { backgroundColor: categoryInfo.color + '15' }]}>
-                    <FontAwesome5 name={categoryInfo.icon} size={16} color={categoryInfo.color} />
-                  </View>
-                  <Text style={styles.categoryBreakdownTitle}>{categoryInfo.label}</Text>
-                </View>
-                <View style={styles.categoryBreakdownStats}>
-                  <Text style={styles.categoryBreakdownCount}>{category.count} files</Text>
-                  <Text style={styles.categoryBreakdownPercentage}>{percentage}%</Text>
-                </View>
-                <View style={styles.progressBar}>
-                  <View 
-                    style={[
-                      styles.progressFill, 
-                      { 
-                        width: Number(percentage) / 100, 
-                        backgroundColor: categoryInfo.color 
-                      }
-                    ]} 
-                  />
-                </View>
-              </View>
-            );
-          })}
-        </View>
-
-        {/* Subjects Breakdown */}
-        {summary.subjectsBreakdown.length > 0 && (
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryCardTitle}>Subjects Breakdown</Text>
-            <View style={styles.subjectsGrid}>
-              {summary.subjectsBreakdown.map((subject) => (
-                <View key={subject._id} style={styles.subjectBreakdownItem}>
-                  <Text style={styles.subjectBreakdownName}>{subject.name}</Text>
-                  <Text style={styles.subjectBreakdownCount}>{subject.count} materials</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-      </Animated.View>
-    );
-  };
-
-  const renderSearchModal = () => (
+  const renderSearchModal = useCallback(() => (
     <Modal visible={searchModalVisible} animationType="slide" transparent>
       <View style={styles.modalOverlay}>
         <View style={styles.searchModalContainer}>
@@ -642,14 +582,11 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
               placeholder="Search by title, category, or teacher..."
               autoFocus
               returnKeyType="search"
-              onSubmitEditing={() => {
-                setSearchModalVisible(false);
-                fetchMaterials();
-              }}
+              onSubmitEditing={handleSearch}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity 
-                onPress={() => setSearchQuery('')}
+                onPress={clearSearch}
                 style={styles.clearSearch}
               >
                 <FontAwesome5 name="times-circle" size={16} color="#9CA3AF" />
@@ -659,10 +596,7 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
           <View style={styles.searchActions}>
             <TouchableOpacity
               style={styles.searchButton}
-              onPress={() => {
-                setSearchModalVisible(false);
-                fetchMaterials();
-              }}
+              onPress={handleSearch}
             >
               <Text style={styles.searchButtonText}>Search</Text>
             </TouchableOpacity>
@@ -670,69 +604,7 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
         </View>
       </View>
     </Modal>
-  );
-
-  const renderTabContent = () => {
-    if (selectedTab === 'summary') {
-      return renderSummaryCard();
-    }
-
-    if (!materialsData || materialsData.materials.length === 0) {
-      return (
-        <View style={styles.emptyState}>
-          <FontAwesome5 name="folder-open" size={64} color="#C7C7CC" />
-          <Text style={styles.emptyTitle}>No Study Materials</Text>
-          <Text style={styles.emptyDescription}>
-            {selectedCategory !== 'all' || selectedSubject !== 'all' || searchQuery
-              ? 'No materials found with the selected filters.'
-              : 'Study materials will appear here once uploaded by your teachers.'}
-          </Text>
-          {(selectedCategory !== 'all' || selectedSubject !== 'all' || searchQuery) && (
-            <TouchableOpacity
-              style={styles.clearFiltersButton}
-              onPress={() => {
-                setSelectedCategory('all');
-                setSelectedSubject('all');
-                setSearchQuery('');
-              }}
-            >
-              <Text style={styles.clearFiltersButtonText}>Clear Filters</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.materialsContainer}>
-        {renderFilters()}
-        <FlatList
-          data={materialsData.materials}
-          keyExtractor={(item) => item._id}
-          renderItem={renderMaterial}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={PRIMARY_COLOR}
-            />
-          }
-          onEndReached={loadMoreMaterials}
-          onEndReachedThreshold={0.1}
-          ListFooterComponent={
-            loadingMore ? (
-              <View style={styles.loadingMore}>
-                <ActivityIndicator size="small" color={PRIMARY_COLOR} />
-                <Text style={styles.loadingMoreText}>Loading more materials...</Text>
-              </View>
-            ) : null
-          }
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        />
-      </View>
-    );
-  };
+  ), [searchModalVisible, searchQuery, handleSearch, clearSearch]);
 
   if (loading) {
     return (
@@ -745,52 +617,67 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
     );
   }
 
+  if (!materialsData || materialsData.materials.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" />
+        <View style={styles.emptyState}>
+          <FontAwesome5 name="folder-open" size={64} color="#C7C7CC" />
+          <Text style={styles.emptyTitle}>No Study Materials</Text>
+          <Text style={styles.emptyDescription}>
+            {selectedCategory !== 'all' || selectedSubject !== 'all' || appliedSearchQuery
+              ? 'No materials found with the selected filters.'
+              : 'Study materials will appear here once uploaded by your teachers.'}
+          </Text>
+          {(selectedCategory !== 'all' || selectedSubject !== 'all' || appliedSearchQuery) && (
+            <TouchableOpacity
+              style={styles.clearFiltersButton}
+              onPress={clearAllFilters}
+            >
+              <Text style={styles.clearFiltersButtonText}>Clear Filters</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        {renderSearchModal()}
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       
-      {/* Tab Navigation */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tabButton, selectedTab === 'materials' && styles.tabButtonActive]}
-          onPress={() => setSelectedTab('materials')}
-        >
-          <FontAwesome5 
-            name="folder" 
-            size={16} 
-            color={selectedTab === 'materials' ? '#FFFFFF' : PRIMARY_COLOR} 
-          />
-          <Text style={[
-            styles.tabButtonText, 
-            selectedTab === 'materials' && styles.tabButtonTextActive
-          ]}>
-            Materials
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabButton, selectedTab === 'summary' && styles.tabButtonActive]}
-          onPress={() => setSelectedTab('summary')}
-        >
-          <FontAwesome5 
-            name="chart-bar" 
-            size={16} 
-            color={selectedTab === 'summary' ? '#FFFFFF' : PRIMARY_COLOR} 
-          />
-          <Text style={[
-            styles.tabButtonText, 
-            selectedTab === 'summary' && styles.tabButtonTextActive
-          ]}>
-            Summary
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Content */}
       <Animated.View style={[
         styles.contentContainer, 
         { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
       ]}>
-        {renderTabContent()}
+        <View style={styles.materialsContainer}>
+          {renderFilters()}
+          <FlatList
+            data={materialsData.materials}
+            keyExtractor={(item, index) => `${item._id}-${index}`}
+            renderItem={renderMaterial}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={PRIMARY_COLOR}
+              />
+            }
+            onEndReached={loadMoreMaterials}
+            onEndReachedThreshold={0.1}
+            ListFooterComponent={
+              loadingMore ? (
+                <View style={styles.loadingMore}>
+                  <ActivityIndicator size="small" color={PRIMARY_COLOR} />
+                  <Text style={styles.loadingMoreText}>Loading more materials...</Text>
+                </View>
+              ) : null
+            }
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          />
+        </View>
       </Animated.View>
 
       {renderSearchModal()}
@@ -814,46 +701,8 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontWeight: '500',
   },
-  searchButton: {
+  searchIconButton: {
     padding: 8,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 16,
-    borderRadius: 12,
-    padding: 4,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  tabButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  tabButtonActive: {
-    backgroundColor: PRIMARY_COLOR,
-  },
-  tabButtonText: {
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: '600',
-    color: PRIMARY_COLOR,
-  },
-  tabButtonTextActive: {
-    color: '#FFFFFF',
   },
   contentContainer: {
     flex: 1,
@@ -885,7 +734,7 @@ const styles = StyleSheet.create({
     backgroundColor: PRIMARY_COLOR,
     borderColor: PRIMARY_COLOR,
   },
-filterChipIcon: {
+  filterChipIcon: {
     marginRight: 6,
   },
   filterChipText: {
@@ -1105,167 +954,6 @@ filterChipIcon: {
     fontSize: 14,
     fontWeight: '600',
   },
-  summaryContainer: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  studentInfoCard: {
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-  },
-  studentInfoTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 16,
-  },
-  studentInfoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  studentInfoItem: {
-    width: '48%',
-    marginBottom: 12,
-  },
-  studentInfoLabel: {
-    fontSize: 12,
-    color: '#E5E7EB',
-    marginBottom: 4,
-    fontWeight: '500',
-  },
-  studentInfoValue: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  overviewStats: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginHorizontal: 4,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: PRIMARY_COLOR,
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  summaryCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  summaryCardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 16,
-  },
-  categoryBreakdownItem: {
-    marginBottom: 16,
-  },
-  categoryBreakdownHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  categoryBreakdownIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  categoryBreakdownTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    flex: 1,
-  },
-  categoryBreakdownStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  categoryBreakdownCount: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  categoryBreakdownPercentage: {
-    fontSize: 12,
-    color: '#374151',
-    fontWeight: '600',
-  },
-  progressBar: {
-    height: 6,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  subjectsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -6,
-  },
-  subjectBreakdownItem: {
-    width: '48%',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 12,
-    marginHorizontal: 6,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  subjectBreakdownName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 4,
-  },
-  subjectBreakdownCount: {
-    fontSize: 11,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -1295,28 +983,34 @@ filterChipIcon: {
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 20,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    paddingHorizontal: 12,
+    marginBottom: 20,
   },
   searchIcon: {
-    marginRight: 12,
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
+    height: 48,
     fontSize: 16,
     color: '#1F2937',
   },
   clearSearch: {
     padding: 4,
+    marginLeft: 8,
   },
   searchActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
   },
-  
+  searchButton: {
+    backgroundColor: PRIMARY_COLOR,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
   searchButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
