@@ -28,12 +28,9 @@ import SubmissionDetailsTab from '../components/SubmissionDetailsTab';
 
 import { API_BASE_URL} from '../config/api';
 
-// API URL with configurable timeout
-const API_URL = API_BASE_URL; // Change this to your server IP/domain
-const API_TIMEOUT = 15000; // 15 seconds timeout
+const API_URL = API_BASE_URL;
+const API_TIMEOUT = 15000;
 
-
-// Route params type
 type TeacherStudentDetailsParams = {
   studentId: string;
   studentName: string;
@@ -43,7 +40,6 @@ type TeacherStudentDetailsParams = {
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherStudentDetailsScreen'>;
 
-// Define interfaces
 interface StudentProfile {
   _id: string;
   name: string;
@@ -56,7 +52,7 @@ interface StudentProfile {
   schoolId: string;
   schoolName?: string;
   schoolCode?: string;
-  classId: string; // Added this property to match PersonalDetailsTab interface
+  classId: string;
   isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -148,17 +144,6 @@ interface ConductData {
   totalRecords: number;
 }
 
-interface Submission {
-  _id: string;
-  title: string;
-  subject: string;
-  submittedDate: string;
-  dueDate: string;
-  status: 'submitted' | 'late' | 'pending';
-  grade?: string;
-  feedback?: string;
-}
-
 const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
   const { studentId, studentName, classId, className } = route.params as unknown as TeacherStudentDetailsParams;
   
@@ -168,7 +153,6 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
   const [conductData, setConductData] = useState<ConductData | null>(null);
   const [conductLoading, setConductLoading] = useState<boolean>(false);
   const [conductError, setConductError] = useState<string | null>(null);
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [token, setToken] = useState<string | null>(null);
@@ -192,9 +176,7 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
     navigation.setOptions({
       title: studentName || 'Student Details',
       headerShown: true,
-      headerStyle: {
-        backgroundColor: '#FFFFFF',
-      },
+      headerStyle: { backgroundColor: '#FFFFFF' },
       headerTintColor: '#3A4276',
       headerShadowVisible: false,
       headerBackTitle: 'Back',
@@ -206,10 +188,7 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
     const unsubscribe = NetInfo.addEventListener(state => {
       setIsConnected(state.isConnected ?? false);
     });
-
-    return () => {
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, []);
 
   // Load data on component mount
@@ -217,15 +196,10 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
     const loadData = async () => {
       try {
         const storedToken = await AsyncStorage.getItem('teacherToken');
-        
         if (!storedToken) {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'TeacherLogin' }],
-          });
+          navigation.reset({ index: 0, routes: [{ name: 'TeacherLogin' }] });
           return;
         }
-        
         setToken(storedToken);
         fetchAllData(storedToken);
       } catch (error) {
@@ -234,7 +208,6 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
         setLoading(false);
       }
     };
-    
     loadData();
   }, [studentId]);
 
@@ -262,303 +235,244 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
     return 'F';
   };
 
-// Clean fetchConductData function with proper summary calculation
-const fetchConductData = async (authToken = token) => {
-  setConductLoading(true);
-  setConductError(null);
-  
-  try {
-    if (!authToken) return;
+  // Clean fetchConductData function
+  const fetchConductData = async (authToken = token) => {
+    setConductLoading(true);
+    setConductError(null);
     
-    const apiClient = getAuthenticatedClient(authToken);
-    const response = await apiClient.get(`/conduct/class/${classId}/student/${studentId}`);
-    
-    if (response.data) {
-      const conducts = response.data.conducts || [];
+    try {
+      if (!authToken) return;
       
-      // Calculate summary from conduct records
-      const calculateSummary = (conductRecords: ConductEntry[]): ConductSummary => {
-        const summary = {
-          positive: 0,
-          negative: 0,
-          neutral: 0,
-          total: 0,
-          lastEntry: null as string | null
-        };
+      const apiClient = getAuthenticatedClient(authToken);
+      const response = await apiClient.get(`/conduct/class/${classId}/student/${studentId}`);
+      
+      if (response.data) {
+        const conducts = response.data.conducts || [];
         
-        if (conductRecords.length === 0) {
-          return summary;
-        }
-        
-        // Filter active records
-        const activeRecords = conductRecords.filter(conduct => {
-          return conduct.isActive === undefined || conduct.isActive === null || conduct.isActive === true;
-        });
-        
-        // Count each type from active records
-        activeRecords.forEach((conduct) => {
-          const conductType = conduct.type ? conduct.type.toString().toLowerCase().trim() : '';
+        const calculateSummary = (conductRecords: ConductEntry[]): ConductSummary => {
+          const summary = { positive: 0, negative: 0, neutral: 0, total: 0, lastEntry: null as string | null };
           
-          switch (conductType) {
-            case 'positive':
-              summary.positive++;
-              break;
-            case 'negative':
-              summary.negative++;
-              break;
-            case 'neutral':
-              summary.neutral++;
-              break;
-          }
-        });
-        
-        // Calculate total from individual counts
-        summary.total = summary.positive + summary.negative + summary.neutral;
-        
-        // Find the most recent entry from active records
-        if (activeRecords.length > 0) {
-          const sortedByDate = [...activeRecords].sort((a, b) => {
-            const dateA = new Date(a.createdAt || a.date || a.updatedAt);
-            const dateB = new Date(b.createdAt || b.date || b.updatedAt);
-            return dateB.getTime() - dateA.getTime();
+          if (conductRecords.length === 0) return summary;
+          
+          const activeRecords = conductRecords.filter(conduct => 
+            conduct.isActive === undefined || conduct.isActive === null || conduct.isActive === true
+          );
+          
+          activeRecords.forEach((conduct) => {
+            const conductType = conduct.type ? conduct.type.toString().toLowerCase().trim() : '';
+            switch (conductType) {
+              case 'positive': summary.positive++; break;
+              case 'negative': summary.negative++; break;
+              case 'neutral': summary.neutral++; break;
+            }
           });
           
-          if (sortedByDate.length > 0) {
-            summary.lastEntry = sortedByDate[0].createdAt || sortedByDate[0].date || sortedByDate[0].updatedAt;
+          summary.total = summary.positive + summary.negative + summary.neutral;
+          
+          if (activeRecords.length > 0) {
+            const sortedByDate = [...activeRecords].sort((a, b) => {
+              const dateA = new Date(a.createdAt || a.date || a.updatedAt);
+              const dateB = new Date(b.createdAt || b.date || b.updatedAt);
+              return dateB.getTime() - dateA.getTime();
+            });
+            
+            if (sortedByDate.length > 0) {
+              summary.lastEntry = sortedByDate[0].createdAt || sortedByDate[0].date || sortedByDate[0].updatedAt;
+            }
           }
-        }
+          
+          return summary;
+        };
         
-        return summary;
-      };
-      
-      // Use API summary if available and valid, otherwise calculate from records
-      let finalSummary;
-      
-      if (response.data.summary && 
-          typeof response.data.summary === 'object' && 
-          response.data.summary !== null) {
+        let finalSummary;
         
-        const apiSummary = response.data.summary;
-        const hasValidNumbers = 
-          typeof apiSummary.positive === 'number' &&
-          typeof apiSummary.negative === 'number' &&
-          typeof apiSummary.neutral === 'number';
-        
-        if (hasValidNumbers) {
-          finalSummary = {
-            positive: Math.max(0, apiSummary.positive || 0),
-            negative: Math.max(0, apiSummary.negative || 0),
-            neutral: Math.max(0, apiSummary.neutral || 0),
-            total: Math.max(0, apiSummary.total || (apiSummary.positive + apiSummary.negative + apiSummary.neutral)),
-            lastEntry: apiSummary.lastEntry || null
-          };
+        if (response.data.summary && typeof response.data.summary === 'object' && response.data.summary !== null) {
+          const apiSummary = response.data.summary;
+          const hasValidNumbers = 
+            typeof apiSummary.positive === 'number' &&
+            typeof apiSummary.negative === 'number' &&
+            typeof apiSummary.neutral === 'number';
+          
+          if (hasValidNumbers) {
+            finalSummary = {
+              positive: Math.max(0, apiSummary.positive || 0),
+              negative: Math.max(0, apiSummary.negative || 0),
+              neutral: Math.max(0, apiSummary.neutral || 0),
+              total: Math.max(0, apiSummary.total || (apiSummary.positive + apiSummary.negative + apiSummary.neutral)),
+              lastEntry: apiSummary.lastEntry || null
+            };
+          } else {
+            finalSummary = calculateSummary(conducts);
+          }
         } else {
           finalSummary = calculateSummary(conducts);
         }
+        
+        const activeCount = conducts.filter((c: { isActive: boolean; }) => c.isActive !== false).length;
+        if (finalSummary.total !== activeCount && activeCount > 0) {
+          finalSummary = calculateSummary(conducts);
+        }
+        
+        setConductData({
+          conducts: conducts,
+          summary: finalSummary,
+          totalRecords: response.data.totalRecords || conducts.length
+        });
+        
       } else {
-        finalSummary = calculateSummary(conducts);
+        setConductData({
+          conducts: [],
+          summary: { positive: 0, negative: 0, neutral: 0, total: 0, lastEntry: null },
+          totalRecords: 0
+        });
       }
       
-      // Double-check: if summary total doesn't match active records, recalculate
-      const activeCount = conducts.filter((c: { isActive: boolean; }) => c.isActive !== false).length;
-      if (finalSummary.total !== activeCount && activeCount > 0) {
-        finalSummary = calculateSummary(conducts);
-      }
-      
-      setConductData({
-        conducts: conducts,
-        summary: finalSummary,
-        totalRecords: response.data.totalRecords || conducts.length
-      });
-      
-    } else {
-      setConductData({
-        conducts: [],
-        summary: { positive: 0, negative: 0, neutral: 0, total: 0, lastEntry: null },
-        totalRecords: 0
-      });
-    }
-    
-  } catch (err) {
-    if (axios.isAxiosError(err)) {
-      if (err.response?.status === 401) {
-        handleSessionExpired();
-      } else if (err.response?.status === 403) {
-        setConductError('Not authorized to view conduct records for this class');
-      } else if (err.response?.status === 404) {
-        setConductError('Student not found in this class');
-      } else {
-        setConductError(err.response?.data?.msg || 'Failed to fetch conduct records');
-      }
-    } else {
-      setConductError('An unknown error occurred while fetching conduct records');
-    }
-  } finally {
-    setConductLoading(false);
-  }
-};
-
-  // Fetch all student data
-  const fetchAllData = async (authToken = token) => {
-  setLoading(true);
-  setError(null);
-  
-  try {
-    if (!authToken) {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'TeacherLogin' }],
-      });
-      return;
-    }
-
-    if (!isConnected) {
-      setError('No internet connection. Please check your network.');
-      setLoading(false);
-      return;
-    }
-
-    const apiClient = getAuthenticatedClient(authToken);
-
-    // Fetch actual student profile from API
-    try {
-      console.log('Fetching student profile for ID:', studentId);
-      const profileResponse = await apiClient.get(`/teacher/student/${studentId}/profile`);
-      
-      if (profileResponse.data) {
-        setStudentProfile(profileResponse.data);
-        console.log('Student profile loaded:', profileResponse.data);
-      }
     } catch (err) {
-      console.error('Error fetching student profile:', err);
-      
       if (axios.isAxiosError(err)) {
         if (err.response?.status === 401) {
           handleSessionExpired();
-          return;
-        } else if (err.response?.status === 404) {
-          setError('Student not found');
-          return;
         } else if (err.response?.status === 403) {
-          setError('Not authorized to view this student\'s profile');
-          return;
+          setConductError('Not authorized to view conduct records for this class');
+        } else if (err.response?.status === 404) {
+          setConductError('Student not found in this class');
         } else {
-          setError(`Failed to load student profile: ${err.response?.data?.message || 'Unknown error'}`);
-          return;
+          setConductError(err.response?.data?.msg || 'Failed to fetch conduct records');
         }
       } else {
-        setError('Failed to load student profile');
+        setConductError('An unknown error occurred while fetching conduct records');
+      }
+    } finally {
+      setConductLoading(false);
+    }
+  };
+
+  // Fetch all student data
+  const fetchAllData = async (authToken = token) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      if (!authToken) {
+        navigation.reset({ index: 0, routes: [{ name: 'TeacherLogin' }] });
         return;
       }
-    }
 
-    // Fetch academic data from the existing endpoint
-    try {
-      console.log('Fetching academic data for student:', studentId, 'in class:', classId);
-      const academicResponse = await apiClient.get(`/marks/class/${classId}/student/${studentId}/details`);
-      
-      if (academicResponse.data) {
-        const processedAcademicData: TeacherAcademicData = {
-          hasData: academicResponse.data.exams && academicResponse.data.exams.length > 0,
-          exams: academicResponse.data.exams || [],
-          summary: null, // Will be calculated from exams data
-          message: academicResponse.data.exams?.length === 0 ? 'No academic records found for subjects you teach' : undefined
-        };
+      if (!isConnected) {
+        setError('No internet connection. Please check your network.');
+        setLoading(false);
+        return;
+      }
 
-        // Calculate summary if we have exam data
-        if (processedAcademicData.exams.length > 0) {
-          let totalMarksScored = 0;
-          let totalFullMarks = 0;
-          let completedExams = 0;
-          let totalSubjects = 0;
-          let completedSubjects = 0;
+      const apiClient = getAuthenticatedClient(authToken);
 
-          processedAcademicData.exams.forEach(exam => {
-            totalMarksScored += exam.totalMarksScored;
-            totalFullMarks += exam.totalFullMarks;
-            totalSubjects += exam.totalSubjects;
-            completedSubjects += exam.completedSubjects;
-            if (exam.isCompleted) {
-              completedExams++;
-            }
-          });
-
-          const overallPercentage = totalFullMarks > 0 ? ((totalMarksScored / totalFullMarks) * 100) : 0;
-          
-          processedAcademicData.summary = {
-            overallPercentage: overallPercentage.toFixed(2),
-            overallGrade: calculateGrade(overallPercentage),
-            totalExams: processedAcademicData.exams.length,
-            completedExams: completedExams,
-            totalSubjects: totalSubjects,
-            completedSubjects: completedSubjects,
-            completionRate: totalSubjects > 0 ? ((completedSubjects / totalSubjects) * 100).toFixed(2) : '0',
-            totalMarksScored: totalMarksScored,
-            totalFullMarks: totalFullMarks,
-            examCompletionRate: processedAcademicData.exams.length > 0 ? ((completedExams / processedAcademicData.exams.length) * 100).toFixed(2) : '0'
-          };
+      // Fetch student profile
+      try {
+        console.log('Fetching student profile for ID:', studentId);
+        const profileResponse = await apiClient.get(`/teacher/student/${studentId}/profile`);
+        
+        if (profileResponse.data) {
+          setStudentProfile(profileResponse.data);
+          console.log('Student profile loaded:', profileResponse.data);
         }
-
-        setAcademicData(processedAcademicData);
+      } catch (err) {
+        console.error('Error fetching student profile:', err);
+        
+        if (axios.isAxiosError(err)) {
+          if (err.response?.status === 401) {
+            handleSessionExpired();
+            return;
+          } else if (err.response?.status === 404) {
+            setError('Student not found');
+            return;
+          } else if (err.response?.status === 403) {
+            setError('Not authorized to view this student\'s profile');
+            return;
+          } else {
+            setError(`Failed to load student profile: ${err.response?.data?.message || 'Unknown error'}`);
+            return;
+          }
+        } else {
+          setError('Failed to load student profile');
+          return;
+        }
       }
-    } catch (err) {
-      console.log('Academic data fetch error:', err);
+
+      // Fetch academic data
+      try {
+        console.log('Fetching academic data for student:', studentId, 'in class:', classId);
+        const academicResponse = await apiClient.get(`/marks/class/${classId}/student/${studentId}/details`);
+        
+        if (academicResponse.data) {
+          const processedAcademicData: TeacherAcademicData = {
+            hasData: academicResponse.data.exams && academicResponse.data.exams.length > 0,
+            exams: academicResponse.data.exams || [],
+            summary: null,
+            message: academicResponse.data.exams?.length === 0 ? 'No academic records found for subjects you teach' : undefined
+          };
+
+          if (processedAcademicData.exams.length > 0) {
+            let totalMarksScored = 0;
+            let totalFullMarks = 0;
+            let completedExams = 0;
+            let totalSubjects = 0;
+            let completedSubjects = 0;
+
+            processedAcademicData.exams.forEach(exam => {
+              totalMarksScored += exam.totalMarksScored;
+              totalFullMarks += exam.totalFullMarks;
+              totalSubjects += exam.totalSubjects;
+              completedSubjects += exam.completedSubjects;
+              if (exam.isCompleted) completedExams++;
+            });
+
+            const overallPercentage = totalFullMarks > 0 ? ((totalMarksScored / totalFullMarks) * 100) : 0;
+            
+            processedAcademicData.summary = {
+              overallPercentage: overallPercentage.toFixed(2),
+              overallGrade: calculateGrade(overallPercentage),
+              totalExams: processedAcademicData.exams.length,
+              completedExams: completedExams,
+              totalSubjects: totalSubjects,
+              completedSubjects: completedSubjects,
+              completionRate: totalSubjects > 0 ? ((completedSubjects / totalSubjects) * 100).toFixed(2) : '0',
+              totalMarksScored: totalMarksScored,
+              totalFullMarks: totalFullMarks,
+              examCompletionRate: processedAcademicData.exams.length > 0 ? ((completedExams / processedAcademicData.exams.length) * 100).toFixed(2) : '0'
+            };
+          }
+
+          setAcademicData(processedAcademicData);
+        }
+      } catch (err) {
+        console.log('Academic data fetch error:', err);
+        setAcademicData({
+          hasData: false,
+          message: 'No academic records available or you do not teach any subjects for this student',
+          exams: [],
+          summary: null
+        });
+      }
+
+      // Fetch conduct data
+      await fetchConductData(authToken);
+
+    } catch (error) {
+      console.error('Error fetching student data:', error);
       
-      // Set empty state with appropriate message
-      setAcademicData({
-        hasData: false,
-        message: 'No academic records available or you do not teach any subjects for this student',
-        exams: [],
-        summary: null
-      });
-    }
-
-    // Fetch conduct data
-    await fetchConductData(authToken);
-
-    // TODO: Replace with actual submissions API when available
-    // Mock submissions (will be replaced with actual API)
-    const mockSubmissions: Submission[] = [
-      {
-        _id: '1',
-        title: 'Math Assignment Chapter 5',
-        subject: 'Mathematics',
-        submittedDate: '2024-03-19',
-        dueDate: '2024-03-20',
-        status: 'submitted',
-        grade: 'A',
-        feedback: 'Excellent work!'
-      },
-      {
-        _id: '2',
-        title: 'Science Project Report',
-        subject: 'Science',
-        submittedDate: '2024-03-22',
-        dueDate: '2024-03-21',
-        status: 'late',
-        grade: 'B+',
-        feedback: 'Good content but submitted late'
-      }
-    ];
-    setSubmissions(mockSubmissions);
-
-  } catch (error) {
-    console.error('Error fetching student data:', error);
-    
-    if (axios.isAxiosError(error)) {
-      if (error.response?.status === 401) {
-        handleSessionExpired();
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          handleSessionExpired();
+        } else {
+          setError(`Error: ${error.response?.data?.message || error.response?.data?.msg || 'Failed to fetch student data'}`);
+        }
       } else {
-        setError(`Error: ${error.response?.data?.message || error.response?.data?.msg || 'Failed to fetch student data'}`);
+        setError('An unknown error occurred while loading student data');
       }
-    } else {
-      setError('An unknown error occurred while loading student data');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
-  }
-};
+  };
 
   // Handle refresh
   const onRefresh = () => {
@@ -576,18 +490,13 @@ const fetchConductData = async (authToken = token) => {
     Alert.alert(
       "Session Expired",
       "Your session has expired. Please login again.",
-      [
-        {
-          text: "OK",
-          onPress: async () => {
-            await AsyncStorage.removeItem('teacherToken');
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'TeacherLogin' }],
-            });
-          }
+      [{
+        text: "OK",
+        onPress: async () => {
+          await AsyncStorage.removeItem('teacherToken');
+          navigation.reset({ index: 0, routes: [{ name: 'TeacherLogin' }] });
         }
-      ]
+      }]
     );
   };
 
@@ -623,19 +532,9 @@ const fetchConductData = async (authToken = token) => {
       const response = await apiClient.post(`/conduct/class/${classId}/student/${studentId}`, conductData);
       
       if (response.data) {
-        // Reset form
-        setNewConductTitle('');
-        setNewConductDescription('');
-        setNewConductType('positive');
-        setNewConductSeverity('medium');
-        setNewConductActionTaken('');
-        setNewConductParentNotified(false);
-        setNewConductFollowUpRequired(false);
+        resetConductForm();
         setConductModalVisible(false);
-        
-        // Refresh conduct data
         await fetchConductData();
-        
         Alert.alert('Success', 'Conduct entry added successfully');
       }
     } catch (error) {
@@ -668,12 +567,8 @@ const fetchConductData = async (authToken = token) => {
       }
 
       const apiClient = getAuthenticatedClient(token);
-      
       await apiClient.delete(`/conduct/${conductId}`);
-      
-      // Refresh conduct data
       await fetchConductData();
-      
       Alert.alert('Success', 'Conduct entry deleted successfully');
     } catch (error) {
       console.error('Error deleting conduct entry:', error);
@@ -707,37 +602,21 @@ const fetchConductData = async (authToken = token) => {
   // Render tab buttons
   const renderTabButtons = () => (
     <View style={styles.tabContainer}>
-      <TouchableOpacity
-        style={[styles.tabButton, activeTab === 'personal' && styles.activeTab]}
-        onPress={() => setActiveTab('personal')}
-      >
-        <FontAwesome5 name="user" size={16} color={activeTab === 'personal' ? '#1CB5E0' : '#8A94A6'} />
-        <Text style={[styles.tabText, activeTab === 'personal' && styles.activeTabText]}>Personal</Text>
-      </TouchableOpacity>
-      
-      <TouchableOpacity
-        style={[styles.tabButton, activeTab === 'academic' && styles.activeTab]}
-        onPress={() => setActiveTab('academic')}
-      >
-        <FontAwesome5 name="graduation-cap" size={16} color={activeTab === 'academic' ? '#1CB5E0' : '#8A94A6'} />
-        <Text style={[styles.tabText, activeTab === 'academic' && styles.activeTabText]}>Academic</Text>
-      </TouchableOpacity>
-      
-      <TouchableOpacity
-        style={[styles.tabButton, activeTab === 'conduct' && styles.activeTab]}
-        onPress={() => setActiveTab('conduct')}
-      >
-        <FontAwesome5 name="star" size={16} color={activeTab === 'conduct' ? '#1CB5E0' : '#8A94A6'} />
-        <Text style={[styles.tabText, activeTab === 'conduct' && styles.activeTabText]}>Conduct</Text>
-      </TouchableOpacity>
-      
-      <TouchableOpacity
-        style={[styles.tabButton, activeTab === 'submissions' && styles.activeTab]}
-        onPress={() => setActiveTab('submissions')}
-      >
-        <FontAwesome5 name="file-alt" size={16} color={activeTab === 'submissions' ? '#1CB5E0' : '#8A94A6'} />
-        <Text style={[styles.tabText, activeTab === 'submissions' && styles.activeTabText]}>Submission</Text>
-      </TouchableOpacity>
+      {[
+        { key: 'personal', icon: 'user', label: 'Personal' },
+        { key: 'academic', icon: 'graduation-cap', label: 'Academic' },
+        { key: 'conduct', icon: 'star', label: 'Conduct' },
+        { key: 'submissions', icon: 'file-alt', label: 'Submission' }
+      ].map(({ key, icon, label }) => (
+        <TouchableOpacity
+          key={key}
+          style={[styles.tabButton, activeTab === key && styles.activeTab]}
+          onPress={() => setActiveTab(key as any)}
+        >
+          <FontAwesome5 name={icon} size={16} color={activeTab === key ? '#1CB5E0' : '#8A94A6'} />
+          <Text style={[styles.tabText, activeTab === key && styles.activeTabText]}>{label}</Text>
+        </TouchableOpacity>
+      ))}
     </View>
   );
 
@@ -770,10 +649,7 @@ const fetchConductData = async (authToken = token) => {
         <StatusBar hidden={true} />
         <FontAwesome5 name="exclamation-circle" size={48} color="#F7685B" />
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity 
-          style={styles.retryButton}
-          onPress={() => fetchAllData()}
-        >
+        <TouchableOpacity style={styles.retryButton} onPress={() => fetchAllData()}>
           <Text style={styles.retryButtonText}>Try Again</Text>
         </TouchableOpacity>
       </SafeAreaView>
@@ -801,7 +677,7 @@ const fetchConductData = async (authToken = token) => {
             studentProfile={studentProfile} 
             loading={loading && !refreshing} 
           />
-      )}
+        )}
         
         {activeTab === 'academic' && (
           <AcademicDetailsTab academicData={academicData} />
@@ -819,7 +695,12 @@ const fetchConductData = async (authToken = token) => {
         )}
         
         {activeTab === 'submissions' && (
-          <SubmissionDetailsTab submissions={submissions} />
+          <SubmissionDetailsTab 
+            studentId={studentId}
+            classId={classId}
+            loading={loading && !refreshing}
+            onSessionExpired={handleSessionExpired}
+          />
         )}
       </ScrollView>
 
@@ -963,7 +844,7 @@ const fetchConductData = async (authToken = token) => {
                   {addingConduct ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Text style={styles.saveButtonText}>Save</Text>
+                    <Text style={styles.saveButtonText}>Add Entry</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -978,25 +859,25 @@ const fetchConductData = async (authToken = token) => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F5F7FA',
+    backgroundColor: '#F8F9FB',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F5F7FA',
+    backgroundColor: '#F8F9FB',
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#3A4276',
-    fontWeight: '500',
+    color: '#8A94A6',
+    textAlign: 'center',
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F5F7FA',
+    backgroundColor: '#F8F9FB',
     paddingHorizontal: 20,
   },
   errorText: {
@@ -1010,7 +891,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1CB5E0',
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 8,
   },
   retryButtonText: {
     color: '#FFFFFF',
@@ -1021,73 +902,54 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E8EAF0',
+    borderBottomColor: '#E5E7EB',
   },
   tabButton: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
     borderRadius: 8,
-    marginHorizontal: 2,
-    position: 'relative',
   },
   activeTab: {
-    backgroundColor: 'rgba(28, 181, 224, 0.1)',
+    backgroundColor: '#E6F7FF',
   },
   tabText: {
-    marginLeft: 6,
     fontSize: 12,
-    fontWeight: '500',
     color: '#8A94A6',
+    marginTop: 4,
+    fontWeight: '500',
   },
   activeTabText: {
     color: '#1CB5E0',
-  },
-  badge: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    backgroundColor: '#F7685B',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  badgeText: {
-    color: '#FFFFFF',
-    fontSize: 10,
     fontWeight: '600',
   },
   scrollContainer: {
-    paddingBottom: 20,
+    flexGrow: 1,
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   modalContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 0,
-    width: '90%',
-    maxWidth: 400,
-    maxHeight: '80%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+    minHeight: '70%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E8EAF0',
+    borderBottomColor: '#E5E7EB',
   },
   modalTitle: {
     fontSize: 18,
@@ -1095,91 +957,97 @@ const styles = StyleSheet.create({
     color: '#3A4276',
   },
   modalContent: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
   inputLabel: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#3A4276',
     marginBottom: 8,
+    marginTop: 16,
   },
   typeSelector: {
     flexDirection: 'row',
-    marginBottom: 16,
-    gap: 8,
+    gap: 10,
+    marginBottom: 8,
   },
   typeButton: {
     flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E8EAF0',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
   },
   selectedTypeButton: {
-    backgroundColor: 'rgba(28, 181, 224, 0.1)',
+    backgroundColor: '#F8F9FB',
   },
   typeButtonText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#8A94A6',
   },
   textInput: {
     borderWidth: 1,
-    borderColor: '#E8EAF0',
+    borderColor: '#E5E7EB',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
     fontSize: 14,
     color: '#3A4276',
-    marginBottom: 16,
     backgroundColor: '#FFFFFF',
+    marginBottom: 8,
   },
   textArea: {
-    height: 80,
+    minHeight: 80,
     textAlignVertical: 'top',
   },
   severitySelector: {
     flexDirection: 'row',
-    marginBottom: 16,
-    gap: 8,
+    gap: 10,
+    marginBottom: 8,
   },
   severityButton: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#E8EAF0',
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
   },
   selectedSeverityButton: {
-    backgroundColor: 'rgba(247, 104, 91, 0.1)',
-    borderColor: '#F7685B',
+    backgroundColor: '#1CB5E0',
+    borderColor: '#1CB5E0',
   },
   severityButtonText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '500',
     color: '#8A94A6',
   },
   selectedSeverityButtonText: {
-    color: '#F7685B',
+    color: '#FFFFFF',
   },
   checkboxContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginTop: 12,
+    marginBottom: 8,
   },
   checkbox: {
     width: 20,
     height: 20,
     borderWidth: 2,
-    borderColor: '#1CB5E0',
+    borderColor: '#E5E7EB',
     borderRadius: 4,
     marginRight: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
   },
   checkboxLabel: {
     fontSize: 14,
@@ -1189,31 +1057,35 @@ const styles = StyleSheet.create({
   modalActions: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 20,
+    marginTop: 24,
+    marginBottom: 16,
   },
   cancelButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E8EAF0',
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
   },
   cancelButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 16,
+    fontWeight: '600',
     color: '#8A94A6',
   },
   saveButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 8,
     backgroundColor: '#1CB5E0',
     alignItems: 'center',
+    minHeight: 50,
+    justifyContent: 'center',
   },
   saveButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 16,
+    fontWeight: '600',
     color: '#FFFFFF',
   },
 });
