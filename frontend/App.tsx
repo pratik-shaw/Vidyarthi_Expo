@@ -46,6 +46,7 @@ import TeacherEventCalendarScreen from './screens/TeacherEventCalendarScreen';
 import TeacherSubjectReportScreen from './screens/TeacherSubjectReportScreen';
 import TeacherPostMaterialScreen from './screens/TeacherPostMaterialScreen';
 import StudentStudyMaterialScreen from './screens/StudentStudyMaterialScreen';
+import AdminStudentQueriesScreen from './screens/AdminStudentQueriesScreen';
 
 
 export type RootStackParamList = {
@@ -114,6 +115,8 @@ export type RootStackParamList = {
   AdminAddClassTeacher: undefined;
   AdminAllTeachersData: undefined;
   AdminAllStudentsData: undefined;
+  AdminStudentQueriesScreen: undefined;
+  
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -165,6 +168,7 @@ export default function App() {
         <Stack.Screen name="TeacherSubjectReport" component={TeacherSubjectReportScreen} />
         <Stack.Screen name="TeacherPostMaterial" component={TeacherPostMaterialScreen} />
         <Stack.Screen name="StudentStudyMaterial" component={StudentStudyMaterialScreen} />
+        <Stack.Screen name="AdminStudentQueriesScreen" component={AdminStudentQueriesScreen} />
         
         {/* Add any other screens you need here */}
       </Stack.Navigator>

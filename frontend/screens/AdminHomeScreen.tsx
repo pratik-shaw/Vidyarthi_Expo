@@ -236,9 +236,8 @@ const AdminHomeScreen: React.FC<Props> = ({ navigation }) => {
     navigation.navigate('AdminAddClassTeacher');
   };
 
-  const navigateToStudents = () => {
-    Alert.alert("Coming Soon", "Student management screen is under development.");
-    // navigation.navigate('AdminStudents');
+  const navigateToStudentsOueries = () => {
+    navigation.navigate('AdminStudentQueriesScreen');
   };
 
   const navigateToClasses = () => {
@@ -391,7 +390,7 @@ const AdminHomeScreen: React.FC<Props> = ({ navigation }) => {
               <Text style={styles.actionText}>Assign Class Teacher</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.actionCard} onPress={navigateToStudents}>
+            <TouchableOpacity style={styles.actionCard} onPress={navigateToStudentsOueries}>
               <View style={[styles.actionIconContainer, { backgroundColor: '#2ED573' }]}>
                 <FontAwesome5 name="user-plus" size={20} color="#FFFFFF" />
               </View>
