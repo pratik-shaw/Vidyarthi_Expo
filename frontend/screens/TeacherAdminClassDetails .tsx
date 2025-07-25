@@ -474,74 +474,59 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
   );
 
   // Render students tab
-  const renderStudentsTab = () => (
-    <View style={styles.sectionContainer}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Students ({classDetails?.studentIds?.length || 0})</Text>
-      </View>
-      
-      {classDetails?.studentIds && classDetails.studentIds.length > 0 ? (
-        <View style={styles.studentsContainer}>
-          {classDetails.studentIds.map((student, index) => {
-            const attendance = student.attendance || generateAttendanceData(student._id);
-            
-            return (
-              <View key={student._id || index} style={styles.studentCard}>
-                <View style={styles.studentInfo}>
-                  <View style={styles.studentAvatar}>
-                    <Text style={styles.studentInitial}>
-                      {student.name.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                  
-                  <View style={styles.studentDetails}>
-                    <Text style={styles.studentName}>{student.name}</Text>
-                    <Text style={styles.studentId}>ID: {student.studentId || `ST${index + 1001}`}</Text>
-                    {student.email && (
-                      <Text style={styles.studentEmail}>{student.email}</Text>
-                    )}
-                  </View>
-                </View>
-                
-                <View style={styles.attendanceContainer}>
-                  <Text style={styles.attendanceLabel}>Attendance</Text>
-                  <View style={styles.attendanceBarContainer}>
-                    <View style={styles.attendanceBar}>
-                      <View 
-                        style={[
-                          styles.attendanceProgress, 
-                          { 
-                            width: `${attendance.percentage}%`,
-                            backgroundColor: attendance.percentage >= 75 ? '#48BB78' : 
-                                            attendance.percentage >= 60 ? '#ED8936' : '#F56565'
-                          }
-                        ]} 
-                      />
-                    </View>
-                    <Text style={[
-                      styles.attendancePercentage,
-                      { 
-                        color: attendance.percentage >= 75 ? '#48BB78' : 
-                               attendance.percentage >= 60 ? '#ED8936' : '#F56565'
-                      }
-                    ]}>
-                      {attendance.percentage}%
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      ) : (
-        <View style={styles.emptyStateContainer}>
-          <FontAwesome5 name="user-graduate" size={48} color="#CBD5E0" />
-          <Text style={styles.emptyStateText}>No students enrolled</Text>
-          <Text style={styles.emptyStateSubtext}>Students will appear here once enrolled</Text>
-        </View>
-      )}
+const renderStudentsTab = () => (
+  <View style={styles.sectionContainer}>
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>Students ({classDetails?.studentIds?.length || 0})</Text>
     </View>
-  );
+    
+    {classDetails?.studentIds && classDetails.studentIds.length > 0 ? (
+      <View style={styles.studentsContainer}>
+        {classDetails.studentIds.map((student, index) => (
+          <TouchableOpacity
+            key={student._id || index}
+            style={styles.studentCard}
+            onPress={() => {
+              navigation.navigate('TeacherStudentDetailsScreen', {
+                studentId: student._id,
+                studentName: student.name,
+                classId: classDetails._id || classId,
+                className: classDetails.name || className,
+              });
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={styles.studentInfo}>
+              <View style={styles.studentAvatar}>
+                <Text style={styles.studentInitial}>
+                  {student.name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              
+              <View style={styles.studentDetails}>
+                <Text style={styles.studentName}>{student.name}</Text>
+                <Text style={styles.studentId}>ID: {student.studentId || `ST${index + 1001}`}</Text>
+                {student.email && (
+                  <Text style={styles.studentEmail}>{student.email}</Text>
+                )}
+              </View>
+            </View>
+            
+            <View style={styles.studentActions}>
+              <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
+    ) : (
+      <View style={styles.emptyStateContainer}>
+        <FontAwesome5 name="user-graduate" size={48} color="#CBD5E0" />
+        <Text style={styles.emptyStateText}>No students enrolled</Text>
+        <Text style={styles.emptyStateSubtext}>Students will appear here once enrolled</Text>
+      </View>
+    )}
+  </View>
+);
 
   // Render teachers tab
   const renderTeachersTab = () => (
@@ -1039,13 +1024,21 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   studentCard: {
-    backgroundColor: '#F7FAFC',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
+  backgroundColor: '#FFFFFF',
+  borderRadius: 12,
+  padding: 16,
+  marginBottom: 12,
+  borderWidth: 1,
+  borderColor: '#E2E8F0',
+  shadowColor: '#000000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.1,
+  shadowRadius: 4,
+  elevation: 3,
+  flexDirection: 'row', // Add this line
+  alignItems: 'center', // Add this line
+  justifyContent: 'space-between', // Add this line
+},
   studentInfo: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1213,6 +1206,11 @@ const styles = StyleSheet.create({
     color: '#718096',
     lineHeight: 16,
   },
+  studentActions: {
+  justifyContent: 'center',
+  alignItems: 'center',
+  paddingLeft: 12,
+},
 });
 
 export default TeacherAdminClassDetailsScreen;
