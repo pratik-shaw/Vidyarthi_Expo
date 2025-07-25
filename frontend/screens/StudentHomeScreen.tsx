@@ -28,7 +28,6 @@ import axios from 'axios';
 import NetInfo from '@react-native-community/netinfo';
 
 // Components
-import FeatureCard from '../components/FeatureCard';
 import ProfileBanner from '../components/ProfileBanner';
 import NotificationBadge from '../components/NotificationBadge';
 import StatsCard from '../components/StatsCard';
@@ -76,6 +75,11 @@ interface Feature {
   destination: keyof RootStackParamList;
 }
 
+interface SubmissionData {
+  submissions: Array<any>;
+  // Add other properties as needed
+}
+
 interface StudentData {
   name: string;
   id: string;
@@ -100,7 +104,64 @@ interface UpcomingEvent {
   month: string;
   startTime: string;
   endTime: string;
+  category?: string;
   hasReminder?: boolean;
+}
+
+// Calendar data interface from backend
+interface CalendarData {
+  hasData: boolean;
+  studentInfo: {
+    classId: string | null;
+    className: string;
+    section: string;
+  };
+  events: Array<{
+    eventId: string;
+    title: string;
+    category: string;
+    startDate: string;
+    endDate: string;
+    description: string;
+    createdBy: {
+      name: string;
+      email: string;
+    };
+  }>;
+  totalEvents: number;
+  upcomingEvents: number;
+  currentMonth: number;
+  currentYear: number;
+  message?: string;
+}
+
+// Academic data interface from backend
+interface AcademicData {
+  studentInfo: {
+    id: string;
+    name: string;
+    studentId: string;
+    className: string;
+    section: string;
+  };
+  hasData: boolean;
+  message?: string;
+  exams: Array<any>;
+  subjectSummary: Array<any>;
+  examTrends: Array<any>;
+  summary: {
+    overallPercentage: string;
+    overallGrade: string;
+    totalExams: number;
+    completedExams: number;
+    totalSubjects: number;
+    completedSubjects: number;
+    completionRate: string;
+    totalMarksScored: number;
+    totalFullMarks: number;
+    examCompletionRate: string;
+  } | null;
+  lastUpdated?: string;
 }
 
 const StudentHomeScreen: React.FC = () => {
@@ -115,6 +176,8 @@ const StudentHomeScreen: React.FC = () => {
   const [studentData, setStudentData] = useState<StudentData | null>(null);
   const [statsData, setStatsData] = useState<StatsData[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<UpcomingEvent[]>([]);
+  const [calendarData, setCalendarData] = useState<CalendarData | null>(null);
+  const [academicData, setAcademicData] = useState<AcademicData | null>(null);
   const [isConnected, setIsConnected] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -266,44 +329,232 @@ const StudentHomeScreen: React.FC = () => {
     }
   };
 
-  // Fetch all necessary student data
-  const fetchStudentData = async () => {
-    if (!isConnected) {
-      setError("You're offline. Please check your internet connection.");
-      setIsLoading(false);
-      return;
-    }
-    
-    setError(null);
-    setIsLoading(true);
-    
+  // Fetch academic data from backend
+  const fetchAcademicData = async () => {
     try {
-      // Get stored student data first (for immediate display)
-      const storedData = await AsyncStorage.getItem('studentData');
-      if (storedData) {
-        const parsedData = JSON.parse(storedData);
-        setBasicStudentData(parsedData);
-      } else {
-        // If no stored data, set default data
-        setDefaultStudentData();
+      console.log('Fetching academic data...');
+      const response = await apiClient.get('/api/marks/student/academic-report');
+      
+      if (response.data) {
+        console.log('Academic data fetched successfully:', response.data);
+        setAcademicData(response.data);
+        return response.data;
+      }
+    } catch (error) {
+      console.error('Error fetching academic data:', error);
+      
+      // If it's a 404 or the endpoint doesn't exist, return null
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        console.log('Academic endpoint not found');
+        return null;
       }
       
-      // Set default stats since we don't have an API endpoint yet
-      setDefaultStats();
-      
-      // Set default events since we don't have an API endpoint yet
-      setDefaultEvents();
-      
-      // For now, since the API endpoints are not ready, just show some notifications
-      setNotifications(3);
-      
-      setIsLoading(false);
-    } catch (error) {
-      console.error("Error fetching student data:", error);
-      handleApiError(error);
-      setIsLoading(false);
+      // For other errors, throw to be handled by parent function
+      throw error;
     }
   };
+
+  // Fetch calendar data from backend
+  const fetchCalendarData = async () => {
+    try {
+      console.log('Fetching calendar data...');
+      const response = await apiClient.get('/api/events/student/calendar-data');
+      
+      if (response.data) {
+        console.log('Calendar data fetched successfully:', response.data);
+        setCalendarData(response.data);
+        
+        // Transform backend events to display format
+        if (response.data.events && response.data.events.length > 0) {
+          const transformedEvents = response.data.events.map((event: any) => {
+            const startDate = new Date(event.startDate);
+            const endDate = new Date(event.endDate);
+            
+            return {
+              id: event.eventId,
+              title: event.title,
+              date: event.startDate,
+              day: startDate.getDate().toString().padStart(2, '0'),
+              month: startDate.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(),
+              startTime: startDate.toLocaleTimeString('en-US', { 
+                hour: 'numeric', 
+                minute: '2-digit', 
+                hour12: true 
+              }),
+              endTime: endDate.toLocaleTimeString('en-US', { 
+                hour: 'numeric', 
+                minute: '2-digit', 
+                hour12: true 
+              }),
+              category: event.category,
+              hasReminder: false // Default value, can be enhanced later
+            };
+          });
+          
+          setUpcomingEvents(transformedEvents);
+        } else {
+          setUpcomingEvents([]);
+        }
+        
+        return response.data;
+      }
+    } catch (error) {
+      console.error('Error fetching calendar data:', error);
+      
+      // If it's a 404 or the endpoint doesn't exist, fall back to default events
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        console.log('Calendar endpoint not found, using default events');
+        setDefaultEvents();
+        return null;
+      }
+      
+      // For other errors, still set default events but log the error
+      setDefaultEvents();
+      throw error;
+    }
+  };
+
+  // Generate stats data from academic data
+  const generateStatsFromAcademicData = (
+  academicData: { hasData: any; summary: { overallGrade: any; overallPercentage: any; }; }, 
+  submissionData: SubmissionData | null = null
+) => {
+  const stats = [
+    // Keep attendance as mock for now
+    { title: "Attendance", value: "92%", icon: "calendar-check", color: PRIMARY_COLOR }
+  ];
+
+  // Add submissions stat with real data
+  if (submissionData && submissionData.submissions) {
+    const totalSubmissions = submissionData.submissions.length;
+    stats.push({
+      title: "Submissions", 
+      value: totalSubmissions.toString(), 
+      icon: "file-upload", 
+      color: PRIMARY_COLOR
+    });
+  } else {
+    // Add default submissions if no data
+    stats.push({
+      title: "Submissions", 
+      value: "0", 
+      icon: "file-upload", 
+      color: PRIMARY_COLOR
+    });
+  }
+
+  // Add academic performance from backend
+  if (academicData && academicData.hasData && academicData.summary) {
+    const { overallGrade, overallPercentage } = academicData.summary;
+    
+    // Add grade stat with real data
+    stats.push({
+      title: "Grade", 
+      value: overallGrade || "N/A", 
+      icon: "award", 
+      color: PRIMARY_COLOR
+    });
+  } else {
+    // Add default grade if no academic data
+    stats.push({
+      title: "Grade", 
+      value: "N/A", 
+      icon: "award", 
+      color: PRIMARY_COLOR
+    });
+  }
+
+  return stats;
+};
+
+  // Add this new function to fetch submission data
+const fetchSubmissionData = async () => {
+  try {
+    console.log('Fetching submission data...');
+    const response = await apiClient.get('/api/submissions/my-submissions?limit=100'); // Get all submissions
+    
+    if (response.data) {
+      console.log('Submission data fetched successfully:', response.data);
+      return response.data;
+    }
+  } catch (error) {
+    console.error('Error fetching submission data:', error);
+    
+    // If it's a 404 or the endpoint doesn't exist, return null
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      console.log('Submission endpoint not found');
+      return null;
+    }
+    
+    // For other errors, throw to be handled by parent function
+    throw error;
+  }
+};
+
+
+  // Fetch all necessary student data
+  const fetchStudentData = async () => {
+  if (!isConnected) {
+    setError("You're offline. Please check your internet connection.");
+    setIsLoading(false);
+    return;
+  }
+  
+  setError(null);
+  setIsLoading(true);
+  
+  try {
+    // Get stored student data first (for immediate display)
+    const storedData = await AsyncStorage.getItem('studentData');
+    if (storedData) {
+      const parsedData = JSON.parse(storedData);
+      setBasicStudentData(parsedData);
+    } else {
+      // If no stored data, set default data
+      setDefaultStudentData();
+    }
+    
+    // Try to fetch academic data from backend
+    let fetchedAcademicData = null;
+    try {
+      fetchedAcademicData = await fetchAcademicData();
+    } catch (academicError) {
+      console.log('Academic data fetch failed, using defaults');
+      // Don't throw the error, just continue with defaults
+    }
+    
+    // Try to fetch submission data from backend
+    let fetchedSubmissionData = null;
+    try {
+      fetchedSubmissionData = await fetchSubmissionData();
+    } catch (submissionError) {
+      console.log('Submission data fetch failed, using defaults');
+      // Don't throw the error, just continue with defaults
+    }
+    
+    // Generate stats based on academic and submission data (or defaults)
+    const generatedStats = generateStatsFromAcademicData(fetchedAcademicData, fetchedSubmissionData);
+    setStatsData(generatedStats);
+    
+    // Try to fetch calendar data from backend
+    try {
+      await fetchCalendarData();
+    } catch (calendarError) {
+      console.log('Calendar data fetch failed, using defaults');
+      // Don't throw the error, just continue with defaults
+    }
+    
+    // For now, since the API endpoints are not ready, just show some notifications
+    setNotifications(3);
+    
+    setIsLoading(false);
+  } catch (error) {
+    console.error("Error fetching student data:", error);
+    handleApiError(error);
+    setIsLoading(false);
+  }
+};
+
 
   // Set default student data if none is available
   const setDefaultStudentData = () => {
@@ -330,16 +581,16 @@ const StudentHomeScreen: React.FC = () => {
     });
   };
 
-  // Set default stats
+  // Set default stats (fallback when backend fails)
   const setDefaultStats = () => {
-    setStatsData([
-      { title: "Attendance", value: "92%", icon: "calendar-check", color: PRIMARY_COLOR },
-      { title: "Assignments", value: "18/20", icon: "tasks", color: PRIMARY_COLOR },
-      { title: "Average", value: "A", icon: "award", color: PRIMARY_COLOR }
-    ]);
-  };
+  setStatsData([
+    { title: "Attendance", value: "92%", icon: "calendar-check", color: PRIMARY_COLOR },
+    { title: "Submissions", value: "0", icon: "file-upload", color: PRIMARY_COLOR },
+    { title: "Grade", value: "N/A", icon: "award", color: PRIMARY_COLOR }
+  ]);
+};
 
-  // Set default events
+  // Set default events (fallback when backend fails)
   const setDefaultEvents = () => {
     const currentDate = new Date();
     
@@ -351,7 +602,8 @@ const StudentHomeScreen: React.FC = () => {
         day: "15",
         month: "MAY",
         startTime: "10:30 AM",
-        endTime: "12:30 PM"
+        endTime: "12:30 PM",
+        category: "project"
       },
       {
         id: "default2",
@@ -360,7 +612,8 @@ const StudentHomeScreen: React.FC = () => {
         day: "18",
         month: "MAY",
         startTime: "09:00 AM",
-        endTime: "10:00 AM"
+        endTime: "10:00 AM",
+        category: "exam"
       }
     ]);
   };
@@ -385,9 +638,36 @@ const StudentHomeScreen: React.FC = () => {
     { id: "8", title: "Study Material", icon: "file-upload", destination: "StudentStudyMaterial" }
   ];
 
-  // Handle navigation to screens
+  // Handle navigation to screens - FIXED VERSION
   const handleNavigation = (destination: keyof RootStackParamList) => {
-    navigation.navigate(destination);
+    switch (destination) {
+      case 'StudentAttendance':
+        navigation.navigate('StudentAttendance');
+        break;
+      case 'StudentAcademics':
+        navigation.navigate('StudentAcademics');
+        break;
+      case 'StudentCalendar':
+        navigation.navigate('StudentCalendar');
+        break;
+      case 'StudentConduct':
+        navigation.navigate('StudentConduct');
+        break;
+      case 'StudentChatroom':
+        navigation.navigate('StudentChatroom');
+        break;
+      case 'StudentQuery':
+        navigation.navigate('StudentQuery');
+        break;
+      case 'StudentSubmission':
+        navigation.navigate('StudentSubmission');
+        break;
+      case 'StudentStudyMaterial':
+        navigation.navigate('StudentStudyMaterial');
+        break;
+      default:
+        console.warn(`Navigation to ${destination} not implemented`);
+    }
   };
 
   // Handle settings press
@@ -403,7 +683,7 @@ const StudentHomeScreen: React.FC = () => {
 
   // Handle event reminder toggle
   const toggleEventReminder = async (eventId: string) => {
-    // Since we don't have a backend yet, just update the local state
+    // Since we don't have a backend for reminders yet, just update the local state
     setUpcomingEvents(prevEvents => 
       prevEvents.map(event => 
         event.id === eventId 
@@ -439,6 +719,38 @@ const StudentHomeScreen: React.FC = () => {
       ]
     );
   };
+
+  // Render feature card with proper styling
+  const renderFeatureCard = (feature: Feature, index: number) => {
+  return (
+    <Animated.View
+      key={feature.id}
+      style={[
+        styles.featureCardContainer,
+        {
+          opacity: fadeAnim,
+          transform: [{ 
+            translateY: slideAnim.interpolate({
+              inputRange: [0, 30],
+              outputRange: [0, 30 + (index * 5)],
+            })
+          }]
+        }
+      ]}
+    >
+      <TouchableOpacity
+        style={styles.featureCard}
+        onPress={() => handleNavigation(feature.destination)}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.featureIconContainer, { backgroundColor: `${PRIMARY_COLOR}15` }]}>
+          <FontAwesome5 name={feature.icon} size={24} color={PRIMARY_COLOR} />
+        </View>
+        <Text style={styles.featureTitle}>{feature.title}</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
 
   // Show loading state if initial data is loading
   if (isLoading && !studentData) {
@@ -585,16 +897,7 @@ const StudentHomeScreen: React.FC = () => {
           </View>
           
           <View style={styles.featuresGrid}>
-            {features.map((feature, index) => (
-              <FeatureCard
-                key={feature.id}
-                title={feature.title}
-                icon={feature.icon}
-                color={PRIMARY_COLOR}
-                index={index}
-                onPress={() => handleNavigation(feature.destination)}
-              />
-            ))}
+            {features.map((feature, index) => renderFeatureCard(feature, index))}
           </View>
         </View>
 
@@ -607,6 +910,14 @@ const StudentHomeScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
           
+          {/* Show message if no class assigned or no events */}
+          {calendarData && !calendarData.hasData && calendarData.message && (
+            <View style={styles.messageContainer}>
+              <Feather name="info" size={20} color="#8A94A6" />
+              <Text style={styles.messageText}>{calendarData.message}</Text>
+            </View>
+          )}
+          
           {upcomingEvents.length > 0 ? (
             upcomingEvents.map((event) => (
               <View key={event.id} style={styles.eventCard}>
@@ -616,6 +927,15 @@ const StudentHomeScreen: React.FC = () => {
                 </View>
                 <View style={styles.eventDetails}>
                   <Text style={styles.eventTitle}>{event.title}</Text>
+                  {event.category && (
+                    <View style={styles.eventCategoryContainer}>
+                      <View style={[styles.eventCategoryBadge, { backgroundColor: `${PRIMARY_COLOR}15` }]}>
+                        <Text style={[styles.eventCategoryText, { color: PRIMARY_COLOR }]}>
+                          {event.category.charAt(0).toUpperCase() + event.category.slice(1)}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
                   <View style={styles.eventTimeContainer}>
                     <Feather name="clock" size={14} color="#8A94A6" />
                     <Text style={styles.eventTime}>{event.startTime} - {event.endTime}</Text>
@@ -633,7 +953,7 @@ const StudentHomeScreen: React.FC = () => {
                 </TouchableOpacity>
               </View>
             ))
-          ) : (
+          ) : !calendarData?.message && (
             <View style={styles.noEventsContainer}>
               <Feather name="calendar" size={40} color="#8A94A6" style={{ opacity: 0.5 }} />
               <Text style={styles.noEventsText}>No upcoming events</Text>
@@ -748,9 +1068,11 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   featuresGrid: {
-    width: '100%',
-    marginTop: 8, // Consistent spacing
-  },
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  justifyContent: 'space-between',
+  marginTop: 8,
+},
   sectionHeaderContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -934,7 +1256,76 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
-  }
+  },
+  // Add these missing styles to your StyleSheet.create() object:
+
+messageContainer: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 16,
+  backgroundColor: '#FFFFFF',
+  borderRadius: 14,
+  marginBottom: 12,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.05,
+  shadowRadius: 8,
+  elevation: 2,
+},
+messageText: {
+  fontSize: 14,
+  color: '#8A94A6',
+  marginLeft: 8,
+  textAlign: 'center',
+},
+eventCategoryContainer: {
+  marginBottom: 6,
+},
+eventCategoryBadge: {
+  paddingHorizontal: 8,
+  paddingVertical: 2,
+  borderRadius: 8,
+  alignSelf: 'flex-start',
+},
+eventCategoryText: {
+  fontSize: 12,
+  fontWeight: '500',
+  textTransform: 'capitalize',
+},
+featureCardContainer: {
+  width: (width - 60) / 2, // Two cards per row with proper spacing (24px padding on each side + 12px gap)
+  marginBottom: 16,
+},
+featureCard: {
+  backgroundColor: '#FFFFFF',
+  borderRadius: 16,
+  padding: 20,
+  alignItems: 'center',
+  justifyContent: 'center',
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.05,
+  shadowRadius: 8,
+  elevation: 2,
+  minHeight: 100,
+  width: '100%', // Ensure the card takes full width of its container
+},
+featureIconContainer: {
+  width: 56,
+  height: 56,
+  borderRadius: 16,
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginBottom: 12,
+},
+featureTitle: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#3A4276',
+  textAlign: 'center',
+  lineHeight: 18,
+},
 });
 
 export default StudentHomeScreen;

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 
@@ -11,11 +11,15 @@ interface StatsCardProps {
 }
 
 const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon, color, index }) => {
-  // Animation values
-  const opacity = new Animated.Value(0);
-  const translateY = new Animated.Value(20);
+  // Use useRef to prevent re-creation of Animated.Value on re-renders
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
+    // Reset animation values
+    opacity.setValue(0);
+    translateY.setValue(20);
+
     // Start animation with staggered delay based on index
     Animated.parallel([
       Animated.timing(opacity, {
@@ -31,7 +35,7 @@ const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon, color, index 
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [title, value, icon, color, index]); // Add dependencies to re-animate when props change
 
   return (
     <Animated.View 
@@ -57,18 +61,21 @@ const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon, color, index 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    maxWidth: '31%',
+    marginHorizontal: 4, // Add horizontal margin for better spacing
+    minWidth: 0, // Prevent flex shrinking issues
   },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
-    padding: 12,
+    padding: 16, // Increased padding for better touch target
     alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
+    minHeight: 100, // Ensure consistent height
   },
   iconContainer: {
     width: 40,
