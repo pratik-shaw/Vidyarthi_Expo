@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -73,43 +74,37 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
 
   // States
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [showSplash, setShowSplash] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
 
   // Refs
   const flatListRef = useRef<FlatList>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
-  const splashOpacity = useRef(new Animated.Value(1)).current;
-  const splashScale = useRef(new Animated.Value(1)).current;
 
-  // Handle splash screen animation
+  // Animation states
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+
+  // Run entry animations
   useEffect(() => {
-    // Start with splash screen
-    const splashTimeout = setTimeout(() => {
-      Animated.parallel([
-        Animated.timing(splashOpacity, {
-          toValue: 0,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(splashScale, {
-          toValue: 1.2,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        setShowSplash(false);
-      });
-    }, 2000); // 2 seconds for splash screen
-
-    return () => clearTimeout(splashTimeout);
-  }, []);
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 800,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, [fadeAnim, slideAnim]);
 
   // Handle auto scrolling for carousel
   useEffect(() => {
     let scrollInterval: NodeJS.Timeout;
 
-    if (!showSplash && autoScroll) {
+    if (autoScroll) {
       scrollInterval = setInterval(() => {
         if (currentIndex < slides.length - 1) {
           flatListRef.current?.scrollToIndex({
@@ -126,11 +121,11 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
     return () => {
       if (scrollInterval) clearInterval(scrollInterval);
     };
-  }, [currentIndex, showSplash, autoScroll]);
+  }, [currentIndex, autoScroll]);
 
   // Handle manual scrolling
   useEffect(() => {
-    scrollX.addListener(({ value }) => {
+    const listener = scrollX.addListener(({ value }) => {
       const index = Math.round(value / width);
       if (index !== currentIndex) {
         setCurrentIndex(index);
@@ -138,13 +133,23 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
     });
 
     return () => {
-      scrollX.removeAllListeners();
+      scrollX.removeListener(listener);
     };
-  }, [currentIndex]);
+  }, [currentIndex, scrollX]);
 
-  // Handle navigation to login screen
-  const handleGetStarted = () => {
-    navigation.replace('RoleSelection');
+  // Mark intro as seen and handle navigation to role selection screen
+  const handleGetStarted = async () => {
+    try {
+      // Mark that user has seen the intro
+      await AsyncStorage.setItem('hasSeenIntro', 'true');
+      console.log('Intro marked as seen');
+      
+      navigation.replace('RoleSelection');
+    } catch (error) {
+      console.error('Error saving intro status:', error);
+      // Still navigate even if we can't save the status
+      navigation.replace('RoleSelection');
+    }
   };
 
   // Handle next slide
@@ -159,31 +164,10 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  // Render splash screen
-  if (showSplash) {
-    return (
-      <View style={styles.splashContainer}>
-        <StatusBar hidden />
-        <Animated.View
-          style={[
-            styles.splashContent,
-            {
-              opacity: splashOpacity,
-              transform: [{ scale: splashScale }],
-            },
-          ]}
-        >
-          <Image
-            source={require('../assets/images/logo.png')} // Replace with your actual logo
-            style={styles.splashLogo}
-            resizeMode="contain"
-          />
-          <Text style={styles.splashText}>{BRAND.name}</Text>
-          <Text style={styles.splashTagline}>{BRAND.tagline}</Text>
-        </Animated.View>
-      </View>
-    );
-  }
+  // Handle skip intro
+  const handleSkip = () => {
+    handleGetStarted();
+  };
 
   // Render slide item
   const renderSlideItem = ({ item, index }: { item: typeof slides[0], index: number }) => {
@@ -230,14 +214,33 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
       <StatusBar barStyle="dark-content" backgroundColor={BRAND.secondaryColor} />
       
       {/* Fixed brand header that stays constant */}
-      <View style={styles.fixedBrandHeader}>
-        <Image 
-          source={require('../assets/images/logo.png')} 
-          style={styles.headerLogo} 
-          resizeMode="contain" 
-        />
-        <Text style={styles.headerBrandName}>{BRAND.name}</Text>
-      </View>
+      <Animated.View 
+        style={[
+          styles.fixedBrandHeader,
+          { 
+            opacity: fadeAnim, 
+            transform: [{ translateY: slideAnim }]
+          }
+        ]}
+      >
+        <View style={styles.brandSection}>
+          <Image 
+            source={require('../assets/images/logo.png')} 
+            style={styles.headerLogo} 
+            resizeMode="contain" 
+          />
+          <Text style={styles.headerBrandName}>{BRAND.name}</Text>
+        </View>
+        
+        {/* Skip button */}
+        <TouchableOpacity 
+          style={styles.skipButton}
+          onPress={handleSkip}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.skipButtonText}>Skip</Text>
+        </TouchableOpacity>
+      </Animated.View>
 
       {/* Carousel */}
       <Animated.FlatList
@@ -255,10 +258,19 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
         )}
         scrollEventThrottle={16}
         onScrollBeginDrag={() => setAutoScroll(false)} // Stop auto-scroll when user manually scrolls
+        style={{ opacity: fadeAnim }}
       />
 
       {/* Bottom Container */}
-      <View style={styles.bottomContainer}>
+      <Animated.View 
+        style={[
+          styles.bottomContainer,
+          { 
+            opacity: fadeAnim, 
+            transform: [{ translateY: slideAnim }]
+          }
+        ]}
+      >
         {/* Dot Indicators */}
         {renderDotIndicator()}
 
@@ -272,7 +284,7 @@ const IntroScreen: React.FC<Props> = ({ navigation }) => {
             {currentIndex === slides.length - 1 ? 'Get Started' : 'Next'}
           </Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
     </SafeAreaView>
   );
 };
@@ -282,41 +294,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8fafc', // slate-50 equivalent
   },
-  splashContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-  },
-  splashContent: {
-    alignItems: 'center',
-  },
-  splashLogo: {
-    width: 120,
-    height: 120,
-    marginBottom: 16,
-  },
-  splashText: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: 'black', // Primary color
-    letterSpacing: 1, // Elegant spacing
-  },
-  splashTagline: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#64748b', // Subtle secondary color
-    marginTop: 8,
-    letterSpacing: 0.5,
-  },
   fixedBrandHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingTop: 10,
     marginBottom: 10,
     zIndex: 10, // Ensure it stays on top
+  },
+  brandSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
   },
   headerLogo: {
     width: 32,
@@ -328,6 +319,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: 'black',
     letterSpacing: 0.5,
+  },
+  skipButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(13, 128, 242, 0.1)',
+    position: 'absolute',
+    right: 20,
+  },
+  skipButtonText: {
+    color: '#0d80f2',
+    fontSize: 14,
+    fontWeight: '600',
   },
   slide: {
     width,

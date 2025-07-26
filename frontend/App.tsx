@@ -48,6 +48,7 @@ import TeacherPostMaterialScreen from './screens/TeacherPostMaterialScreen';
 import StudentStudyMaterialScreen from './screens/StudentStudyMaterialScreen';
 import AdminStudentQueriesScreen from './screens/AdminStudentQueriesScreen';
 import TeacherProfileScreen from './screens/TeacherProfileScreen';
+import AuthController from './screens/AuthController';
 
 
 export type RootStackParamList = {
@@ -118,6 +119,7 @@ export type RootStackParamList = {
   AdminAllStudentsData: undefined;
   AdminStudentQueriesScreen: undefined;
   TeacherProfile: undefined; // Add this line for the teacher profile screen
+  AuthController: undefined; // Add this line for the AuthController
   
 };
 
@@ -126,7 +128,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export default function App() {
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName="Intro">
+      <Stack.Navigator initialRouteName="AuthController">
         <Stack.Screen name="Intro" component={IntroScreen} />
         <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
         <Stack.Screen name="StudentLogin" component={StudentLoginScreen} />
@@ -138,6 +140,7 @@ export default function App() {
         <Stack.Screen name="StudentSignup" component={StudentSignupScreen} />
         <Stack.Screen name="TeacherSignup" component={TeacherSignupScreen} />
         <Stack.Screen name="AdminSignup" component={AdminSignupScreen} />
+        <Stack.Screen name="AuthController" component={AuthController} />
         
         {/* Add the student screens to the navigator */}
         <Stack.Screen name="StudentHome" component={StudentHomeScreen} />
