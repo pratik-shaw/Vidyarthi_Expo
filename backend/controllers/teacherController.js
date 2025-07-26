@@ -3,36 +3,146 @@ const Teacher = require('../models/Teacher');
 const Class = require('../models/Class');
 const Student = require('../models/Student');
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
 // Get teacher profile
 exports.getProfile = async (req, res) => {
   try {
     const teacher = await Teacher.findById(req.user.id)
       .select('-password')
-      .populate('adminClassId', 'name section');
+      .populate('adminClassId', 'name section')
+      .populate('classIds', 'name section grade')
+      .populate('schoolId', 'name address city state');
     
     if (!teacher) {
       return res.status(404).json({ msg: 'Teacher not found' });
     }
     
-    // Return the formatted teacher data to match the client expectations
-    res.json({ 
-      teacher: {
-        _id: teacher._id,
-        name: teacher.name,
-        email: teacher.email,
-        schoolCode: teacher.schoolCode,
-        schoolId: teacher.schoolId,
-        classIds: teacher.classIds,
-        adminClassId: teacher.adminClassId,
-        uniqueCode: teacher.uniqueCode,
-        subject: teacher.subject || '',
-        phone: teacher.phone || '',
-        profileImage: teacher.profileImage || ''
-      }
-    });
+    res.json({ teacher });
   } catch (err) {
     console.error('Error fetching teacher profile:', err.message);
+    res.status(500).send('Server error');
+  }
+};
+
+// Update teacher profile
+exports.updateProfile = async (req, res) => {
+  try {
+    const {
+      phone,
+      address,
+      city,
+      state,
+      zip,
+      subjects,
+      qualification,
+      experience,
+      profileImage,
+      dateOfBirth,
+      gender,
+      emergencyContact,
+      socialMedia,
+      bio
+    } = req.body;
+
+    // Find teacher
+    const teacher = await Teacher.findById(req.user.id);
+    if (!teacher) {
+      return res.status(404).json({ msg: 'Teacher not found' });
+    }
+
+    // Validate experience if provided
+    if (experience !== undefined && (experience < 0 || experience > 50)) {
+      return res.status(400).json({ msg: 'Experience should be between 0 and 50 years' });
+    }
+
+    // Validate phone number format if provided
+    if (phone && !/^\+?[\d\s\-\(\)]{10,15}$/.test(phone.replace(/\s/g, ''))) {
+      return res.status(400).json({ msg: 'Invalid phone number format' });
+    }
+
+    // Validate date of birth if provided
+    if (dateOfBirth) {
+      const birthDate = new Date(dateOfBirth);
+      const today = new Date();
+      const age = today.getFullYear() - birthDate.getFullYear();
+      if (age < 18 || age > 80) {
+        return res.status(400).json({ msg: 'Age should be between 18 and 80 years' });
+      }
+    }
+
+    // Update fields
+    const updateFields = {};
+    
+    if (phone !== undefined) updateFields.phone = phone;
+    if (address !== undefined) updateFields.address = address;
+    if (city !== undefined) updateFields.city = city;
+    if (state !== undefined) updateFields.state = state;
+    if (zip !== undefined) updateFields.zip = zip;
+    if (subjects !== undefined) updateFields.subjects = subjects;
+    if (qualification !== undefined) updateFields.qualification = qualification;
+    if (experience !== undefined) updateFields.experience = experience;
+    if (profileImage !== undefined) updateFields.profileImage = profileImage;
+    if (dateOfBirth !== undefined) updateFields.dateOfBirth = dateOfBirth;
+    if (gender !== undefined) updateFields.gender = gender;
+    if (emergencyContact !== undefined) updateFields.emergencyContact = emergencyContact;
+    if (socialMedia !== undefined) updateFields.socialMedia = socialMedia;
+    if (bio !== undefined) updateFields.bio = bio;
+
+    const updatedTeacher = await Teacher.findByIdAndUpdate(
+      req.user.id,
+      { $set: updateFields },
+      { new: true, runValidators: true }
+    ).select('-password').populate('adminClassId', 'name section').populate('classIds', 'name section grade');
+
+    res.json({ 
+      msg: 'Profile updated successfully',
+      teacher: updatedTeacher 
+    });
+  } catch (err) {
+    console.error('Error updating teacher profile:', err.message);
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ msg: 'Validation error', errors: err.errors });
+    }
+    res.status(500).send('Server error');
+  }
+};
+
+// Change password
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ msg: 'Current password and new password are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ msg: 'New password must be at least 6 characters long' });
+    }
+
+    // Find teacher
+    const teacher = await Teacher.findById(req.user.id);
+    if (!teacher) {
+      return res.status(404).json({ msg: 'Teacher not found' });
+    }
+
+    // Verify current password
+    const isMatch = await bcrypt.compare(currentPassword, teacher.password);
+    if (!isMatch) {
+      return res.status(400).json({ msg: 'Current password is incorrect' });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // Update password
+    await Teacher.findByIdAndUpdate(req.user.id, { password: hashedPassword });
+
+    res.json({ msg: 'Password updated successfully' });
+  } catch (err) {
+    console.error('Error changing password:', err.message);
     res.status(500).send('Server error');
   }
 };
@@ -170,8 +280,6 @@ exports.getAdminClass = async (req, res) => {
   }
 };
 
-// Add this to your teacherController.js
-
 // Get specific admin class details by classId (for class admin)
 exports.getAdminClassById = async (req, res) => {
   try {
@@ -225,6 +333,3 @@ exports.getAdminClassById = async (req, res) => {
     res.status(500).send('Server error');
   }
 };
-
-// And add this route to your teacherRoutes.js:
-// router.get('/admin/class/:classId', auth, teacherController.getAdminClassById);

@@ -47,6 +47,7 @@ import TeacherSubjectReportScreen from './screens/TeacherSubjectReportScreen';
 import TeacherPostMaterialScreen from './screens/TeacherPostMaterialScreen';
 import StudentStudyMaterialScreen from './screens/StudentStudyMaterialScreen';
 import AdminStudentQueriesScreen from './screens/AdminStudentQueriesScreen';
+import TeacherProfileScreen from './screens/TeacherProfileScreen';
 
 
 export type RootStackParamList = {
@@ -116,6 +117,7 @@ export type RootStackParamList = {
   AdminAllTeachersData: undefined;
   AdminAllStudentsData: undefined;
   AdminStudentQueriesScreen: undefined;
+  TeacherProfile: undefined; // Add this line for the teacher profile screen
   
 };
 
@@ -169,6 +171,7 @@ export default function App() {
         <Stack.Screen name="TeacherPostMaterial" component={TeacherPostMaterialScreen} />
         <Stack.Screen name="StudentStudyMaterial" component={StudentStudyMaterialScreen} />
         <Stack.Screen name="AdminStudentQueriesScreen" component={AdminStudentQueriesScreen} />
+        <Stack.Screen name="TeacherProfile" component={TeacherProfileScreen} />
         
         {/* Add any other screens you need here */}
       </Stack.Navigator>

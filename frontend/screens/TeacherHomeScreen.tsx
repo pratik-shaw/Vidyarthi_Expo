@@ -352,8 +352,7 @@ const TeacherHomeScreen: React.FC<Props> = ({ navigation }) => {
 
   // Navigate to other screens
   const navigateToSettings = () => {
-    Alert.alert("Coming Soon", "Settings screen is under development.");
-    // navigation.navigate('TeacherSettings');
+    navigation.navigate('TeacherProfile');
   };
 
   const navigateToNotifications = () => {
