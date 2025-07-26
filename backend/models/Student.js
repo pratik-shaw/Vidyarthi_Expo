@@ -49,6 +49,36 @@ const StudentSchema = new Schema({
     type: String,
     required: true
   },
+  // Editable profile fields
+  dateOfBirth: {
+    type: Date,
+    default: null
+  },
+  address: {
+    type: String,
+    default: ''
+  },
+  admissionDate: {
+    type: Date,
+    default: null
+  },
+  // Parent information
+  parentName: {
+    type: String,
+    default: ''
+  },
+  parentPhone: {
+    type: String,
+    default: ''
+  },
+  parentEmail: {
+    type: String,
+    default: ''
+  },
+  profileImage: {
+    type: String,
+    default: ''
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -56,7 +86,17 @@ const StudentSchema = new Schema({
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
   }
+});
+
+// Update the updatedAt field before saving
+StudentSchema.pre('save', function(next) {
+  this.updatedAt = Date.now();
+  next();
 });
 
 module.exports = mongoose.model('Student', StudentSchema);

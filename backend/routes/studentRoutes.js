@@ -10,9 +10,9 @@ router.post('/register', authController.registerStudent);
 router.post('/login', authController.loginStudent);
 router.get('/validate', auth, authController.validateToken);
 
-
 // Protected routes
 router.get('/profile', auth, studentController.getProfile);
+router.put('/profile', auth, studentController.updateProfile); // New route for updating profile
 router.get('/class', auth, studentController.getClass);
 
 // Route for selecting/updating class

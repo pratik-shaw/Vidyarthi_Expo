@@ -32,12 +32,141 @@ exports.getProfile = async (req, res) => {
       schoolCode: student.schoolId ? student.schoolId.code : '',
       schoolId: student.schoolId ? student.schoolId._id : '',
       className: student.classId ? student.classId.name : '',
-      section: student.classId ? student.classId.section : ''
+      section: student.classId ? student.classId.section : '',
+      // Editable fields
+      dateOfBirth: student.dateOfBirth,
+      address: student.address || '',
+      admissionDate: student.admissionDate,
+      parentName: student.parentName || '',
+      parentPhone: student.parentPhone || '',
+      parentEmail: student.parentEmail || '',
+      profileImage: student.profileImage || ''
     };
 
     res.json(studentProfile);
   } catch (err) {
     console.error('Error fetching student profile:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Update student profile (only editable fields)
+exports.updateProfile = async (req, res) => {
+  try {
+    // Ensure the request is from a student
+    if (req.user.role !== 'student') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const { 
+      dateOfBirth, 
+      address, 
+      admissionDate, 
+      parentName, 
+      parentPhone, 
+      parentEmail 
+    } = req.body;
+
+    // Find the student
+    const student = await Student.findById(req.user.id);
+    
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    // Validate email format if parentEmail is provided
+    if (parentEmail && parentEmail.trim() !== '') {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(parentEmail)) {
+        return res.status(400).json({ message: 'Invalid parent email format' });
+      }
+    }
+
+    // Validate date formats if provided
+    if (dateOfBirth && dateOfBirth.trim() !== '') {
+      const birthDate = new Date(dateOfBirth);
+      if (isNaN(birthDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid date of birth format' });
+      }
+      // Check if date of birth is not in the future
+      if (birthDate > new Date()) {
+        return res.status(400).json({ message: 'Date of birth cannot be in the future' });
+      }
+    }
+
+    if (admissionDate && admissionDate.trim() !== '') {
+      const admission = new Date(admissionDate);
+      if (isNaN(admission.getTime())) {
+        return res.status(400).json({ message: 'Invalid admission date format' });
+      }
+    }
+
+    // Update only the editable fields
+    const updateData = {};
+    
+    if (dateOfBirth !== undefined) {
+      updateData.dateOfBirth = dateOfBirth && dateOfBirth.trim() !== '' ? new Date(dateOfBirth) : null;
+    }
+    if (address !== undefined) {
+      updateData.address = address.trim();
+    }
+    if (admissionDate !== undefined) {
+      updateData.admissionDate = admissionDate && admissionDate.trim() !== '' ? new Date(admissionDate) : null;
+    }
+    if (parentName !== undefined) {
+      updateData.parentName = parentName.trim();
+    }
+    if (parentPhone !== undefined) {
+      updateData.parentPhone = parentPhone.trim();
+    }
+    if (parentEmail !== undefined) {
+      updateData.parentEmail = parentEmail.trim();
+    }
+
+    // Update the student
+    const updatedStudent = await Student.findByIdAndUpdate(
+      req.user.id,
+      updateData,
+      { new: true, runValidators: true }
+    ).select('-password')
+     .populate('classId', 'name section')
+     .populate('schoolId', 'name code');
+
+    // Format the response
+    const studentProfile = {
+      _id: updatedStudent._id,
+      name: updatedStudent.name,
+      email: updatedStudent.email,
+      phone: updatedStudent.phone || '',
+      studentId: updatedStudent.studentId || '',
+      uniqueId: updatedStudent.uniqueId || '',
+      schoolCode: updatedStudent.schoolId ? updatedStudent.schoolId.code : '',
+      schoolId: updatedStudent.schoolId ? updatedStudent.schoolId._id : '',
+      className: updatedStudent.classId ? updatedStudent.classId.name : '',
+      section: updatedStudent.classId ? updatedStudent.classId.section : '',
+      dateOfBirth: updatedStudent.dateOfBirth,
+      address: updatedStudent.address || '',
+      admissionDate: updatedStudent.admissionDate,
+      parentName: updatedStudent.parentName || '',
+      parentPhone: updatedStudent.parentPhone || '',
+      parentEmail: updatedStudent.parentEmail || '',
+      profileImage: updatedStudent.profileImage || ''
+    };
+
+    res.json({
+      message: 'Profile updated successfully',
+      student: studentProfile
+    });
+
+  } catch (err) {
+    console.error('Error updating student profile:', err.message);
+    
+    // Handle validation errors
+    if (err.name === 'ValidationError') {
+      const errors = Object.values(err.errors).map(e => e.message);
+      return res.status(400).json({ message: errors.join(', ') });
+    }
+    
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -160,9 +289,7 @@ exports.selectClass = async (req, res) => {
   }
 };
 
-
-// Get student details by ID (for teachers) --> whenever you want to fetch student details by ID, you can use this function
-// used in TeacherStudentDetailsScreen.tsx
+// Get student details by ID (for teachers)
 exports.getStudentById = async (req, res) => {
   try {
     const { studentId } = req.params;
@@ -196,6 +323,13 @@ exports.getStudentById = async (req, res) => {
       className: student.classId ? student.classId.name : '',
       section: student.classId ? student.classId.section : '',
       classId: student.classId ? student.classId._id : '',
+      dateOfBirth: student.dateOfBirth,
+      address: student.address || '',
+      admissionDate: student.admissionDate,
+      parentName: student.parentName || '',
+      parentPhone: student.parentPhone || '',
+      parentEmail: student.parentEmail || '',
+      profileImage: student.profileImage || '',
       isActive: student.isActive !== undefined ? student.isActive : true,
       createdAt: student.createdAt,
       updatedAt: student.updatedAt

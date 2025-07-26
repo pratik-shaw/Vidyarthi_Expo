@@ -11,7 +11,10 @@ import {
   ActivityIndicator,
   SafeAreaView,
   StatusBar,
-  Platform
+  Platform,
+  TextInput,
+  Modal,
+  KeyboardAvoidingView
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -24,8 +27,8 @@ import NetInfo from '@react-native-community/netinfo';
 import { STUDENT_API } from '../config/api';
 
 // API configuration
-const API_URL = STUDENT_API; // Change this to your server IP/domain
-const API_TIMEOUT = 15000; // 15 seconds timeout
+const API_URL = STUDENT_API;
+const API_TIMEOUT = 15000;
 
 // Create an axios instance with timeout configuration
 const apiClient = axios.create({
@@ -51,7 +54,7 @@ apiClient.interceptors.request.use(
   }
 );
 
-const PRIMARY_COLOR = '#4F46E5'; // Standardized primary color
+const PRIMARY_COLOR = '#4F46E5';
 
 interface StudentData {
   _id: string;
@@ -74,12 +77,31 @@ interface StudentData {
   parentEmail?: string;
 }
 
+interface EditableFields {
+  dateOfBirth: string;
+  address: string;
+  admissionDate: string;
+  parentName: string;
+  parentPhone: string;
+  parentEmail: string;
+}
+
 const StudentProfileScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [isLoading, setIsLoading] = useState(true);
   const [studentData, setStudentData] = useState<StudentData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(true);
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [editableFields, setEditableFields] = useState<EditableFields>({
+    dateOfBirth: '',
+    address: '',
+    admissionDate: '',
+    parentName: '',
+    parentPhone: '',
+    parentEmail: ''
+  });
 
   useEffect(() => {
     // Set up navigation options
@@ -94,9 +116,7 @@ const StudentProfileScreen: React.FC = () => {
       headerStyle: {
         backgroundColor: '#F8F9FC',
       },
-      // Control shadow visibility with this property
-  headerShadowVisible: false, // This replaces shadowColor: 'transparent'
-  // Remove elevation from headerStyle and put it here if needed
+      headerShadowVisible: false,
       headerLeft: () => (
         <TouchableOpacity 
           style={styles.headerButton}
@@ -145,7 +165,9 @@ const StudentProfileScreen: React.FC = () => {
       // First try to get data from storage
       const storedData = await AsyncStorage.getItem('studentData');
       if (storedData) {
-        setStudentData(JSON.parse(storedData));
+        const data = JSON.parse(storedData);
+        setStudentData(data);
+        populateEditableFields(data);
       }
 
       // Then try to get latest data from API
@@ -154,6 +176,7 @@ const StudentProfileScreen: React.FC = () => {
       if (response.data) {
         // Update state with fresh data
         setStudentData(response.data);
+        populateEditableFields(response.data);
         
         // Update storage with fresh data
         await AsyncStorage.setItem('studentData', JSON.stringify(response.data));
@@ -184,6 +207,17 @@ const StudentProfileScreen: React.FC = () => {
     }
   };
 
+  const populateEditableFields = (data: StudentData) => {
+    setEditableFields({
+      dateOfBirth: data.dateOfBirth ? formatDateForInput(data.dateOfBirth) : '',
+      address: data.address || '',
+      admissionDate: data.admissionDate ? formatDateForInput(data.admissionDate) : '',
+      parentName: data.parentName || '',
+      parentPhone: data.parentPhone || '',
+      parentEmail: data.parentEmail || ''
+    });
+  };
+
   const handleUnauthorizedError = async () => {
     try {
       await AsyncStorage.multiRemove(['studentToken', 'studentData']);
@@ -199,12 +233,57 @@ const StudentProfileScreen: React.FC = () => {
   };
 
   const handleEditProfile = () => {
-    // Navigate to profile edit screen - implementation depends on your app structure
-    Alert.alert(
-      "Edit Profile",
-      "This feature will be available soon.",
-      [{ text: "OK" }]
-    );
+    setIsEditModalVisible(true);
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!isConnected) {
+      Alert.alert("No Internet", "Please check your internet connection and try again.");
+      return;
+    }
+
+    setIsUpdating(true);
+
+    try {
+      // Prepare update data
+      const updateData = {
+        dateOfBirth: editableFields.dateOfBirth.trim(),
+        address: editableFields.address.trim(),
+        admissionDate: editableFields.admissionDate.trim(),
+        parentName: editableFields.parentName.trim(),
+        parentPhone: editableFields.parentPhone.trim(),
+        parentEmail: editableFields.parentEmail.trim()
+      };
+
+      const response = await apiClient.put('/api/student/profile', updateData);
+      
+      if (response.data && response.data.student) {
+        // Update local state
+        setStudentData(response.data.student);
+        
+        // Update storage
+        await AsyncStorage.setItem('studentData', JSON.stringify(response.data.student));
+        
+        // Close modal
+        setIsEditModalVisible(false);
+        
+        Alert.alert("Success", "Profile updated successfully!");
+      }
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          handleUnauthorizedError();
+        } else {
+          Alert.alert("Error", error.response?.data?.message || "Failed to update profile. Please try again.");
+        }
+      } else {
+        Alert.alert("Error", "An unexpected error occurred. Please try again.");
+      }
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const handleLogout = () => {
@@ -246,6 +325,59 @@ const StudentProfileScreen: React.FC = () => {
     } catch (error) {
       return 'Invalid Date';
     }
+  };
+
+  // Helper function to format date for input (YYYY-MM-DD)
+  const formatDateForInput = (dateString: string): string => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      return date.toISOString().split('T')[0];
+    } catch (error) {
+      return '';
+    }
+  };
+
+  // Validate email format
+  const isValidEmail = (email: string): boolean => {
+    if (!email.trim()) return true; // Empty email is allowed
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  // Validate date format
+  const isValidDate = (dateString: string): boolean => {
+    if (!dateString.trim()) return true; // Empty date is allowed
+    const date = new Date(dateString);
+    return !isNaN(date.getTime());
+  };
+
+  const validateFields = (): boolean => {
+    if (editableFields.parentEmail && !isValidEmail(editableFields.parentEmail)) {
+      Alert.alert("Invalid Email", "Please enter a valid parent email address.");
+      return false;
+    }
+
+    if (editableFields.dateOfBirth && !isValidDate(editableFields.dateOfBirth)) {
+      Alert.alert("Invalid Date", "Please enter a valid date of birth.");
+      return false;
+    }
+
+    if (editableFields.admissionDate && !isValidDate(editableFields.admissionDate)) {
+      Alert.alert("Invalid Date", "Please enter a valid admission date.");
+      return false;
+    }
+
+    // Check if date of birth is not in the future
+    if (editableFields.dateOfBirth) {
+      const birthDate = new Date(editableFields.dateOfBirth);
+      if (birthDate > new Date()) {
+        Alert.alert("Invalid Date", "Date of birth cannot be in the future.");
+        return false;
+      }
+    }
+
+    return true;
   };
 
   if (isLoading && !studentData) {
@@ -342,12 +474,14 @@ const StudentProfileScreen: React.FC = () => {
               icon="calendar"
               label="Date of Birth"
               value={formatDate(student.dateOfBirth)}
+              isEditable
             />
             <InfoRow
               icon="map-pin"
               label="Address"
               value={student.address || 'Not Available'}
               isLast
+              isEditable
             />
           </View>
         </View>
@@ -379,6 +513,7 @@ const StudentProfileScreen: React.FC = () => {
               label="Admission Date"
               value={formatDate(student.admissionDate)}
               isLast
+              isEditable
             />
           </View>
         </View>
@@ -394,17 +529,20 @@ const StudentProfileScreen: React.FC = () => {
               icon="user"
               label="Parent Name"
               value={student.parentName || 'Not Available'}
+              isEditable
             />
             <InfoRow
               icon="phone"
               label="Parent Phone"
               value={student.parentPhone || 'Not Available'}
+              isEditable
             />
             <InfoRow
               icon="mail"
               label="Parent Email"
               value={student.parentEmail || 'Not Available'}
               isLast
+              isEditable
             />
           </View>
         </View>
@@ -427,7 +565,6 @@ const StudentProfileScreen: React.FC = () => {
             
             <TouchableOpacity 
               style={styles.actionButton}
-             // onPress={() => navigation.navigate('StudentChangePassword')}
             >
               <Feather name="lock" size={20} color={PRIMARY_COLOR} style={styles.actionIcon} />
               <Text style={styles.actionText}>Change Password</Text>
@@ -448,6 +585,128 @@ const StudentProfileScreen: React.FC = () => {
         {/* App Version */}
         <Text style={styles.versionText}>Student Portal v2.4.1</Text>
       </ScrollView>
+
+      {/* Edit Profile Modal */}
+      <Modal
+        visible={isEditModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setIsEditModalVisible(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <KeyboardAvoidingView 
+            style={styles.modalContent}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <TouchableOpacity
+                onPress={() => setIsEditModalVisible(false)}
+                style={styles.modalCloseButton}
+              >
+                <Text style={styles.modalCloseText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <Text style={styles.modalTitle}>Edit Profile</Text>
+              
+              <TouchableOpacity
+                onPress={() => {
+                  if (validateFields()) {
+                    handleUpdateProfile();
+                  }
+                }}
+                style={styles.modalSaveButton}
+                disabled={isUpdating}
+              >
+                {isUpdating ? (
+                  <ActivityIndicator size="small" color={PRIMARY_COLOR} />
+                ) : (
+                  <Text style={styles.modalSaveText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScrollView} showsVerticalScrollIndicator={false}>
+              {/* Date of Birth */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Date of Birth</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editableFields.dateOfBirth}
+                  onChangeText={(text) => setEditableFields(prev => ({...prev, dateOfBirth: text}))}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#8A94A6"
+                />
+              </View>
+
+              {/* Address */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Address</Text>
+                <TextInput
+                  style={[styles.textInput, styles.multilineInput]}
+                  value={editableFields.address}
+                  onChangeText={(text) => setEditableFields(prev => ({...prev, address: text}))}
+                  placeholder="Enter your address"
+                  placeholderTextColor="#8A94A6"
+                  multiline
+                  numberOfLines={3}
+                />
+              </View>
+
+              {/* Admission Date */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Admission Date</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editableFields.admissionDate}
+                  onChangeText={(text) => setEditableFields(prev => ({...prev, admissionDate: text}))}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#8A94A6"
+                />
+              </View>
+
+              {/* Parent Name */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Parent Name</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editableFields.parentName}
+                  onChangeText={(text) => setEditableFields(prev => ({...prev, parentName: text}))}
+                  placeholder="Enter parent's name"
+                  placeholderTextColor="#8A94A6"
+                />
+              </View>
+
+              {/* Parent Phone */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Parent Phone</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editableFields.parentPhone}
+                  onChangeText={(text) => setEditableFields(prev => ({...prev, parentPhone: text}))}
+                  placeholder="Enter parent's phone number"
+                  placeholderTextColor="#8A94A6"
+                  keyboardType="phone-pad"
+                />
+              </View>
+
+              {/* Parent Email */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Parent Email</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editableFields.parentEmail}
+                  onChangeText={(text) => setEditableFields(prev => ({...prev, parentEmail: text}))}
+                  placeholder="Enter parent's email"
+                  placeholderTextColor="#8A94A6"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -458,13 +717,17 @@ interface InfoRowProps {
   label: string;
   value: string;
   isLast?: boolean;
+  isEditable?: boolean;
 }
 
-const InfoRow: React.FC<InfoRowProps> = ({ icon, label, value, isLast }) => (
+const InfoRow: React.FC<InfoRowProps> = ({ icon, label, value, isLast, isEditable }) => (
   <View style={[styles.infoRow, isLast ? {} : styles.infoRowBorder]}>
     <Feather name={icon as any} size={18} color={PRIMARY_COLOR} style={styles.infoIcon} />
     <View style={styles.infoContent}>
-      <Text style={styles.infoLabel}>{label}</Text>
+      <View style={styles.infoLabelContainer}>
+        <Text style={styles.infoLabel}>{label}</Text>
+        {isEditable && <Feather name="edit-3" size={12} color="#8A94A6" />}
+      </View>
       <Text style={styles.infoValue}>{value}</Text>
     </View>
   </View>
@@ -595,11 +858,16 @@ const styles = StyleSheet.create({
   infoContent: {
     flex: 1,
   },
+  infoLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
   infoLabel: {
     fontSize: 14,
     fontWeight: '500',
     color: '#3A4276',
-    marginBottom: 2,
+    marginRight: 6,
   },
   infoValue: {
     fontSize: 15,
@@ -685,7 +953,77 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
-  }
+  },
+  // Modal Styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#F8F9FC',
+  },
+  modalContent: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EFF0F7',
+    backgroundColor: '#FFFFFF',
+  },
+  modalCloseButton: {
+    padding: 8,
+  },
+  modalCloseText: {
+    fontSize: 16,
+    color: '#8A94A6',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#3A4276',
+  },
+  modalSaveButton: {
+    padding: 8,
+  },
+  modalSaveText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: PRIMARY_COLOR,
+  },
+  modalScrollView: {
+    flex: 1,
+    backgroundColor: '#F8F9FC',
+  },
+  inputGroup: {
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#3A4276',
+    marginBottom: 8,
+  },
+  textInput: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#3A4276',
+    borderWidth: 1,
+    borderColor: '#EFF0F7',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  multilineInput: {
+    height: 80,
+    textAlignVertical: 'top',
+  },
 });
 
 export default StudentProfileScreen;

@@ -15,7 +15,8 @@ import {
   RefreshControl,
   BackHandler,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  Linking
 } from 'react-native';
 import { useNavigation, useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -672,7 +673,7 @@ const fetchSubmissionData = async () => {
 
   // Handle settings press
   const handleSettingsPress = () => {
-    navigation.navigate('StudentSettings');
+    navigation.navigate('StudentProfile');
   };
 
   // Handle notification press
@@ -961,24 +962,62 @@ const fetchSubmissionData = async () => {
           )}
         </View>
 
-        {/* Footer */}
-        <View style={styles.footer}>
-          <TouchableOpacity style={styles.helpButton} activeOpacity={0.8}>
-            <Feather name="help-circle" size={16} color="#8A94A6" style={styles.helpIcon} />
-            <Text style={styles.footerText}>Need help? Contact support</Text>
-          </TouchableOpacity>
-          
+        {/* Technical Support Section */}
+<View style={styles.supportSection}>
+  <View style={styles.supportCard}>
+    <View style={styles.supportHeader}>
+      <Feather name="headphones" size={20} color={PRIMARY_COLOR} />
+      <Text style={styles.supportTitle}>Need Help?</Text>
+    </View>
+    
+    <View style={styles.supportContent}>
+      <View style={styles.supportItem}>
+        <Feather name="tool" size={16} color="#8A94A6" />
+        <View style={styles.supportTextContainer}>
+          <Text style={styles.supportLabel}>Technical Issues:</Text>
           <TouchableOpacity 
-            style={styles.logoutButton} 
-            onPress={handleLogout}
-            activeOpacity={0.8}
+            onPress={() => Linking.openURL('mailto:support@vidyarthi.edu')}
+            activeOpacity={0.7}
           >
-            <Feather name="log-out" size={16} color="#FF6B6B" style={styles.logoutIcon} />
-            <Text style={styles.logoutText}>Log Out</Text>
+            <Text style={styles.supportLink}>support@vidyarthi.edu</Text>
           </TouchableOpacity>
-          
-          <Text style={styles.version}>Student Portal v2.4.1</Text>
+          <TouchableOpacity 
+            onPress={() => Linking.openURL('tel:+911234567890')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.supportLink}>+91 12345 67890</Text>
+          </TouchableOpacity>
         </View>
+      </View>
+      
+      <View style={styles.supportDivider} />
+      
+      <View style={styles.supportItem}>
+        <Feather name="users" size={16} color="#8A94A6" />
+        <View style={styles.supportTextContainer}>
+          <Text style={styles.supportLabel}>Other Issues:</Text>
+          <Text style={styles.supportDescription}>
+            Please contact your school admin or reception
+          </Text>
+        </View>
+      </View>
+    </View>
+  </View>
+</View>
+
+{/* Enhanced Footer */}
+<View style={styles.footer}>
+  <TouchableOpacity 
+    style={styles.logoutButton} 
+    onPress={handleLogout}
+    activeOpacity={0.8}
+  >
+    <Feather name="log-out" size={16} color="#FF6B6B" style={styles.logoutIcon} />
+    <Text style={styles.logoutText}>Log Out</Text>
+  </TouchableOpacity>
+  
+  <Text style={styles.version}>Student Portal v2.4.1</Text>
+</View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -1326,6 +1365,67 @@ featureTitle: {
   textAlign: 'center',
   lineHeight: 18,
 },
+
+
+supportSection: {
+  marginBottom: 20,
+},
+supportCard: {
+  backgroundColor: '#FFFFFF',
+  borderRadius: 16,
+  padding: 20,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.05,
+  shadowRadius: 8,
+  elevation: 2,
+},
+supportHeader: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginBottom: 16,
+},
+supportTitle: {
+  fontSize: 18,
+  fontWeight: '600',
+  color: '#3A4276',
+  marginLeft: 8,
+},
+supportContent: {
+  gap: 16,
+},
+supportItem: {
+  flexDirection: 'row',
+  alignItems: 'flex-start',
+  gap: 12,
+},
+supportTextContainer: {
+  flex: 1,
+},
+supportLabel: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#3A4276',
+  marginBottom: 4,
+},
+supportLink: {
+  fontSize: 14,
+  color: PRIMARY_COLOR,
+  fontWeight: '500',
+  marginBottom: 2,
+  textDecorationLine: 'underline',
+},
+supportDescription: {
+  fontSize: 14,
+  color: '#8A94A6',
+  lineHeight: 20,
+},
+supportDivider: {
+  height: 1,
+  backgroundColor: '#E5E7EB',
+  marginVertical: 4,
+},
+
 });
 
 export default StudentHomeScreen;
