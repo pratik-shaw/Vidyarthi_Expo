@@ -10,11 +10,16 @@ import {
   SafeAreaView,
   Modal,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { API_BASE_URL } from '../config/api';
+import * as Print from 'expo-print';
+
 
 interface RouteParams {
   classId: string;
@@ -101,7 +106,6 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
         return;
       }
 
-      // FIXED: Changed endpoint from /students to /complete-academic
       const response = await fetch(
         `${API_BASE_URL}/marks/class/${classId}/complete-academic`,
         {
@@ -119,7 +123,6 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
         setStudentsData(data.students);
         setClassInfo(data.classInfo);
         
-        // Extract unique exams
         const exams = new Set<string>();
         data.students.forEach(student => {
           student.exams.forEach(exam => {
@@ -156,6 +159,59 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
     return 'F';
   };
 
+  // Handle file download from WebView
+  const handleWebViewMessage = async (event: any) => {
+  try {
+    const message = JSON.parse(event.nativeEvent.data);
+    
+    if (message.type === 'download') {
+      const { format, data, filename } = message;
+      
+      if (format === 'pdf') {
+        // Handle PDF creation
+        try {
+          const htmlContent = atob(data); // Decode base64
+          const { uri } = await Print.printToFileAsync({ html: htmlContent });
+          
+          // Share the PDF file
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(uri, {
+              mimeType: 'application/pdf',
+              dialogTitle: 'Share PDF File',
+            });
+          } else {
+            Alert.alert('Success', `PDF saved to: ${uri}`);
+          }
+        } catch (error) {
+          console.error('PDF creation error:', error);
+          Alert.alert('Error', 'Failed to create PDF file');
+        }
+      } else {
+        // Handle Excel and CSV files
+        const fileUri = FileSystem.documentDirectory + filename;
+        
+        // Write base64 data to file
+        await FileSystem.writeAsStringAsync(fileUri, data, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        
+        // Share the file
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: format === 'excel' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv',
+            dialogTitle: `Share ${format.toUpperCase()} File`,
+          });
+        } else {
+          Alert.alert('Success', `File saved to: ${fileUri}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('File download error:', error);
+    Alert.alert('Error', 'Failed to download file');
+  }
+};
+
   const generateExcelHTML = (examId: string, examName: string, examCode: string): string => {
   // Filter students data for the specific exam
   const examData = studentsData.map(student => {
@@ -170,13 +226,12 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
     return '<html><body><h2>No data available for this exam</h2></body></html>';
   }
 
-  // FIXED: Get all unique subjects for this exam from the exam data itself
+  // Get all unique subjects for this exam
   const allSubjects = new Map<string, { subjectId: string; subjectName: string }>();
   
   examData.forEach(student => {
     if (student.exam) {
       student.exam.subjects.forEach(subject => {
-        // Ensure we have valid subject data before adding
         if (subject.subjectId && subject.subjectName && subject.subjectName !== 'Unknown Subject') {
           if (!allSubjects.has(subject.subjectId)) {
             allSubjects.set(subject.subjectId, {
@@ -191,11 +246,6 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
 
   const subjects = Array.from(allSubjects.values());
 
-  // Add debugging log to check subjects
-  console.log('Subjects for Excel generation:', subjects);
-  console.log('Sample student exam data:', examData[0]?.exam?.subjects);
-
-  // If no subjects found, return error message
   if (subjects.length === 0) {
     return '<html><body><h2>No valid subjects found for this exam</h2></body></html>';
   }
@@ -275,9 +325,14 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
             font-size: 16px;
             cursor: pointer;
             margin: 0 10px;
+            margin-bottom: 10px;
         }
         .download-btn:hover {
             background: #2c5282;
+        }
+        .download-btn:disabled {
+            background: #a0aec0;
+            cursor: not-allowed;
         }
         .table-container {
             background: white;
@@ -324,17 +379,18 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
         .grade-c { color: #d69e2e; font-weight: bold; }
         .grade-d { color: #e53e3e; font-weight: bold; }
         .grade-f { color: #e53e3e; font-weight: bold; background-color: #fed7d7; }
-        .debug-info {
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            padding: 10px;
+        .loading-message {
+            text-align: center;
+            color: #666;
+            font-style: italic;
             margin: 10px 0;
-            border-radius: 4px;
-            font-size: 12px;
         }
         @media print {
-            .download-section, .debug-info {
+            .download-section {
                 display: none;
+            }
+            body {
+                background-color: white;
             }
         }
     </style>
@@ -344,11 +400,6 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
         <h1>${classInfo?.name || 'Class'} - ${classInfo?.section || ''}</h1>
         <h2>${examName} (${examCode})</h2>
         <p>Academic Performance Report</p>
-    </div>
-
-    <div class="debug-info">
-        <strong>Debug Info:</strong> Found ${subjects.length} subjects for ${totalStudents} students
-        <br>Subjects: ${subjects.map(s => s.subjectName).join(', ')}
     </div>
 
     <div class="stats">
@@ -371,9 +422,14 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
     </div>
 
     <div class="download-section">
-        <button class="download-btn" onclick="window.print()">Print Report</button>
-        <button class="download-btn" onclick="downloadAsExcel()">Download Excel</button>
-        <button class="download-btn" onclick="downloadAsCSV()">Download CSV</button>
+        <button class="download-btn" onclick="downloadAsPDF()">Download PDF</button>
+        <button class="download-btn" id="excelBtn" onclick="downloadAsExcel()" disabled>
+            <span id="excelBtnText">Loading...</span>
+        </button>
+        <button class="download-btn" id="csvBtn" onclick="downloadAsCSV()" disabled>
+            <span id="csvBtnText">Loading...</span>
+        </button>
+        <div class="loading-message" id="loadingMessage">Loading Excel library...</div>
     </div>
 
     <div class="table-container">
@@ -435,22 +491,96 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script>
+        let isLibraryLoaded = false;
+
+        function updateButtonStates(loaded) {
+            const excelBtn = document.getElementById('excelBtn');
+            const csvBtn = document.getElementById('csvBtn');
+            const excelBtnText = document.getElementById('excelBtnText');
+            const csvBtnText = document.getElementById('csvBtnText');
+            const loadingMessage = document.getElementById('loadingMessage');
+
+            if (loaded) {
+                excelBtn.disabled = false;
+                csvBtn.disabled = false;
+                excelBtnText.textContent = 'Download Excel';
+                csvBtnText.textContent = 'Download CSV';
+                loadingMessage.style.display = 'none';
+                isLibraryLoaded = true;
+            } else {
+                excelBtn.disabled = true;
+                csvBtn.disabled = true;
+                excelBtnText.textContent = 'Loading...';
+                csvBtnText.textContent = 'Loading...';
+                loadingMessage.style.display = 'block';
+            }
+        }
+
         function downloadAsExcel() {
+            if (!isLibraryLoaded) {
+                alert('Excel library is still loading. Please wait.');
+                return;
+            }
+
             try {
-                if (typeof XLSX === 'undefined') {
-                    alert('Excel library not loaded. Please try again.');
-                    return;
-                }
-                
+                // Get table data manually
                 const table = document.getElementById('academicTable');
-                if (!table) {
-                    alert('Table not found');
+                const rows = table.querySelectorAll('tr');
+                const data = [];
+                
+                // Extract all table data
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('th, td');
+                    const rowData = [];
+                    cells.forEach(cell => {
+                        // Get text content and clean it
+                        let cellText = cell.textContent.trim();
+                        // Remove any HTML tags if present
+                        cellText = cellText.replace(/<[^>]*>/g, '');
+                        rowData.push(cellText);
+                    });
+                    if (rowData.length > 0) {
+                        data.push(rowData);
+                    }
+                });
+                
+                if (data.length === 0) {
+                    alert('No data found in table');
                     return;
                 }
                 
-                const wb = XLSX.utils.table_to_book(table, {sheet: "Academic Report"});
+                // Create worksheet from array
+                const ws = XLSX.utils.aoa_to_sheet(data);
+                
+                // Create workbook
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Academic Report");
+                
+                // Generate Excel file
+                const wbout = XLSX.write(wb, {bookType: 'xlsx', type: 'array'});
+                
+                // Convert to base64
+                const base64 = btoa(String.fromCharCode.apply(null, wbout));
                 const filename = '${examName.replace(/[^a-zA-Z0-9]/g, '_')}_${examCode}_Academic_Report.xlsx';
-                XLSX.writeFile(wb, filename);
+                
+                // Send data to React Native
+                if (window.ReactNativeWebView) {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                        type: 'download',
+                        format: 'excel',
+                        data: base64,
+                        filename: filename
+                    }));
+                } else {
+                    // Fallback for web testing
+                    const blob = new Blob([wbout], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                }
             } catch (error) {
                 console.error('Excel download error:', error);
                 alert('Error downloading Excel file: ' + error.message);
@@ -458,12 +588,12 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
         }
 
         function downloadAsCSV() {
+            if (!isLibraryLoaded) {
+                alert('Excel library is still loading. Please wait.');
+                return;
+            }
+
             try {
-                if (typeof XLSX === 'undefined') {
-                    alert('Excel library not loaded. Please try again.');
-                    return;
-                }
-                
                 const table = document.getElementById('academicTable');
                 if (!table) {
                     alert('Table not found');
@@ -471,35 +601,102 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
                 }
                 
                 const wb = XLSX.utils.table_to_book(table, {sheet: "Academic Report"});
+                const csvOutput = XLSX.utils.sheet_to_csv(wb.Sheets["Academic Report"]);
+                
+                // Convert to base64
+                const base64 = btoa(unescape(encodeURIComponent(csvOutput)));
                 const filename = '${examName.replace(/[^a-zA-Z0-9]/g, '_')}_${examCode}_Academic_Report.csv';
-                XLSX.writeFile(wb, filename, {bookType: 'csv'});
+                
+                // Send data to React Native
+                if (window.ReactNativeWebView) {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                        type: 'download',
+                        format: 'csv',
+                        data: base64,
+                        filename: filename
+                    }));
+                } else {
+                    // Fallback for web testing
+                    const blob = new Blob([csvOutput], {type: 'text/csv'});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                }
             } catch (error) {
                 console.error('CSV download error:', error);
                 alert('Error downloading CSV file: ' + error.message);
             }
         }
 
-        // Ensure XLSX library is loaded before enabling buttons
-        document.addEventListener('DOMContentLoaded', function() {
+        function downloadAsPDF() {
+            try {
+                const filename = '${examName.replace(/[^a-zA-Z0-9]/g, '_')}_${examCode}_Academic_Report.pdf';
+                
+                // Get current HTML content
+                const htmlContent = document.documentElement.outerHTML;
+                const base64 = btoa(unescape(encodeURIComponent(htmlContent)));
+                
+                // Send to React Native for PDF conversion
+                if (window.ReactNativeWebView) {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                        type: 'download',
+                        format: 'pdf',
+                        data: base64,
+                        filename: filename
+                    }));
+                } else {
+                    // Fallback - just print
+                    window.print();
+                }
+            } catch (error) {
+                console.error('PDF download error:', error);
+                alert('Error downloading PDF file: ' + error.message);
+            }
+        }
+
+        // Check if library is loaded
+        function checkLibrary() {
             let attempts = 0;
-            const maxAttempts = 10;
+            const maxAttempts = 20;
             
-            function checkLibrary() {
+            function check() {
                 if (typeof XLSX !== 'undefined') {
                     console.log('XLSX library loaded successfully');
+                    updateButtonStates(true);
                     return;
                 }
                 
                 attempts++;
                 if (attempts < maxAttempts) {
-                    setTimeout(checkLibrary, 500);
+                    setTimeout(check, 500);
                 } else {
                     console.error('XLSX library failed to load');
+                    document.getElementById('loadingMessage').textContent = 'Failed to load Excel library. Please refresh and try again.';
                 }
             }
             
+            check();
+        }
+
+        // Initialize when DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            updateButtonStates(false);
             checkLibrary();
         });
+
+        // Also check immediately in case DOMContentLoaded already fired
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                updateButtonStates(false);
+                checkLibrary();
+            });
+        } else {
+            updateButtonStates(false);
+            checkLibrary();
+        }
     </script>
 </body>
 </html>`;
@@ -663,6 +860,7 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
             startInLoadingState={true}
             javaScriptEnabled={true}
             domStorageEnabled={true}
+            onMessage={handleWebViewMessage}
             renderLoading={() => (
               <View style={styles.webViewLoading}>
                 <ActivityIndicator size="large" color="#3182ce" />
