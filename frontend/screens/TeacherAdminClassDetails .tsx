@@ -601,7 +601,15 @@ const renderStudentsTab = () => (
         
         <TouchableOpacity 
           style={styles.optionItem}
-          onPress={() => Alert.alert("Coming Soon", "Students academic records feature is under development.")}
+          onPress={() => {
+            // Navigate to TeacherAdminStudentAcademicSheet
+            navigation.navigate('TeacherAdminStudentAcademicSheet', {
+              classId: classDetails?._id || classId,
+              className: classDetails?.name || className,
+              studentId: '', // Empty for class-wide academic records
+              studentName: '' // Empty for class-wide academic records
+            });
+          }}
         >
           <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(237, 137, 54, 0.1)' }]}>
             <FontAwesome5 name="graduation-cap" size={20} color="#ED8936" />

@@ -10,6 +10,9 @@ router.use(auth);
 // Get students and their marks for subjects taught by the teacher
 router.get('/class/:classId/students', markController.getStudentsForScoring);
 
+// Get complete academic data for class (all subjects) - for admin/academic sheets
+router.get('/class/:classId/complete-academic', markController.getClassCompleteAcademicData);
+
 // Submit marks for a student's subject
 router.post('/class/:classId/student/:studentId/exam/:examId/subject/:subjectId', 
   markController.submitMarks);
@@ -27,6 +30,7 @@ router.get('/class/:classId/subject-report', markController.getTeacherSubjectRep
 // Get student academic report
 router.get('/student/academic-report', markController.getStudentAcademicReport);
 
-router.get('/class/:classId/exam/:examId/subject/:subjectId/performance', auth, markController.getExamPerformanceDetails);
+// Get exam performance details
+router.get('/class/:classId/exam/:examId/subject/:subjectId/performance', markController.getExamPerformanceDetails);
 
 module.exports = router;

@@ -1144,4 +1144,229 @@ const calculateGrade = (percentage) => {
   return 'F';
 };
 
+exports.getClassCompleteAcademicData = async (req, res) => {
+  try {
+    const { classId } = req.params;
+    const teacherId = req.user.id;
+
+    console.log('getClassCompleteAcademicData called:', { classId, teacherId });
+
+    // Verify teacher access (must be class admin or class teacher)
+    const authCheck = await verifyTeacherAccess(teacherId, classId);
+    if (!authCheck.authorized) {
+      return res.status(403).json({ msg: authCheck.error });
+    }
+
+    // Get all students in the class
+    const classObj = await Class.findById(classId).populate('studentIds');
+    if (!classObj || !classObj.studentIds || classObj.studentIds.length === 0) {
+      return res.json({
+        students: [],
+        classInfo: {
+          id: authCheck.classObj._id,
+          name: authCheck.classObj.name,
+          section: authCheck.classObj.section
+        },
+        teacherInfo: {
+          id: authCheck.teacher._id,
+          name: authCheck.teacher.name
+        },
+        totalStudents: 0,
+        message: 'No students found in this class'
+      });
+    }
+
+    // Get all subjects for this class - FIXED: Added better error handling and logging
+    console.log('Searching for subjects with classId:', classId);
+    const subjectDoc = await Subject.findOne({ classId: classId });
+    console.log('Subject document found:', subjectDoc);
+    
+    if (!subjectDoc || !subjectDoc.subjects || subjectDoc.subjects.length === 0) {
+      console.log('No subjects found for classId:', classId);
+      return res.json({
+        students: [],
+        classInfo: {
+          id: authCheck.classObj._id,
+          name: authCheck.classObj.name,
+          section: authCheck.classObj.section
+        },
+        teacherInfo: {
+          id: authCheck.teacher._id,
+          name: authCheck.teacher.name
+        },
+        totalStudents: 0,
+        message: 'No subjects found for this class'
+      });
+    }
+
+    // Get all exams for this class
+    const exams = await Exam.find({ classId: classId });
+    if (exams.length === 0) {
+      return res.json({
+        students: [],
+        classInfo: {
+          id: authCheck.classObj._id,
+          name: authCheck.classObj.name,
+          section: authCheck.classObj.section
+        },
+        teacherInfo: {
+          id: authCheck.teacher._id,
+          name: authCheck.teacher.name
+        },
+        totalStudents: 0,
+        message: 'No exams created for this class yet'
+      });
+    }
+
+    // Get all mark records for this class
+    const markRecords = await Mark.find({ classId })
+      .populate('studentId', 'name studentId')
+      .populate('exams.subjects.teacherId', 'name')
+      .populate('exams.subjects.scoredBy', 'name');
+
+    // Create a map of existing mark records
+    const markRecordMap = new Map();
+    markRecords.forEach(record => {
+      markRecordMap.set(record.studentId._id.toString(), record);
+    });
+
+    // Build comprehensive student data
+    const studentsData = [];
+
+    for (const studentInfo of classObj.studentIds) {
+      const studentId = studentInfo._id || studentInfo.studentId;
+      const markRecord = markRecordMap.get(studentId.toString());
+
+      const studentData = {
+        studentId: studentId,
+        studentName: studentInfo.name,
+        studentNumber: studentInfo.studentId,
+        exams: []
+      };
+
+      // Process each exam
+      exams.forEach(exam => {
+        let examData = {
+          examId: exam._id,
+          examName: exam.examName,
+          examCode: exam.examCode,
+          examDate: exam.examDate,
+          subjects: [],
+          totalMarksScored: 0,
+          totalFullMarks: 0,
+          percentage: '0',
+          isCompleted: false,
+          completedSubjects: 0,
+          totalSubjects: exam.subjects.length
+        };
+
+        let completedSubjects = 0;
+        let totalMarksScored = 0;
+        let totalFullMarks = 0;
+
+        // Process each subject in the exam
+        exam.subjects.forEach(examSubject => {
+          let subjectMarks = null;
+          let scoredBy = null;
+          let scoredAt = null;
+
+          // Check if marks exist in the mark record
+          if (markRecord) {
+            const examRecord = markRecord.exams.find(e => e.examId.toString() === exam._id.toString());
+            if (examRecord) {
+              const subjectRecord = examRecord.subjects.find(s => s.subjectId.toString() === examSubject.subjectId.toString());
+              if (subjectRecord) {
+                subjectMarks = subjectRecord.marksScored;
+                scoredBy = subjectRecord.scoredBy;
+                scoredAt = subjectRecord.scoredAt;
+              }
+            }
+          }
+
+          // FIXED: Better subject lookup with correct field name mapping
+          let subjectName = 'Unknown Subject';
+          let teacherId = null;
+          
+          try {
+            const subjectInfo = subjectDoc.subjects.find(s => 
+              s._id.toString() === examSubject.subjectId.toString()
+            );
+            
+            if (subjectInfo) {
+              // FIXED: Use 'name' field from database, not 'subjectName'  
+              subjectName = subjectInfo.name || 'Unknown Subject';
+              teacherId = subjectInfo.teacherId;
+              console.log(`Found subject: ${subjectName} for ID: ${examSubject.subjectId}`);
+            } else {
+              console.log(`Subject not found for ID: ${examSubject.subjectId} in exam: ${exam.examName}`);
+              console.log('Available subjects:', subjectDoc.subjects.map(s => ({ id: s._id.toString(), name: s.name })));
+            }
+          } catch (error) {
+            console.error('Error finding subject info:', error);
+          }
+
+          examData.subjects.push({
+            subjectId: examSubject.subjectId,
+            subjectName: subjectName, // This will be sent to frontend
+            teacherId: teacherId,
+            fullMarks: examSubject.fullMarks,
+            marksScored: subjectMarks,
+            scoredBy: scoredBy,
+            scoredAt: scoredAt
+          });
+
+          totalFullMarks += examSubject.fullMarks;
+          if (subjectMarks !== null) {
+            totalMarksScored += subjectMarks;
+            completedSubjects++;
+          }
+        });
+
+        examData.totalMarksScored = totalMarksScored;
+        examData.totalFullMarks = totalFullMarks;
+        examData.completedSubjects = completedSubjects;
+        examData.isCompleted = completedSubjects === exam.subjects.length;
+        examData.percentage = totalFullMarks > 0 ? ((totalMarksScored / totalFullMarks) * 100).toFixed(2) : '0';
+
+        studentData.exams.push(examData);
+      });
+
+      studentsData.push(studentData);
+    }
+
+    console.log('Complete academic data retrieved:', studentsData.length, 'students');
+    
+    // Add debug logging for subject names
+    if (studentsData.length > 0 && studentsData[0].exams.length > 0) {
+      console.log('Sample subject data being sent:', 
+        studentsData[0].exams[0].subjects.map(s => ({ 
+          id: s.subjectId, 
+          name: s.subjectName 
+        }))
+      );
+    }
+
+    res.json({
+      students: studentsData,
+      classInfo: {
+        id: authCheck.classObj._id,
+        name: authCheck.classObj.name,
+        section: authCheck.classObj.section
+      },
+      teacherInfo: {
+        id: authCheck.teacher._id,
+        name: authCheck.teacher.name
+      },
+      totalStudents: studentsData.length
+    });
+
+  } catch (err) {
+    console.error('Error in getClassCompleteAcademicData:', err);
+    res.status(500).json({ 
+      msg: 'Server error', 
+      error: err.message 
+    });
+  }
+};
+
 module.exports = exports;
