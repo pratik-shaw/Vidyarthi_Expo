@@ -1143,7 +1143,6 @@ const calculateGrade = (percentage) => {
   if (percentage >= 33) return 'D';
   return 'F';
 };
-
 exports.getClassCompleteAcademicData = async (req, res) => {
   try {
     const { classId } = req.params;
@@ -1157,20 +1156,28 @@ exports.getClassCompleteAcademicData = async (req, res) => {
       return res.status(403).json({ msg: authCheck.error });
     }
 
-    // Get all students in the class
-    const classObj = await Class.findById(classId).populate('studentIds');
+    // ENHANCED: Get all students in the class with complete details populated
+    const classObj = await Class.findById(classId)
+      .populate({
+        path: 'studentIds',
+        select: 'name studentId email parentContact phoneNumber address dateOfBirth' // Include all student fields
+      });
+      
     if (!classObj || !classObj.studentIds || classObj.studentIds.length === 0) {
       return res.json({
         students: [],
         classInfo: {
           id: authCheck.classObj._id,
           name: authCheck.classObj.name,
-          section: authCheck.classObj.section
+          section: authCheck.classObj.section || ''
         },
         teacherInfo: {
           id: authCheck.teacher._id,
           name: authCheck.teacher.name
         },
+        // ENHANCED: Added subjects and exams arrays for consistency
+        subjects: [],
+        exams: [],
         totalStudents: 0,
         message: 'No students found in this class'
       });
@@ -1188,12 +1195,15 @@ exports.getClassCompleteAcademicData = async (req, res) => {
         classInfo: {
           id: authCheck.classObj._id,
           name: authCheck.classObj.name,
-          section: authCheck.classObj.section
+          section: authCheck.classObj.section || ''
         },
         teacherInfo: {
           id: authCheck.teacher._id,
           name: authCheck.teacher.name
         },
+        // ENHANCED: Added subjects and exams arrays
+        subjects: [],
+        exams: [],
         totalStudents: 0,
         message: 'No subjects found for this class'
       });
@@ -1207,12 +1217,19 @@ exports.getClassCompleteAcademicData = async (req, res) => {
         classInfo: {
           id: authCheck.classObj._id,
           name: authCheck.classObj.name,
-          section: authCheck.classObj.section
+          section: authCheck.classObj.section || ''
         },
         teacherInfo: {
           id: authCheck.teacher._id,
           name: authCheck.teacher.name
         },
+        // ENHANCED: Added subjects data even when no exams exist
+        subjects: subjectDoc.subjects.map(subject => ({
+          subjectId: subject._id,
+          subjectName: subject.name || subject.subjectName || 'Unknown Subject',
+          teacherName: subject.teacherName || 'Unknown Teacher'
+        })),
+        exams: [],
         totalStudents: 0,
         message: 'No exams created for this class yet'
       });
@@ -1220,7 +1237,7 @@ exports.getClassCompleteAcademicData = async (req, res) => {
 
     // Get all mark records for this class
     const markRecords = await Mark.find({ classId })
-      .populate('studentId', 'name studentId')
+      .populate('studentId', 'name studentId email parentContact phoneNumber')
       .populate('exams.subjects.teacherId', 'name')
       .populate('exams.subjects.scoredBy', 'name');
 
@@ -1230,6 +1247,16 @@ exports.getClassCompleteAcademicData = async (req, res) => {
       markRecordMap.set(record.studentId._id.toString(), record);
     });
 
+    // ENHANCED: Helper function to calculate grade
+    const calculateGrade = (percentage) => {
+      if (percentage >= 90) return 'A+';
+      if (percentage >= 80) return 'A';
+      if (percentage >= 70) return 'B';
+      if (percentage >= 60) return 'C';
+      if (percentage >= 50) return 'D';
+      return 'F';
+    };
+
     // Build comprehensive student data
     const studentsData = [];
 
@@ -1237,10 +1264,19 @@ exports.getClassCompleteAcademicData = async (req, res) => {
       const studentId = studentInfo._id || studentInfo.studentId;
       const markRecord = markRecordMap.get(studentId.toString());
 
+      // ENHANCED: Maintain original structure while adding student details
       const studentData = {
         studentId: studentId,
         studentName: studentInfo.name,
         studentNumber: studentInfo.studentId,
+        // ENHANCED: Added additional student details
+        student: {
+          _id: studentId,
+          name: studentInfo.name || 'Unknown Student',
+          studentId: studentInfo.studentId || 'Unknown ID',
+          email: studentInfo.email || '',
+          parentContact: studentInfo.parentContact || studentInfo.phoneNumber || ''
+        },
         exams: []
       };
 
@@ -1249,8 +1285,8 @@ exports.getClassCompleteAcademicData = async (req, res) => {
         let examData = {
           examId: exam._id,
           examName: exam.examName,
-          examCode: exam.examCode,
-          examDate: exam.examDate,
+          examCode: exam.examCode || '',
+          examDate: exam.examDate || '',
           subjects: [],
           totalMarksScored: 0,
           totalFullMarks: 0,
@@ -1286,6 +1322,7 @@ exports.getClassCompleteAcademicData = async (req, res) => {
           // FIXED: Better subject lookup with correct field name mapping
           let subjectName = 'Unknown Subject';
           let teacherId = null;
+          let teacherName = 'Unknown Teacher';
           
           try {
             const subjectInfo = subjectDoc.subjects.find(s => 
@@ -1294,8 +1331,9 @@ exports.getClassCompleteAcademicData = async (req, res) => {
             
             if (subjectInfo) {
               // FIXED: Use 'name' field from database, not 'subjectName'  
-              subjectName = subjectInfo.name || 'Unknown Subject';
+              subjectName = subjectInfo.name || subjectInfo.subjectName || 'Unknown Subject';
               teacherId = subjectInfo.teacherId;
+              teacherName = subjectInfo.teacherName || 'Unknown Teacher';
               console.log(`Found subject: ${subjectName} for ID: ${examSubject.subjectId}`);
             } else {
               console.log(`Subject not found for ID: ${examSubject.subjectId} in exam: ${exam.examName}`);
@@ -1305,12 +1343,24 @@ exports.getClassCompleteAcademicData = async (req, res) => {
             console.error('Error finding subject info:', error);
           }
 
+          // ENHANCED: Calculate percentage and grade if marks exist
+          const percentage = subjectMarks !== null && examSubject.fullMarks > 0
+            ? (subjectMarks / examSubject.fullMarks) * 100
+            : null;
+
+          const grade = percentage !== null ? calculateGrade(percentage) : null;
+
           examData.subjects.push({
             subjectId: examSubject.subjectId,
             subjectName: subjectName, // This will be sent to frontend
             teacherId: teacherId,
+            // ENHANCED: Added teacherName for better frontend display
+            teacherName: teacherName,
             fullMarks: examSubject.fullMarks,
             marksScored: subjectMarks,
+            // ENHANCED: Added percentage and grade calculations
+            percentage: percentage,
+            grade: grade,
             scoredBy: scoredBy,
             scoredAt: scoredAt
           });
@@ -1328,11 +1378,83 @@ exports.getClassCompleteAcademicData = async (req, res) => {
         examData.isCompleted = completedSubjects === exam.subjects.length;
         examData.percentage = totalFullMarks > 0 ? ((totalMarksScored / totalFullMarks) * 100).toFixed(2) : '0';
 
+        // ENHANCED: Added overall exam performance metrics
+        const overallPercentage = totalFullMarks > 0 ? (totalMarksScored / totalFullMarks) * 100 : 0;
+        examData.overallPercentage = overallPercentage;
+        examData.overallGrade = calculateGrade(overallPercentage);
+        examData.totalMarks = totalMarksScored; // Alternative field name for compatibility
+
         studentData.exams.push(examData);
       });
 
+      // ENHANCED: Calculate overall statistics for the student
+      if (studentData.exams.length > 0) {
+        const totalExams = studentData.exams.length;
+        const averagePercentage = studentData.exams.reduce((sum, exam) => sum + parseFloat(exam.percentage), 0) / totalExams;
+        
+        // Find best performance
+        const bestPerformance = studentData.exams.reduce((best, exam) => 
+          parseFloat(exam.percentage) > best.percentage 
+            ? { examName: exam.examName, percentage: parseFloat(exam.percentage) }
+            : best
+        , { examName: '', percentage: 0 });
+
+        // Calculate subject performance for strongest/weakest
+        const subjectPerformances = new Map();
+        studentData.exams.forEach(exam => {
+          exam.subjects.forEach(subject => {
+            if (subject.percentage !== null) {
+              const existing = subjectPerformances.get(subject.subjectName) || { total: 0, count: 0 };
+              subjectPerformances.set(subject.subjectName, {
+                total: existing.total + subject.percentage,
+                count: existing.count + 1
+              });
+            }
+          });
+        });
+
+        let strongestSubject = 'N/A';
+        let weakestSubject = 'N/A';
+        let maxAvg = -1;
+        let minAvg = 101;
+
+        subjectPerformances.forEach((perf, subjectName) => {
+          const avg = perf.total / perf.count;
+          if (avg > maxAvg) {
+            maxAvg = avg;
+            strongestSubject = subjectName;
+          }
+          if (avg < minAvg) {
+            minAvg = avg;
+            weakestSubject = subjectName;
+          }
+        });
+
+        studentData.overallStats = {
+          totalExams,
+          averagePercentage,
+          bestPerformance,
+          strongestSubject,
+          weakestSubject
+        };
+      }
+
       studentsData.push(studentData);
     }
+
+    // ENHANCED: Prepare subjects and exams data as expected by frontend
+    const subjectsData = subjectDoc.subjects.map(subject => ({
+      subjectId: subject._id,
+      subjectName: subject.name || subject.subjectName || 'Unknown Subject',
+      teacherName: subject.teacherName || 'Unknown Teacher'
+    }));
+
+    const examsData = exams.map(exam => ({
+      examId: exam._id,
+      examName: exam.examName,
+      examCode: exam.examCode || '',
+      examDate: exam.examDate || ''
+    }));
 
     console.log('Complete academic data retrieved:', studentsData.length, 'students');
     
@@ -1346,17 +1468,21 @@ exports.getClassCompleteAcademicData = async (req, res) => {
       );
     }
 
+    // ENHANCED: Return data with both original and new structure for compatibility
     res.json({
       students: studentsData,
       classInfo: {
         id: authCheck.classObj._id,
         name: authCheck.classObj.name,
-        section: authCheck.classObj.section
+        section: authCheck.classObj.section || ''
       },
       teacherInfo: {
         id: authCheck.teacher._id,
         name: authCheck.teacher.name
       },
+      // ENHANCED: Added subjects and exams arrays for frontend compatibility
+      subjects: subjectsData,
+      exams: examsData,
       totalStudents: studentsData.length
     });
 

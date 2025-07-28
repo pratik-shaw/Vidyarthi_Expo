@@ -566,114 +566,124 @@ const renderStudentsTab = () => (
   );
 
   // Render more options tab
-  const renderMoreOptionsTab = () => (
-    <View style={styles.sectionContainer}>
-      <Text style={styles.sectionTitle}>More Options</Text>
+  // Updated renderMoreOptionsTab function for TeacherAdminClassDetailsScreen.tsx
+
+const renderMoreOptionsTab = () => (
+  <View style={styles.sectionContainer}>
+    <Text style={styles.sectionTitle}>More Options</Text>
+    
+    <View style={styles.optionsContainer}>
+      <TouchableOpacity 
+        style={styles.optionItem}
+        onPress={() => Alert.alert("Coming Soon", "Attendance sheet feature is under development.")}
+      >
+        <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(66, 153, 225, 0.1)' }]}>
+          <FontAwesome5 name="clipboard-list" size={20} color="#4299E1" />
+        </View>
+        <View style={styles.optionContent}>
+          <Text style={styles.optionTitle}>Attendance Sheet</Text>
+          <Text style={styles.optionDescription}>View and manage attendance records</Text>
+        </View>
+        <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
+      </TouchableOpacity>
       
-      <View style={styles.optionsContainer}>
-        <TouchableOpacity 
-          style={styles.optionItem}
-          onPress={() => Alert.alert("Coming Soon", "Attendance sheet feature is under development.")}
-        >
-          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(66, 153, 225, 0.1)' }]}>
-            <FontAwesome5 name="clipboard-list" size={20} color="#4299E1" />
-          </View>
-          <View style={styles.optionContent}>
-            <Text style={styles.optionTitle}>Attendance Sheet</Text>
-            <Text style={styles.optionDescription}>View and manage attendance records</Text>
-          </View>
-          <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.optionItem}
-          onPress={() => Alert.alert("Coming Soon", "Students report card feature is under development.")}
-        >
-          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(72, 187, 120, 0.1)' }]}>
-            <FontAwesome5 name="file-alt" size={20} color="#48BB78" />
-          </View>
-          <View style={styles.optionContent}>
-            <Text style={styles.optionTitle}>Students Report Card</Text>
-            <Text style={styles.optionDescription}>Generate and view report cards</Text>
-          </View>
-          <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.optionItem}
-          onPress={() => {
-            // Navigate to TeacherAdminStudentAcademicSheet
-            navigation.navigate('TeacherAdminStudentAcademicSheet', {
-              classId: classDetails?._id || classId,
-              className: classDetails?.name || className,
-              studentId: '', // Empty for class-wide academic records
-              studentName: '' // Empty for class-wide academic records
-            });
-          }}
-        >
-          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(237, 137, 54, 0.1)' }]}>
-            <FontAwesome5 name="graduation-cap" size={20} color="#ED8936" />
-          </View>
-          <View style={styles.optionContent}>
-            <Text style={styles.optionTitle}>Students Academic Records</Text>
-            <Text style={styles.optionDescription}>Subject-wise academic performance</Text>
-          </View>
-          <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-        </TouchableOpacity>
+      <TouchableOpacity 
+        style={styles.optionItem}
+        onPress={() => {
+          // Navigate to Student Report Cards
+          navigation.navigate('TeacherAdminStudentReportCard', {
+            classId: classDetails?._id || classId,
+            className: classDetails?.name || className,
+            studentId: '', // Empty for class-wide report cards
+            studentName: '' // Empty for class-wide report cards
+          });
+        }}
+      >
+        <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(72, 187, 120, 0.1)' }]}>
+          <FontAwesome5 name="file-alt" size={20} color="#48BB78" />
+        </View>
+        <View style={styles.optionContent}>
+          <Text style={styles.optionTitle}>Students Report Card</Text>
+          <Text style={styles.optionDescription}>Generate and view report cards</Text>
+        </View>
+        <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.optionItem}
+        onPress={() => {
+          // Navigate to TeacherAdminStudentAcademicSheet
+          navigation.navigate('TeacherAdminStudentAcademicSheet', {
+            classId: classDetails?._id || classId,
+            className: classDetails?.name || className,
+            studentId: '', // Empty for class-wide academic records
+            studentName: '' // Empty for class-wide academic records
+          });
+        }}
+      >
+        <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(237, 137, 54, 0.1)' }]}>
+          <FontAwesome5 name="graduation-cap" size={20} color="#ED8936" />
+        </View>
+        <View style={styles.optionContent}>
+          <Text style={styles.optionTitle}>Students Academic Records</Text>
+          <Text style={styles.optionDescription}>Subject-wise academic performance</Text>
+        </View>
+        <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
+      </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.optionItem}
-           onPress={() => navigation.navigate('TeacherAdminSubjects',{
-            classId: classDetails?._id || classId, // Use actual class ID from details or route params
-            className: classDetails?.name || className  // or whatever the class name is
-           })}
-        >
-          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(236, 72, 153, 0.1)' }]}>
-            <FontAwesome5 name="book" size={20} color="#EC4899" />
-          </View>
-          <View style={styles.optionContent}>
-            <Text style={styles.optionTitle}>Subjects & Teachers</Text>
-            <Text style={styles.optionDescription}>Manage subjects and teacher assignment</Text>
-          </View>
-          <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-        </TouchableOpacity>
+      <TouchableOpacity 
+        style={styles.optionItem}
+         onPress={() => navigation.navigate('TeacherAdminSubjects',{
+          classId: classDetails?._id || classId, // Use actual class ID from details or route params
+          className: classDetails?.name || className  // or whatever the class name is
+         })}
+      >
+        <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(236, 72, 153, 0.1)' }]}>
+          <FontAwesome5 name="book" size={20} color="#EC4899" />
+        </View>
+        <View style={styles.optionContent}>
+          <Text style={styles.optionTitle}>Subjects & Teachers</Text>
+          <Text style={styles.optionDescription}>Manage subjects and teacher assignment</Text>
+        </View>
+        <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
+      </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.optionItem}
-          onPress={() => navigation.navigate('TeacherAdminExams', {
-            classId: classId, // Use actual class ID from details or route params
-            className: className  // or whatever the class name is
-          })}
-        >
-          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(245, 101, 101, 0.1)' }]}>
-            <FontAwesome5 name="book-open" size={20} color="#F56565" />
-          </View>
-          <View style={styles.optionContent}>
-            <Text style={styles.optionTitle}>Examinations & Assessments</Text>
-            <Text style={styles.optionDescription}>Manage examinations and school assessments</Text>
-          </View>
-          <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-        </TouchableOpacity>
+      <TouchableOpacity 
+        style={styles.optionItem}
+        onPress={() => navigation.navigate('TeacherAdminExams', {
+          classId: classId, // Use actual class ID from details or route params
+          className: className  // or whatever the class name is
+        })}
+      >
+        <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(245, 101, 101, 0.1)' }]}>
+          <FontAwesome5 name="book-open" size={20} color="#F56565" />
+        </View>
+        <View style={styles.optionContent}>
+          <Text style={styles.optionTitle}>Examinations & Assessments</Text>
+          <Text style={styles.optionDescription}>Manage examinations and school assessments</Text>
+        </View>
+        <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
+      </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.optionItem}
-          onPress={() => navigation.navigate('TeacherScoring', {
-            classId: classId, // Use actual class ID from details or route params
-            className: className  // or whatever the class name is
-          })}
-        >
-          <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(99, 102, 241, 0.1)' }]}>
-            <FontAwesome5 name="poll" size={20} color="#6366F1" />
-          </View>
-          <View style={styles.optionContent}>
-            <Text style={styles.optionTitle}>Add Marks</Text>
-            <Text style={styles.optionDescription}>Add marks as a subject teacher to your own class students</Text>
-          </View>
-          <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity 
+        style={styles.optionItem}
+        onPress={() => navigation.navigate('TeacherScoring', {
+          classId: classId, // Use actual class ID from details or route params
+          className: className  // or whatever the class name is
+        })}
+      >
+        <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(99, 102, 241, 0.1)' }]}>
+          <FontAwesome5 name="poll" size={20} color="#6366F1" />
+        </View>
+        <View style={styles.optionContent}>
+          <Text style={styles.optionTitle}>Add Marks</Text>
+          <Text style={styles.optionDescription}>Add marks as a subject teacher to your own class students</Text>
+        </View>
+        <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
+      </TouchableOpacity>
     </View>
-  );
+  </View>
+);
 
   // Show loading indicator
   if (loading && !refreshing) {
