@@ -51,6 +51,7 @@ import TeacherProfileScreen from './screens/TeacherProfileScreen';
 import AuthController from './screens/AuthController';
 import TeacherAdminStudentAcademicSheetScreen from './screens/TeacherAdminStudentAcademicSheetScreen';
 import TeacherAdminStudentReportCardScreen from './screens/TeacherAdminStudentReportCardScreen';
+import TeacherAdminTakeAttendanceScreen from './screens/TeacherAdminTakeAttendanceScreen';
 
 
 export type RootStackParamList = {
@@ -134,6 +135,10 @@ export type RootStackParamList = {
     classId: string;
     className: string;
   };
+  TeacherAdminTakeAttendance: {
+    classId: string;
+    className: string;
+  };
   
 };
 
@@ -191,6 +196,7 @@ export default function App() {
         <Stack.Screen name="TeacherProfile" component={TeacherProfileScreen} />
         <Stack.Screen name="TeacherAdminStudentAcademicSheet" component={TeacherAdminStudentAcademicSheetScreen} />
         <Stack.Screen name="TeacherAdminStudentReportCard" component={TeacherAdminStudentReportCardScreen} />
+        <Stack.Screen name="TeacherAdminTakeAttendance" component={TeacherAdminTakeAttendanceScreen} />
         
         {/* Add any other screens you need here */}
       </Stack.Navigator>

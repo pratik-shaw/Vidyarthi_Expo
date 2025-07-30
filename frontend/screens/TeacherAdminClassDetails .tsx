@@ -320,8 +320,10 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
   const handleQuickAction = (actionId: string) => {
   switch (actionId) {
     case 'take_attendance':
-      Alert.alert("Coming Soon", "Take attendance feature is under development.");
-      break;
+navigation.navigate('TeacherAdminTakeAttendance', {
+      classId: classId,
+      className: className,
+    });      break;
     case 'view_reports':
   // If showing reports for all students in class
   navigation.navigate('TeacherAdminStudentReport', {

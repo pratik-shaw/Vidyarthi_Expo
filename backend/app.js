@@ -17,6 +17,7 @@ const eventRoutes = require('./routes/eventRoutes'); // Uncomment if using event
 const materialRoutes = require('./routes/materialRoutes'); // Uncomment if using materials
 const submissionRoutes = require('./routes/submissionRoutes'); // NEW ROUTE USAGE
 const queryRoutes = require('./routes/queryRoutes'); // Uncomment if using queries
+const attendanceRoutes = require('./routes/attendanceRoutes'); // NEW ROUTE USAGE
 // Initialize express app
 const app = express();
 
@@ -40,6 +41,7 @@ app.use('/api/events', eventRoutes); // Uncomment if using events
 app.use('/api/materials', materialRoutes); // Uncomment if using materials
 app.use('/api/submissions', submissionRoutes); // NEW ROUTE USAGE
 app.use('/api/queries', queryRoutes); // Uncomment if using queries
+app.use('/api/attendance', attendanceRoutes); // NEW ROUTE USAGE
 
 // Simple test route
 app.get('/', (req, res) => {
