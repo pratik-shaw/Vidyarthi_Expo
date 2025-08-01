@@ -15,6 +15,7 @@ import {
   Animated,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../App';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Feather, FontAwesome5, Ionicons, MaterialIcons } from '@expo/vector-icons';
@@ -89,6 +90,60 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
 
+  // Custom hook to handle unsaved changes - replaces usePreventRemove
+  const handleBackPress = useCallback(() => {
+    if (hasUnsavedChanges) {
+      Alert.alert(
+        'Unsaved Changes',
+        'You have unsaved changes. Are you sure you want to go back?',
+        [
+          { text: 'Stay', style: 'cancel', onPress: () => {} },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              setHasUnsavedChanges(false);
+              navigation.goBack();
+            },
+          },
+        ]
+      );
+      return true; // Prevent default back action
+    }
+    return false; // Allow default back action
+  }, [hasUnsavedChanges, navigation]);
+
+  // Use focus effect to handle back button
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = navigation.addListener('beforeRemove', (e) => {
+        if (!hasUnsavedChanges) {
+          return; // Allow default behavior
+        }
+
+        e.preventDefault(); // Prevent default behavior
+
+        Alert.alert(
+          'Unsaved Changes',
+          'You have unsaved changes. Are you sure you want to go back?',
+          [
+            { text: 'Stay', style: 'cancel', onPress: () => {} },
+            {
+              text: 'Discard',
+              style: 'destructive',
+              onPress: () => {
+                setHasUnsavedChanges(false);
+                navigation.dispatch(e.data.action);
+              },
+            },
+          ]
+        );
+      });
+
+      return subscription;
+    }, [navigation, hasUnsavedChanges])
+  );
+
   // Set header
   React.useLayoutEffect(() => {
     navigation.setOptions({
@@ -100,21 +155,22 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
       headerTintColor: '#2D3748',
       headerShadowVisible: false,
       headerBackTitle: 'Back',
+      headerBackButtonMenuEnabled: false, // Disable native back button menu
       headerRight: () => (
-  <TouchableOpacity
-    style={styles.headerButton}
-    onPress={handleSubmitAttendance}
-    disabled={submitting || !hasUnsavedChanges}
-  >
-    {submitting ? (
-      <ActivityIndicator size="small" color="#FFFFFF" />
-    ) : (
-      <Text style={styles.headerButtonText}>
-        {existingAttendance ? 'Update' : 'Submit'}
-      </Text>
-    )}
-  </TouchableOpacity>
-),
+        <TouchableOpacity
+          style={styles.headerButton}
+          onPress={handleSubmitAttendance}
+          disabled={submitting || !hasUnsavedChanges}
+        >
+          {submitting ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.headerButtonText}>
+              {existingAttendance ? 'Update' : 'Submit'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      ),
     });
   }, [navigation, submitting, attendanceRecords, hasUnsavedChanges, existingAttendance]);
 
@@ -483,36 +539,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
       ]
     );
   };
-
-  // Handle back button with unsaved changes warning
-  const handleBackPress = () => {
-    if (hasUnsavedChanges) {
-      Alert.alert(
-        'Unsaved Changes',
-        'You have unsaved changes. Are you sure you want to go back?',
-        [
-          { text: 'Stay', style: 'cancel' },
-          { text: 'Discard', onPress: () => navigation.goBack() }
-        ]
-      );
-    } else {
-      navigation.goBack();
-    }
-  };
-
-  // Override back button behavior
-  React.useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
-      if (!hasUnsavedChanges) {
-        return;
-      }
-
-      e.preventDefault();
-      handleBackPress();
-    });
-
-    return unsubscribe;
-  }, [navigation, hasUnsavedChanges]);
 
   // Filter students based on search and status
   const getFilteredStudents = () => {

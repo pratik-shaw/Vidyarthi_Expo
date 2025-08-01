@@ -25,4 +25,7 @@ router.get('/class/:classId/history', attendanceController.getAttendanceHistory)
 // Delete attendance record
 router.delete('/class/:classId/attendance/:attendanceId', attendanceController.deleteAttendance);
 
+router.get('/class/:classId/summary', attendanceController.getAttendanceSummary);
+
+
 module.exports = router;

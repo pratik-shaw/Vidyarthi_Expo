@@ -577,8 +577,13 @@ const renderMoreOptionsTab = () => (
     <View style={styles.optionsContainer}>
       <TouchableOpacity 
         style={styles.optionItem}
-        onPress={() => Alert.alert("Coming Soon", "Attendance sheet feature is under development.")}
-      >
+        onPress={() => {
+          // Navigate to TeacherAdminStudentAcademicSheet
+          navigation.navigate('TeacherAttendanceSheet', {
+            classId: classDetails?._id || classId,
+            className: classDetails?.name || className,
+          });
+        }}      >
         <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(66, 153, 225, 0.1)' }]}>
           <FontAwesome5 name="clipboard-list" size={20} color="#4299E1" />
         </View>

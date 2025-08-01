@@ -428,3 +428,197 @@ exports.deleteAttendance = async (req, res) => {
     });
   }
 };
+
+exports.getAttendanceSummary = async (req, res) => {
+  try {
+    const { classId } = req.params;
+    const { 
+      startDate, 
+      endDate, 
+      sortBy = 'date', 
+      sortOrder = 'desc',
+      page = 1, 
+      limit = 20 
+    } = req.query;
+
+    console.log('getAttendanceSummary called:', { 
+      classId, 
+      startDate, 
+      endDate, 
+      sortBy, 
+      sortOrder,
+      userId: req.user.id 
+    });
+
+    // Verify teacher is class admin for this class
+    const authCheck = await verifyClassAdmin(req.user.id, classId);
+    if (!authCheck.authorized) {
+      return res.status(403).json({ msg: authCheck.error });
+    }
+
+    const { teacher, classObj } = authCheck;
+
+    // Build date filter query
+    const query = { 
+      classId, 
+      schoolId: teacher.schoolId 
+    };
+
+    // Apply date range filter if provided
+    if (startDate && endDate) {
+      query.date = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    } else if (startDate) {
+      query.date = { $gte: new Date(startDate) };
+    } else if (endDate) {
+      query.date = { $lte: new Date(endDate) };
+    }
+
+    // Build sort object
+    const sortOptions = {};
+    if (sortBy === 'date') {
+      sortOptions.date = sortOrder === 'asc' ? 1 : -1;
+    } else if (sortBy === 'percentage') {
+      // For percentage sorting, we'll sort after calculation
+      sortOptions.date = -1; // Default to date desc for now
+    } else if (sortBy === 'present') {
+      sortOptions.date = -1; // Default to date desc
+    } else {
+      sortOptions.date = -1; // Default sort
+    }
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Get attendance records with summary data
+    const [attendanceRecords, totalCount, classStudents] = await Promise.all([
+      Attendance.find(query)
+        .select('date dateString totalStudents records createdAt updatedAt')
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(parseInt(limit)),
+      Attendance.countDocuments(query),
+      Student.countDocuments({ classId, schoolId: teacher.schoolId })
+    ]);
+
+    // Process records to create summary statistics
+    const summaryData = attendanceRecords.map(record => {
+      const presentCount = record.records.filter(r => r.status === 'present').length;
+      const absentCount = record.records.filter(r => r.status === 'absent').length;
+      const lateCount = record.records.filter(r => r.status === 'late').length;
+      const excusedCount = record.records.filter(r => r.status === 'excused').length;
+      
+      const attendancePercentage = record.totalStudents > 0 
+        ? Math.round((presentCount / record.totalStudents) * 100) 
+        : 0;
+
+      return {
+        id: record._id,
+        date: record.dateString,
+        fullDate: record.date,
+        summary: {
+          totalStudents: record.totalStudents,
+          totalEnrolled: classStudents, // Total students in class
+          present: presentCount,
+          absent: absentCount,
+          late: lateCount,
+          excused: excusedCount,
+          attendancePercentage,
+          attendanceRate: `${presentCount}/${record.totalStudents}`
+        },
+        timestamps: {
+          takenAt: record.createdAt,
+          lastUpdated: record.updatedAt
+        }
+      };
+    });
+
+    // Apply custom sorting if needed
+    if (sortBy === 'percentage') {
+      summaryData.sort((a, b) => {
+        return sortOrder === 'asc' 
+          ? a.summary.attendancePercentage - b.summary.attendancePercentage
+          : b.summary.attendancePercentage - a.summary.attendancePercentage;
+      });
+    } else if (sortBy === 'present') {
+      summaryData.sort((a, b) => {
+        return sortOrder === 'asc' 
+          ? a.summary.present - b.summary.present
+          : b.summary.present - a.summary.present;
+      });
+    }
+
+    // Calculate overall statistics for the filtered period
+    const overallStats = summaryData.reduce((acc, curr) => {
+      acc.totalDays += 1;
+      acc.totalPresent += curr.summary.present;
+      acc.totalAbsent += curr.summary.absent;
+      acc.totalLate += curr.summary.late;
+      acc.totalExcused += curr.summary.excused;
+      acc.totalPossibleAttendance += curr.summary.totalStudents;
+      
+      return acc;
+    }, {
+      totalDays: 0,
+      totalPresent: 0,
+      totalAbsent: 0,
+      totalLate: 0,
+      totalExcused: 0,
+      totalPossibleAttendance: 0
+    });
+
+    // Calculate overall attendance percentage
+    const overallPercentage = overallStats.totalPossibleAttendance > 0 
+      ? Math.round((overallStats.totalPresent / overallStats.totalPossibleAttendance) * 100)
+      : 0;
+
+    // Get date range info
+    const dateRange = summaryData.length > 0 ? {
+      earliest: summaryData[summaryData.length - 1]?.date,
+      latest: summaryData[0]?.date,
+      totalDays: overallStats.totalDays
+    } : null;
+
+    res.json({
+      success: true,
+      summary: summaryData,
+      overallStats: {
+        ...overallStats,
+        overallPercentage,
+        averagePercentage: summaryData.length > 0 
+          ? Math.round(summaryData.reduce((sum, item) => sum + item.summary.attendancePercentage, 0) / summaryData.length)
+          : 0
+      },
+      dateRange,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalCount / parseInt(limit)),
+        totalRecords: totalCount,
+        hasMore: skip + summaryData.length < totalCount,
+        limit: parseInt(limit)
+      },
+      classInfo: {
+        id: classObj._id,
+        name: classObj.name,
+        section: classObj.section,
+        totalEnrolledStudents: classStudents
+      },
+      filters: {
+        startDate,
+        endDate,
+        sortBy,
+        sortOrder
+      }
+    });
+
+  } catch (err) {
+    console.error('Error in getAttendanceSummary:', err);
+    res.status(500).json({ 
+      success: false,
+      msg: 'Server error while fetching attendance summary', 
+      error: err.message 
+    });
+  }
+};
