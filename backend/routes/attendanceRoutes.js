@@ -27,5 +27,10 @@ router.delete('/class/:classId/attendance/:attendanceId', attendanceController.d
 
 router.get('/class/:classId/summary', attendanceController.getAttendanceSummary);
 
+// FIXED: Add route for student's own stats (without studentId parameter)
+router.get('/student/stats', attendanceController.getStudentAttendanceStats);
+
+// Keep the original route for teachers to view specific student stats
+router.get('/student/:studentId/stats', attendanceController.getStudentAttendanceStats);
 
 module.exports = router;

@@ -416,14 +416,32 @@ const StudentHomeScreen: React.FC = () => {
   };
 
   // Generate stats data from academic data
-  const generateStatsFromAcademicData = (
+  // Update this function signature and logic
+const generateStatsFromAcademicData = (
   academicData: { hasData: any; summary: { overallGrade: any; overallPercentage: any; }; }, 
-  submissionData: SubmissionData | null = null
+  submissionData: SubmissionData | null = null,
+  attendanceData: any = null // Add attendance parameter
 ) => {
-  const stats = [
-    // Keep attendance as mock for now
-    { title: "Attendance", value: "92%", icon: "calendar-check", color: PRIMARY_COLOR }
-  ];
+  const stats = [];
+
+  // Add attendance stat with real data or fallback
+  if (attendanceData && attendanceData.success && attendanceData.overallStats) {
+    const { attendancePercentage } = attendanceData.overallStats;
+    stats.push({
+      title: "Attendance", 
+      value: `${attendancePercentage}%`, 
+      icon: "calendar-check", 
+      color: PRIMARY_COLOR
+    });
+  } else {
+    // Fallback attendance if no data
+    stats.push({
+      title: "Attendance", 
+      value: "N/A", 
+      icon: "calendar-check", 
+      color: PRIMARY_COLOR
+    });
+  }
 
   // Add submissions stat with real data
   if (submissionData && submissionData.submissions) {
@@ -492,9 +510,34 @@ const fetchSubmissionData = async () => {
   }
 };
 
+// Add this function in StudentHomeScreen.tsx after fetchSubmissionData
+const fetchAttendanceData = async () => {
+  try {
+    console.log('Fetching attendance data...');
+    const response = await apiClient.get('/api/attendance/student/stats'); // Note: no studentId needed as it's from token
+    
+    if (response.data && response.data.success) {
+      console.log('Attendance data fetched successfully:', response.data);
+      return response.data;
+    }
+  } catch (error) {
+    console.error('Error fetching attendance data:', error);
+    
+    // If it's a 404 or the endpoint doesn't exist, return null
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      console.log('Attendance endpoint not found');
+      return null;
+    }
+    
+    // For other errors, throw to be handled by parent function
+    throw error;
+  }
+};
+
 
   // Fetch all necessary student data
-  const fetchStudentData = async () => {
+  // Update the fetchStudentData function
+const fetchStudentData = async () => {
   if (!isConnected) {
     setError("You're offline. Please check your internet connection.");
     setIsLoading(false);
@@ -521,7 +564,6 @@ const fetchSubmissionData = async () => {
       fetchedAcademicData = await fetchAcademicData();
     } catch (academicError) {
       console.log('Academic data fetch failed, using defaults');
-      // Don't throw the error, just continue with defaults
     }
     
     // Try to fetch submission data from backend
@@ -530,11 +572,22 @@ const fetchSubmissionData = async () => {
       fetchedSubmissionData = await fetchSubmissionData();
     } catch (submissionError) {
       console.log('Submission data fetch failed, using defaults');
-      // Don't throw the error, just continue with defaults
     }
     
-    // Generate stats based on academic and submission data (or defaults)
-    const generatedStats = generateStatsFromAcademicData(fetchedAcademicData, fetchedSubmissionData);
+    // Try to fetch attendance data from backend
+    let fetchedAttendanceData = null;
+    try {
+      fetchedAttendanceData = await fetchAttendanceData();
+    } catch (attendanceError) {
+      console.log('Attendance data fetch failed, using defaults');
+    }
+    
+    // Generate stats based on academic, submission, and attendance data (or defaults)
+    const generatedStats = generateStatsFromAcademicData(
+      fetchedAcademicData, 
+      fetchedSubmissionData, 
+      fetchedAttendanceData
+    );
     setStatsData(generatedStats);
     
     // Try to fetch calendar data from backend
@@ -542,7 +595,6 @@ const fetchSubmissionData = async () => {
       await fetchCalendarData();
     } catch (calendarError) {
       console.log('Calendar data fetch failed, using defaults');
-      // Don't throw the error, just continue with defaults
     }
     
     // For now, since the API endpoints are not ready, just show some notifications

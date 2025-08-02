@@ -622,3 +622,470 @@ exports.getAttendanceSummary = async (req, res) => {
     });
   }
 };
+
+// Updated getStudentAttendanceStats function in attendanceController.js
+exports.getStudentAttendanceStats = async (req, res) => {
+  try {
+    // FIXED: Get studentId from params OR from authenticated user
+    let { studentId } = req.params;
+    
+    // If no studentId in params, use the authenticated user's ID (for student's own stats)
+    if (!studentId) {
+      studentId = req.user.id;
+    }
+    
+    const { 
+      startDate, 
+      endDate, 
+      timeframe = 'all' // 'week', 'month', 'semester', 'year', 'all'
+    } = req.query;
+
+    console.log('getStudentAttendanceStats called:', { 
+      studentId, 
+      startDate, 
+      endDate, 
+      timeframe,
+      requesterId: req.user.id,
+      requesterRole: req.user.role 
+    });
+
+    // Authorization check - students can only view their own stats, teachers can view any student's stats
+    if (req.user.role === 'student' && req.user.id !== studentId) {
+      return res.status(403).json({ msg: 'Not authorized to view this student\'s attendance' });
+    }
+
+    // Find the student
+    const student = await Student.findById(studentId)
+      .populate('classId', 'name section')
+      .populate('schoolId', 'name code');
+
+    if (!student) {
+      return res.status(404).json({ msg: 'Student not found' });
+    }
+
+    // If teacher is requesting, verify they have access to this student's class
+    if (req.user.role === 'teacher') {
+      const teacher = await Teacher.findById(req.user.id);
+      if (!teacher) {
+        return res.status(404).json({ msg: 'Teacher not found' });
+      }
+
+      // Check if teacher is admin of the student's class or teaches the student
+      const hasAccess = student.classId && (
+        (teacher.adminClassId && teacher.adminClassId.toString() === student.classId._id.toString()) ||
+        (teacher.classIds && teacher.classIds.some(classId => classId.toString() === student.classId._id.toString()))
+      );
+
+      if (!hasAccess) {
+        return res.status(403).json({ msg: 'Not authorized to view this student\'s attendance' });
+      }
+    }
+
+    // Check if student has a class assigned
+    if (!student.classId) {
+      return res.status(404).json({ 
+        msg: 'Student is not assigned to any class',
+        studentInfo: {
+          id: student._id,
+          name: student.name,
+          email: student.email
+        }
+      });
+    }
+
+    // Build date range query based on timeframe or custom dates
+    let dateQuery = {};
+    const now = new Date();
+    
+    if (startDate && endDate) {
+      dateQuery = {
+        date: {
+          $gte: new Date(startDate),
+          $lte: new Date(endDate)
+        }
+      };
+    } else {
+      switch (timeframe) {
+        case 'week':
+          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          dateQuery = { date: { $gte: weekAgo, $lte: now } };
+          break;
+        case 'month':
+          const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+          dateQuery = { date: { $gte: monthAgo, $lte: now } };
+          break;
+        case 'semester':
+          const semesterAgo = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+          dateQuery = { date: { $gte: semesterAgo, $lte: now } };
+          break;
+        case 'year':
+          const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+          dateQuery = { date: { $gte: yearAgo, $lte: now } };
+          break;
+        case 'all':
+        default:
+          // No date filter - get all records
+          break;
+      }
+    }
+
+    // Find all attendance records for the student's class within the date range
+    const query = {
+      classId: student.classId._id,
+      schoolId: student.schoolId._id,
+      ...dateQuery
+    };
+
+    const attendanceRecords = await Attendance.find(query)
+      .select('date dateString records totalStudents')
+      .sort({ date: 1 }); // Sort by date ascending for trend analysis
+
+    // Filter records to get only this student's attendance
+    const studentAttendanceData = [];
+    const monthlyStats = {};
+    const weeklyStats = {};
+    
+    let totalDays = 0;
+    let presentDays = 0;
+    let absentDays = 0;
+    let lateDays = 0;
+    let excusedDays = 0;
+
+    attendanceRecords.forEach(record => {
+      const studentRecord = record.records.find(r => r.studentId.toString() === studentId);
+      
+      if (studentRecord) {
+        totalDays++;
+        const recordDate = new Date(record.date);
+        const monthKey = `${recordDate.getFullYear()}-${String(recordDate.getMonth() + 1).padStart(2, '0')}`;
+        const weekKey = getWeekKey(recordDate);
+
+        // Initialize monthly stats if needed
+        if (!monthlyStats[monthKey]) {
+          monthlyStats[monthKey] = {
+            month: recordDate.toLocaleString('default', { month: 'long', year: 'numeric' }),
+            total: 0,
+            present: 0,
+            absent: 0,
+            late: 0,
+            excused: 0
+          };
+        }
+
+        // Initialize weekly stats if needed
+        if (!weeklyStats[weekKey]) {
+          weeklyStats[weekKey] = {
+            week: `Week of ${recordDate.toDateString()}`,
+            total: 0,
+            present: 0,
+            absent: 0,
+            late: 0,
+            excused: 0
+          };
+        }
+
+        // Count attendance by status
+        switch (studentRecord.status) {
+          case 'present':
+            presentDays++;
+            monthlyStats[monthKey].present++;
+            weeklyStats[weekKey].present++;
+            break;
+          case 'absent':
+            absentDays++;
+            monthlyStats[monthKey].absent++;
+            weeklyStats[weekKey].absent++;
+            break;
+          case 'late':
+            lateDays++;
+            monthlyStats[monthKey].late++;
+            weeklyStats[weekKey].late++;
+            break;
+          case 'excused':
+            excusedDays++;
+            monthlyStats[monthKey].excused++;
+            weeklyStats[weekKey].excused++;
+            break;
+        }
+
+        monthlyStats[monthKey].total++;
+        weeklyStats[weekKey].total++;
+
+        // Store individual record for detailed view
+        studentAttendanceData.push({
+          date: record.dateString,
+          fullDate: record.date,
+          status: studentRecord.status,
+          remarks: studentRecord.remarks || '',
+          classSize: record.totalStudents
+        });
+      }
+    });
+
+    // Calculate percentages and statistics
+    const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
+    const latePercentage = totalDays > 0 ? Math.round((lateDays / totalDays) * 100) : 0;
+    const absentPercentage = totalDays > 0 ? Math.round((absentDays / totalDays) * 100) : 0;
+    
+    // Calculate monthly percentages
+    Object.keys(monthlyStats).forEach(month => {
+      const stats = monthlyStats[month];
+      stats.attendancePercentage = stats.total > 0 ? Math.round((stats.present / stats.total) * 100) : 0;
+      stats.absentPercentage = stats.total > 0 ? Math.round((stats.absent / stats.total) * 100) : 0;
+      stats.latePercentage = stats.total > 0 ? Math.round((stats.late / stats.total) * 100) : 0;
+    });
+
+    // Calculate weekly percentages
+    Object.keys(weeklyStats).forEach(week => {
+      const stats = weeklyStats[week];
+      stats.attendancePercentage = stats.total > 0 ? Math.round((stats.present / stats.total) * 100) : 0;
+      stats.absentPercentage = stats.total > 0 ? Math.round((stats.absent / stats.total) * 100) : 0;
+      stats.latePercentage = stats.total > 0 ? Math.round((stats.late / stats.total) * 100) : 0;
+    });
+
+    // Calculate streaks
+    const { currentStreak, longestPresentStreak, longestAbsentStreak } = calculateStreaks(studentAttendanceData);
+
+    // Get recent attendance pattern (last 10 days)
+    const recentAttendance = studentAttendanceData.slice(-10);
+
+    // Calculate trends
+    const trends = calculateTrends(monthlyStats);
+
+    // Get date range info
+    const dateRangeInfo = studentAttendanceData.length > 0 ? {
+      startDate: studentAttendanceData[0].date,
+      endDate: studentAttendanceData[studentAttendanceData.length - 1].date,
+      totalDaysRecorded: totalDays
+    } : null;
+
+    // Performance insights
+    const insights = generateInsights({
+      attendancePercentage,
+      absentPercentage,
+      latePercentage,
+      currentStreak,
+      longestPresentStreak,
+      trends,
+      totalDays
+    });
+
+    res.json({
+      success: true,
+      studentInfo: {
+        id: student._id,
+        name: student.name,
+        email: student.email,
+        studentId: student.studentId,
+        className: student.classId.name,
+        section: student.classId.section,
+        schoolName: student.schoolId.name
+      },
+      overallStats: {
+        totalDaysRecorded: totalDays,
+        presentDays,
+        absentDays,
+        lateDays,
+        excusedDays,
+        attendancePercentage,
+        absentPercentage,
+        latePercentage,
+        punctualityScore: totalDays > 0 ? Math.round(((presentDays + excusedDays) / totalDays) * 100) : 0
+      },
+      streaks: {
+        currentStreak,
+        longestPresentStreak,
+        longestAbsentStreak
+      },
+      monthlyBreakdown: Object.values(monthlyStats).sort((a, b) => new Date(a.month) - new Date(b.month)),
+      weeklyBreakdown: Object.values(weeklyStats).slice(-8), // Last 8 weeks
+      recentAttendance,
+      trends,
+      insights,
+      dateRange: dateRangeInfo,
+      filters: {
+        timeframe,
+        startDate: startDate || null,
+        endDate: endDate || null
+      }
+    });
+
+  } catch (err) {
+    console.error('Error in getStudentAttendanceStats:', err);
+    res.status(500).json({ 
+      success: false,
+      msg: 'Server error while fetching student attendance statistics', 
+      error: err.message 
+    });
+  }
+};
+
+// Helper functions remain the same
+function getWeekKey(date) {
+  const startOfWeek = new Date(date);
+  startOfWeek.setDate(date.getDate() - date.getDay());
+  return `${startOfWeek.getFullYear()}-W${Math.ceil((startOfWeek.getDate()) / 7)}`;
+}
+
+function calculateStreaks(attendanceData) {
+  if (attendanceData.length === 0) {
+    return { currentStreak: { type: 'none', count: 0 }, longestPresentStreak: 0, longestAbsentStreak: 0 };
+  }
+
+  let currentStreak = { type: 'none', count: 0 };
+  let longestPresentStreak = 0;
+  let longestAbsentStreak = 0;
+  
+  let currentPresentStreak = 0;
+  let currentAbsentStreak = 0;
+
+  // Calculate from most recent backwards for current streak
+  for (let i = attendanceData.length - 1; i >= 0; i--) {
+    const status = attendanceData[i].status;
+    
+    if (i === attendanceData.length - 1) {
+      // Set initial current streak
+      if (status === 'present') {
+        currentStreak = { type: 'present', count: 1 };
+      } else if (status === 'absent') {
+        currentStreak = { type: 'absent', count: 1 };
+      } else if (status === 'late') {
+        currentStreak = { type: 'late', count: 1 };
+      }
+    } else {
+      // Continue or break streak
+      if (status === currentStreak.type) {
+        currentStreak.count++;
+      } else {
+        break;
+      }
+    }
+  }
+
+  // Calculate longest streaks
+  for (let i = 0; i < attendanceData.length; i++) {
+    const status = attendanceData[i].status;
+    
+    if (status === 'present') {
+      currentPresentStreak++;
+      currentAbsentStreak = 0;
+    } else if (status === 'absent') {
+      currentAbsentStreak++;
+      currentPresentStreak = 0;
+    } else {
+      // Late or excused breaks both streaks
+      if (currentPresentStreak > longestPresentStreak) {
+        longestPresentStreak = currentPresentStreak;
+      }
+      if (currentAbsentStreak > longestAbsentStreak) {
+        longestAbsentStreak = currentAbsentStreak;
+      }
+      currentPresentStreak = 0;
+      currentAbsentStreak = 0;
+    }
+  }
+
+  // Check final streaks
+  if (currentPresentStreak > longestPresentStreak) {
+    longestPresentStreak = currentPresentStreak;
+  }
+  if (currentAbsentStreak > longestAbsentStreak) {
+    longestAbsentStreak = currentAbsentStreak;
+  }
+
+  return { currentStreak, longestPresentStreak, longestAbsentStreak };
+}
+
+function calculateTrends(monthlyStats) {
+  const months = Object.values(monthlyStats).sort((a, b) => new Date(a.month) - new Date(b.month));
+  
+  if (months.length < 2) {
+    return { trend: 'insufficient_data', change: 0 };
+  }
+
+  const recentMonth = months[months.length - 1];
+  const previousMonth = months[months.length - 2];
+
+  const change = recentMonth.attendancePercentage - previousMonth.attendancePercentage;
+  
+  let trend = 'stable';
+  if (change > 5) trend = 'improving';
+  else if (change < -5) trend = 'declining';
+
+  return { trend, change: Math.round(change) };
+}
+
+function generateInsights({ attendancePercentage, absentPercentage, latePercentage, currentStreak, longestPresentStreak, trends, totalDays }) {
+  const insights = [];
+
+  // Overall performance insights
+  if (attendancePercentage >= 90) {
+    insights.push({
+      type: 'positive',
+      title: 'Excellent Attendance',
+      message: `You have maintained ${attendancePercentage}% attendance - keep up the great work!`
+    });
+  } else if (attendancePercentage >= 75) {
+    insights.push({
+      type: 'neutral',
+      title: 'Good Attendance',
+      message: `Your ${attendancePercentage}% attendance is good, but there's room for improvement.`
+    });
+  } else {
+    insights.push({
+      type: 'warning',
+      title: 'Attendance Needs Attention',
+      message: `Your ${attendancePercentage}% attendance is below the recommended level. Consider improving your attendance.`
+    });
+  }
+
+  // Streak insights
+  if (currentStreak.type === 'present' && currentStreak.count >= 5) {
+    insights.push({
+      type: 'positive',
+      title: 'Great Streak!',
+      message: `You're on a ${currentStreak.count}-day present streak. Keep it going!`
+    });
+  } else if (currentStreak.type === 'absent' && currentStreak.count >= 3) {
+    insights.push({
+      type: 'warning',
+      title: 'Absence Pattern',
+      message: `You've been absent for ${currentStreak.count} consecutive days. Please ensure regular attendance.`
+    });
+  }
+
+  // Punctuality insights
+  if (latePercentage > 10) {
+    insights.push({
+      type: 'suggestion',
+      title: 'Punctuality Reminder',
+      message: `You've been late ${latePercentage}% of the time. Try to arrive on time for better academic performance.`
+    });
+  }
+
+  // Trend insights
+  if (trends.trend === 'improving') {
+    insights.push({
+      type: 'positive',
+      title: 'Improving Trend',
+      message: `Your attendance has improved by ${trends.change}% compared to last month. Great progress!`
+    });
+  } else if (trends.trend === 'declining') {
+    insights.push({
+      type: 'warning',
+      title: 'Declining Trend',
+      message: `Your attendance has decreased by ${Math.abs(trends.change)}% compared to last month. Focus on being more regular.`
+    });
+  }
+
+  // Long-term insights
+  if (longestPresentStreak >= 20) {
+    insights.push({
+      type: 'achievement',
+      title: 'Consistency Champion',
+      message: `Your longest present streak is ${longestPresentStreak} days. Excellent consistency!`
+    });
+  }
+
+  return insights;
+}
