@@ -229,7 +229,7 @@ const AdminHomeScreen: React.FC<Props> = ({ navigation }) => {
     navigation.navigate('AdminAllStudentsData');  };
 
   const navigateToClassesData = () => {
-    Alert.alert("Coming Soon", "Teacher management screen is under development.");
+    navigation.navigate('AdminAllClassesData');
   };
 
   const navigateToTeachers = () => {

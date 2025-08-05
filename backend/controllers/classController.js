@@ -1066,3 +1066,89 @@ exports.removeStudent = async (req, res) => {
     });
   }
 };
+
+exports.getAllClasses = async (req, res) => {
+  try {
+    console.log('getAllClasses called with:', { userId: req.user?.id, userRole: req.user?.role });
+
+    // Verify user is an admin
+    if (!req.user || req.user.role !== 'admin') {
+      console.log('Authorization failed:', { user: req.user });
+      return res.status(403).json({ msg: 'Not authorized' });
+    }
+
+    const admin = await Admin.findById(req.user.id);
+    if (!admin) {
+      console.log('Admin not found:', req.user.id);
+      return res.status(404).json({ msg: 'Admin not found' });
+    }
+
+    console.log('Admin found:', { adminId: admin._id, schoolId: admin.schoolId });
+
+    // Find all classes for this school with populated data
+    const classes = await Class.find({ schoolId: admin.schoolId })
+      .populate({
+        path: 'teacherIds',
+        select: 'name email _id'
+      })
+      .populate({
+        path: 'studentIds',
+        select: 'name email studentId _id'
+      })
+      .sort({ name: 1, section: 1 }); // Sort by name then section
+
+    console.log('Classes found:', { 
+      count: classes.length,
+      classes: classes.map(c => ({ 
+        id: c._id, 
+        name: c.name, 
+        section: c.section,
+        teacherCount: c.teacherIds?.length || 0,
+        studentCount: c.studentIds?.length || 0
+      }))
+    });
+
+    // For each class, find the class admin
+    const classesWithAdmin = await Promise.all(
+      classes.map(async (classObj) => {
+        try {
+          const classAdmin = await Teacher.findOne({ 
+            adminClassId: classObj._id,
+            schoolId: admin.schoolId 
+          }).select('name email _id');
+
+          return {
+            ...classObj.toObject(),
+            classAdmin: classAdmin || null,
+            teacherCount: classObj.teacherIds?.length || 0,
+            studentCount: classObj.studentIds?.length || 0
+          };
+        } catch (error) {
+          console.error('Error finding class admin for class:', classObj._id, error);
+          return {
+            ...classObj.toObject(),
+            classAdmin: null,
+            teacherCount: classObj.teacherIds?.length || 0,
+            studentCount: classObj.studentIds?.length || 0
+          };
+        }
+      })
+    );
+
+    console.log('Classes with admin info prepared');
+
+    res.json({
+      classes: classesWithAdmin,
+      totalClasses: classesWithAdmin.length,
+      schoolId: admin.schoolId
+    });
+
+  } catch (err) {
+    console.error('Error in getAllClasses:', err);
+    res.status(500).json({ 
+      msg: 'Server error', 
+      error: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+};
