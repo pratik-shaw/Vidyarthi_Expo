@@ -1,4 +1,5 @@
 // controllers/classController.js
+const mongoose = require('mongoose'); // ADD THIS LINE AT THE TOP
 const Class = require('../models/Class');
 const School = require('../models/School');
 const Teacher = require('../models/Teacher');
@@ -135,12 +136,27 @@ exports.assignTeacher = async (req, res) => {
   try {
     const { classId, teacherId } = req.body;
 
+    console.log('assignTeacher called with:', { classId, teacherId });
+
     // Verify user is an admin
-    if (req.user.role !== 'admin') {
+    if (!req.user || req.user.role !== 'admin') {
       return res.status(403).json({ msg: 'Not authorized' });
     }
 
+    // Validate input
+    if (!classId || !teacherId) {
+      return res.status(400).json({ msg: 'Class ID and Teacher ID are required' });
+    }
+
+    // Validate ObjectIds
+    if (!mongoose.Types.ObjectId.isValid(classId) || !mongoose.Types.ObjectId.isValid(teacherId)) {
+      return res.status(400).json({ msg: 'Invalid Class ID or Teacher ID' });
+    }
+
     const admin = await Admin.findById(req.user.id);
+    if (!admin) {
+      return res.status(404).json({ msg: 'Admin not found' });
+    }
 
     // Find class and teacher, ensure they belong to admin's school
     const classObj = await Class.findOne({ _id: classId, schoolId: admin.schoolId });
@@ -153,102 +169,251 @@ exports.assignTeacher = async (req, res) => {
       return res.status(404).json({ msg: 'Teacher not found' });
     }
 
+    // Initialize arrays if they don't exist
+    if (!classObj.teacherIds) {
+      classObj.teacherIds = [];
+    }
+
+    if (!teacher.classIds) {
+      teacher.classIds = [];
+    }
+
     // Update class with teacher ID
-    if (!classObj.teacherIds.includes(teacherId)) {
+    if (!classObj.teacherIds.some(id => id.toString() === teacherId.toString())) {
       classObj.teacherIds.push(teacherId);
       await classObj.save();
     }
 
     // Update teacher with class ID
-    if (!teacher.classIds.includes(classId)) {
+    if (!teacher.classIds.some(id => id.toString() === classId.toString())) {
       teacher.classIds.push(classId);
       await teacher.save();
     }
 
     res.json({ msg: 'Teacher assigned to class successfully' });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    console.error('Error in assignTeacher:', err.message);
+    res.status(500).json({ msg: 'Server error', error: err.message });
   }
 };
 
 // Assign multiple teachers to class (admin only) - NEW FUNCTION
+// Assign multiple teachers to class (admin only) - COMPLETE UPDATED VERSION
 exports.assignTeachers = async (req, res) => {
   try {
     const { classId, teacherIds } = req.body;
 
+    console.log('assignTeachers called with:', { 
+      classId, 
+      teacherIds, 
+      userId: req.user?.id, 
+      userRole: req.user?.role 
+    });
+
     // Verify user is an admin
-    if (req.user.role !== 'admin') {
+    if (!req.user || req.user.role !== 'admin') {
+      console.log('Authorization failed:', { user: req.user });
       return res.status(403).json({ msg: 'Not authorized' });
     }
 
     // Validate input
-    if (!classId || !teacherIds || !Array.isArray(teacherIds) || teacherIds.length === 0) {
-      return res.status(400).json({ msg: 'Class ID and teacher IDs array are required' });
+    if (!classId) {
+      return res.status(400).json({ msg: 'Class ID is required' });
     }
 
+    if (!teacherIds || !Array.isArray(teacherIds) || teacherIds.length === 0) {
+      return res.status(400).json({ msg: 'Teacher IDs array is required and cannot be empty' });
+    }
+
+    // Validate ObjectIds
+    const validTeacherIds = teacherIds.filter(id => id && mongoose.Types.ObjectId.isValid(id));
+    if (validTeacherIds.length === 0) {
+      return res.status(400).json({ msg: 'No valid teacher IDs provided' });
+    }
+
+    if (validTeacherIds.length !== teacherIds.length) {
+      console.log('Some invalid teacher IDs filtered out:', { 
+        original: teacherIds.length, 
+        valid: validTeacherIds.length 
+      });
+    }
+
+    // Validate class ID
+    if (!mongoose.Types.ObjectId.isValid(classId)) {
+      return res.status(400).json({ msg: 'Invalid class ID' });
+    }
+
+    // Find admin
     const admin = await Admin.findById(req.user.id);
     if (!admin) {
+      console.log('Admin not found:', req.user.id);
       return res.status(404).json({ msg: 'Admin not found' });
     }
+
+    console.log('Admin found:', { adminId: admin._id, schoolId: admin.schoolId });
 
     // Find class and ensure it belongs to admin's school
     const classObj = await Class.findOne({ _id: classId, schoolId: admin.schoolId });
     if (!classObj) {
+      console.log('Class not found:', { classId, schoolId: admin.schoolId });
       return res.status(404).json({ msg: 'Class not found or not authorized' });
+    }
+
+    console.log('Class found:', { 
+      classId: classObj._id, 
+      className: classObj.name,
+      section: classObj.section,
+      currentTeacherIds: classObj.teacherIds?.length || 0
+    });
+
+    // Initialize teacherIds array if it doesn't exist
+    if (!classObj.teacherIds) {
+      classObj.teacherIds = [];
     }
 
     // Find all teachers and ensure they belong to admin's school
     const teachers = await Teacher.find({ 
-      _id: { $in: teacherIds }, 
+      _id: { $in: validTeacherIds }, 
       schoolId: admin.schoolId 
     });
 
-    if (teachers.length !== teacherIds.length) {
-      return res.status(404).json({ msg: 'One or more teachers not found or not authorized' });
+    console.log('Teachers found:', { 
+      requestedCount: validTeacherIds.length, 
+      foundCount: teachers.length,
+      foundTeachers: teachers.map(t => ({ 
+        id: t._id, 
+        name: t.name, 
+        currentClasses: t.classIds?.length || 0 
+      }))
+    });
+
+    if (teachers.length === 0) {
+      return res.status(404).json({ msg: 'No valid teachers found for this school' });
     }
 
     let assignedCount = 0;
+    let alreadyAssignedCount = 0;
+    const assignmentResults = [];
 
     // Process each teacher
     for (const teacher of teachers) {
-      let teacherUpdated = false;
-      let classUpdated = false;
+      try {
+        // Initialize classIds array if it doesn't exist
+        if (!teacher.classIds) {
+          teacher.classIds = [];
+        }
 
-      // Update class with teacher ID if not already present
-      if (!classObj.teacherIds.includes(teacher._id)) {
-        classObj.teacherIds.push(teacher._id);
-        classUpdated = true;
-      }
+        let teacherUpdated = false;
+        let classUpdated = false;
 
-      // Update teacher with class ID if not already present
-      if (!teacher.classIds.includes(classId)) {
-        teacher.classIds.push(classId);
-        teacherUpdated = true;
-      }
+        // Check if teacher is already assigned to this class
+        const teacherAlreadyInClass = classObj.teacherIds.some(id => id.toString() === teacher._id.toString());
+        const classAlreadyInTeacher = teacher.classIds.some(id => id.toString() === classId.toString());
 
-      // Save teacher if updated
-      if (teacherUpdated) {
-        await teacher.save();
+        if (teacherAlreadyInClass && classAlreadyInTeacher) {
+          alreadyAssignedCount++;
+          assignmentResults.push({
+            teacherId: teacher._id,
+            teacherName: teacher.name,
+            status: 'already_assigned'
+          });
+          continue;
+        }
+
+        // Update class with teacher ID if not already present
+        if (!teacherAlreadyInClass) {
+          classObj.teacherIds.push(teacher._id);
+          classUpdated = true;
+        }
+
+        // Update teacher with class ID if not already present
+        if (!classAlreadyInTeacher) {
+          teacher.classIds.push(classId);
+          teacherUpdated = true;
+        }
+
+        // Save teacher if updated - Use updateOne to avoid validation issues
+        if (teacherUpdated) {
+          // Use updateOne to bypass validation on other fields
+          await Teacher.updateOne(
+            { _id: teacher._id },
+            { $addToSet: { classIds: classId } }
+          );
+          console.log('Teacher updated using updateOne:', { 
+            teacherId: teacher._id, 
+            classId: classId 
+          });
+        }
+
         assignedCount++;
+        assignmentResults.push({
+          teacherId: teacher._id,
+          teacherName: teacher.name,
+          status: 'assigned'
+        });
+
+      } catch (teacherError) {
+        console.error('Error processing teacher:', teacher._id, teacherError);
+        assignmentResults.push({
+          teacherId: teacher._id,
+          teacherName: teacher.name,
+          status: 'error',
+          error: teacherError.message
+        });
       }
     }
 
     // Save class if updated
-    await classObj.save();
+    if (assignedCount > 0) {
+      try {
+        await classObj.save();
+        console.log('Class updated with new teachers');
+      } catch (classError) {
+        console.error('Error saving class:', classError);
+        return res.status(500).json({ 
+          msg: 'Error updating class', 
+          error: classError.message 
+        });
+      }
+    }
 
-    const message = assignedCount === 1 
-      ? `${assignedCount} teacher assigned to class successfully`
-      : `${assignedCount} teachers assigned to class successfully`;
+    // Prepare response message
+    let message = '';
+    if (assignedCount > 0 && alreadyAssignedCount > 0) {
+      message = `${assignedCount} teacher(s) assigned, ${alreadyAssignedCount} already assigned`;
+    } else if (assignedCount > 0) {
+      message = assignedCount === 1 
+        ? `${assignedCount} teacher assigned to class successfully`
+        : `${assignedCount} teachers assigned to class successfully`;
+    } else if (alreadyAssignedCount > 0) {
+      message = `All ${alreadyAssignedCount} teacher(s) were already assigned to this class`;
+    } else {
+      message = 'No teachers were assigned';
+    }
+
+    console.log('Assignment completed:', {
+      assignedCount,
+      alreadyAssignedCount,
+      totalRequested: validTeacherIds.length,
+      totalFound: teachers.length
+    });
 
     res.json({ 
       msg: message,
       assignedCount,
-      totalRequested: teacherIds.length
+      alreadyAssignedCount,
+      totalRequested: validTeacherIds.length,
+      totalFound: teachers.length,
+      results: assignmentResults
     });
+
   } catch (err) {
-    console.error('Error in assignTeachers:', err.message);
-    res.status(500).json({ msg: 'Server error', error: err.message });
+    console.error('Error in assignTeachers:', err);
+    res.status(500).json({ 
+      msg: 'Server error', 
+      error: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 };
 
@@ -424,45 +589,140 @@ exports.removeTeacher = async (req, res) => {
   try {
     const { classId, teacherId } = req.body;
 
+    console.log('removeTeacher called with:', { 
+      classId, 
+      teacherId, 
+      userId: req.user?.id, 
+      userRole: req.user?.role 
+    });
+
     // Verify user is an admin
-    if (req.user.role !== 'admin') {
+    if (!req.user || req.user.role !== 'admin') {
+      console.log('Authorization failed:', { user: req.user });
       return res.status(403).json({ msg: 'Not authorized' });
+    }
+
+    // Validate input
+    if (!classId || !teacherId) {
+      return res.status(400).json({ msg: 'Class ID and Teacher ID are required' });
+    }
+
+    // Validate ObjectIds
+    if (!mongoose.Types.ObjectId.isValid(classId) || !mongoose.Types.ObjectId.isValid(teacherId)) {
+      return res.status(400).json({ msg: 'Invalid Class ID or Teacher ID' });
     }
 
     const admin = await Admin.findById(req.user.id);
     if (!admin) {
+      console.log('Admin not found:', req.user.id);
       return res.status(404).json({ msg: 'Admin not found' });
     }
+
+    console.log('Admin found:', { adminId: admin._id, schoolId: admin.schoolId });
 
     // Find class and teacher, ensure they belong to admin's school
     const classObj = await Class.findOne({ _id: classId, schoolId: admin.schoolId });
     if (!classObj) {
+      console.log('Class not found:', { classId, schoolId: admin.schoolId });
       return res.status(404).json({ msg: 'Class not found or not authorized' });
     }
 
     const teacher = await Teacher.findOne({ _id: teacherId, schoolId: admin.schoolId });
     if (!teacher) {
+      console.log('Teacher not found:', { teacherId, schoolId: admin.schoolId });
       return res.status(404).json({ msg: 'Teacher not found or not authorized' });
     }
 
-    // Remove teacher from class
-    classObj.teacherIds = classObj.teacherIds.filter(id => id.toString() !== teacherId);
-    await classObj.save();
+    console.log('Class and teacher found:', { 
+      classId: classObj._id, 
+      teacherId: teacher._id,
+      currentClassTeachers: classObj.teacherIds?.length || 0,
+      teacherCurrentClasses: teacher.classIds?.length || 0,
+      isClassAdmin: teacher.adminClassId?.toString() === classId.toString()
+    });
 
-    // Remove class from teacher
-    teacher.classIds = teacher.classIds.filter(id => id.toString() !== classId);
-    
-    // If this teacher was the class admin, remove that role
-    if (teacher.adminClassId && teacher.adminClassId.toString() === classId) {
-      teacher.adminClassId = undefined;
+    // Initialize arrays if they don't exist
+    if (!classObj.teacherIds) {
+      classObj.teacherIds = [];
     }
-    
-    await teacher.save();
 
-    res.json({ msg: 'Teacher removed from class successfully' });
+    if (!teacher.classIds) {
+      teacher.classIds = [];
+    }
+
+    // Check if teacher is actually assigned to the class
+    const teacherInClass = classObj.teacherIds.some(id => id.toString() === teacherId.toString());
+    const classInTeacher = teacher.classIds.some(id => id.toString() === classId.toString());
+
+    if (!teacherInClass && !classInTeacher) {
+      console.log('Teacher not found in class');
+      return res.status(400).json({ msg: 'Teacher is not assigned to this class' });
+    }
+
+    let classUpdated = false;
+    let teacherUpdated = false;
+    let adminRoleRemoved = false;
+
+    // Remove teacher from class if present
+    if (teacherInClass) {
+      const originalLength = classObj.teacherIds.length;
+      classObj.teacherIds = classObj.teacherIds.filter(id => id.toString() !== teacherId.toString());
+      classUpdated = classObj.teacherIds.length !== originalLength;
+      console.log('Removed teacher from class:', { 
+        originalLength, 
+        newLength: classObj.teacherIds.length 
+      });
+    }
+
+    // Remove class from teacher and handle admin role using updateOne
+    if (classInTeacher || (teacher.adminClassId && teacher.adminClassId.toString() === classId.toString())) {
+      const updateFields = { $pull: { classIds: classId } };
+      
+      // Check if teacher was class admin and remove that role
+      if (teacher.adminClassId && teacher.adminClassId.toString() === classId.toString()) {
+        updateFields.$unset = { adminClassId: 1 };
+        adminRoleRemoved = true;
+        console.log('Removing class admin role from teacher');
+      }
+
+      // Use updateOne to avoid validation issues
+      await Teacher.updateOne({ _id: teacherId }, updateFields);
+      teacherUpdated = true;
+      console.log('Teacher updated using updateOne');
+    }
+
+    // Save class if updated
+    if (classUpdated) {
+      await classObj.save();
+      console.log('Class saved successfully');
+    }
+
+    console.log('Teacher removal completed successfully');
+
+    const responseMessage = adminRoleRemoved 
+      ? 'Teacher and class admin role removed from class successfully'
+      : 'Teacher removed from class successfully';
+
+    res.json({ 
+      msg: responseMessage,
+      removedFromClass: classUpdated,
+      removedFromTeacher: teacherUpdated,
+      adminRoleRemoved,
+      teacherInfo: {
+        id: teacher._id,
+        name: teacher.name,
+        remainingClasses: teacher.classIds?.length || 0,
+        isStillClassAdmin: !!teacher.adminClassId
+      }
+    });
+
   } catch (err) {
-    console.error('Error in removeTeacher:', err.message);
-    res.status(500).json({ msg: 'Server error', error: err.message });
+    console.error('Error in removeTeacher:', err);
+    res.status(500).json({ 
+      msg: 'Server error', 
+      error: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 };
 
