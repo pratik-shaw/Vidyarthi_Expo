@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,11 @@ import {
   TextInput,
   Modal,
   FlatList,
+  Linking,
+  Platform,
+  InteractionManager,
+  Keyboard,
+  BackHandler,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
@@ -20,6 +25,10 @@ import { Feather, FontAwesome5, Ionicons, MaterialIcons } from '@expo/vector-ico
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as FileSystem from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
+import { WebView } from 'react-native-webview';
 
 import { API_BASE_URL } from '../config/api';
 
@@ -89,8 +98,6 @@ const CATEGORIES = [
 ];
 
 const STATUS_OPTIONS = [
-  { key: 'all', label: 'All Status' },
-  { key: 'submitted', label: 'Submitted' },
   { key: 'in_review', label: 'In Review' },
   { key: 'resolved', label: 'Resolved' },
   { key: 'rejected', label: 'Rejected' },
@@ -112,223 +119,37 @@ const STATUS_COLORS = {
   closed: '#95A5A6',
 };
 
-const AdminStudentQueriesScreen: React.FC<Props> = ({ navigation }) => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [queries, setQueries] = useState<Query[]>([]);
-  const [stats, setStats] = useState<QueryStats>({
-    submitted: 0,
-    in_review: 0,
-    resolved: 0,
-    rejected: 0,
-    closed: 0,
-    total: 0,
-  });
-  
-  // Filter states
-  const [searchText, setSearchText] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedStatus, setSelectedStatus] = useState('all');
-  const [showFilters, setShowFilters] = useState(false);
-  
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [hasMoreData, setHasMoreData] = useState(true);
-  
-  // Modal states
-  const [selectedQuery, setSelectedQuery] = useState<Query | null>(null);
-  const [showQueryModal, setShowQueryModal] = useState(false);
-  const [showResponseModal, setShowResponseModal] = useState(false);
-  const [responseText, setResponseText] = useState('');
-  const [responseStatus, setResponseStatus] = useState<string>('in_review');
-
-  // Header configuration
-  React.useLayoutEffect(() => {
-    navigation.setOptions({
-      headerTitle: 'Student Queries',
-      headerStyle: {
-        backgroundColor: '#4E54C8',
-      },
-      headerTintColor: '#FFFFFF',
-      headerTitleStyle: {
-        fontWeight: 'bold',
-      },
-    });
-  }, [navigation]);
-
-  // Create authenticated API client
-  const getAuthenticatedClient = async () => {
-    const token = await AsyncStorage.getItem('token');
-    return axios.create({
-      baseURL: API_URL,
-      timeout: API_TIMEOUT,
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-  };
-
-  // Load queries and stats
-  const loadQueriesAndStats = useCallback(async (page = 1, append = false) => {
-    try {
-      if (!append) {
-        setIsLoading(true);
-      }
-
-      const apiClient = await getAuthenticatedClient();
-      
-      // Build query parameters
-      const params: any = {
-        page,
-        limit: 10,
-      };
-      
-      if (searchText.trim()) params.search = searchText.trim();
-      if (selectedCategory !== 'all') params.category = selectedCategory;
-      if (selectedStatus !== 'all') params.status = selectedStatus;
-
-      // Load queries
-      const queriesResponse = await apiClient.get('/queries/admin-queries', { params });
-      const { queries: newQueries, pagination } = queriesResponse.data;
-
-      if (append) {
-        setQueries(prev => [...prev, ...newQueries]);
-      } else {
-        setQueries(newQueries);
-      }
-
-      setCurrentPage(pagination.current);
-      setTotalPages(pagination.pages);
-      setHasMoreData(pagination.current < pagination.pages);
-
-      // Load stats
-      const statsResponse = await apiClient.get('/queries/stats');
-      setStats(statsResponse.data.stats);
-
-    } catch (error) {
-      console.error('Error loading queries:', error);
-      if (axios.isAxiosError(error) && error.response?.status === 401) {
-        Alert.alert(
-          "Session Expired",
-          "Your session has expired. Please login again.",
-          [{ text: "OK", onPress: () => navigation.replace('RoleSelection') }]
-        );
-      } else {
-        Alert.alert("Error", "Failed to load queries. Please try again.");
-      }
-    } finally {
-      setIsLoading(false);
-      setRefreshing(false);
-    }
-  }, [searchText, selectedCategory, selectedStatus, navigation]);
-
-  // Initial load
-  useEffect(() => {
-    loadQueriesAndStats(1, false);
-  }, [loadQueriesAndStats]);
-
-  // Handle search
-  const handleSearch = useCallback(() => {
-    setCurrentPage(1);
-    loadQueriesAndStats(1, false);
-  }, [loadQueriesAndStats]);
-
-  // Handle filter change
-  const handleFilterChange = useCallback((filterType: string, value: string) => {
-    if (filterType === 'category') {
-      setSelectedCategory(value);
-    } else if (filterType === 'status') {
-      setSelectedStatus(value);
-    }
-    setCurrentPage(1);
+// Memoized Components
+const QueryCard = React.memo(({ item, onPress, onRespond }: { 
+  item: Query; 
+  onPress: (query: Query) => void;
+  onRespond: (query: Query) => void;
+}) => {
+  const getPriorityColor = useCallback((priority: string) => {
+    return PRIORITY_COLORS[priority as keyof typeof PRIORITY_COLORS] || '#95A5A6';
   }, []);
 
-  // Apply filters
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      loadQueriesAndStats(1, false);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [selectedCategory, selectedStatus]);
-
-  // Handle refresh
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    setCurrentPage(1);
-    loadQueriesAndStats(1, false);
-  }, [loadQueriesAndStats]);
-
-  // Load more data
-  const loadMoreData = useCallback(() => {
-    if (hasMoreData && !isLoading) {
-      loadQueriesAndStats(currentPage + 1, true);
-    }
-  }, [hasMoreData, isLoading, currentPage, loadQueriesAndStats]);
-
-  // Handle query response
-  const handleQueryResponse = async () => {
-    if (!selectedQuery || !responseText.trim()) {
-      Alert.alert("Error", "Please enter a response message.");
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      const apiClient = await getAuthenticatedClient();
-      
-      await apiClient.put(`/queries/${selectedQuery._id}/status`, {
-        status: responseStatus,
-        adminResponse: responseText.trim(),
-      });
-
-      Alert.alert("Success", "Query response sent successfully.");
-      setShowResponseModal(false);
-      setResponseText('');
-      setSelectedQuery(null);
-      
-      // Reload queries
-      loadQueriesAndStats(1, false);
-    } catch (error) {
-      console.error('Error responding to query:', error);
-      Alert.alert("Error", "Failed to send response. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Get priority badge color
-  const getPriorityColor = (priority: string) => {
-    return PRIORITY_COLORS[priority as keyof typeof PRIORITY_COLORS] || '#95A5A6';
-  };
-
-  // Get status badge color
-  const getStatusColor = (status: string) => {
+  const getStatusColor = useCallback((status: string) => {
     return STATUS_COLORS[status as keyof typeof STATUS_COLORS] || '#95A5A6';
-  };
+  }, []);
 
-  // Format date
-  const formatDate = (dateString: string) => {
+  const formatDate = useCallback((dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-IN', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
     });
-  };
+  }, []);
 
-  // Render query item
-  const renderQueryItem = ({ item }: { item: Query }) => (
+  return (
     <TouchableOpacity
       style={[
         styles.queryCard,
         item.isUrgent && styles.urgentQueryCard,
         !item.viewedByAdmin && styles.unreadQueryCard
       ]}
-      onPress={() => {
-        setSelectedQuery(item);
-        setShowQueryModal(true);
-      }}
+      onPress={() => onPress(item)}
+      activeOpacity={0.7}
     >
       <View style={styles.queryHeader}>
         <View style={styles.queryHeaderLeft}>
@@ -371,25 +192,655 @@ const AdminStudentQueriesScreen: React.FC<Props> = ({ navigation }) => {
           <Text style={styles.attachmentCount}>{item.attachments.length} attachment(s)</Text>
         </View>
       )}
+      
+      {/* Quick Respond Button */}
+      <TouchableOpacity
+        style={styles.quickRespondButton}
+        onPress={(e) => {
+          e.stopPropagation();
+          onRespond(item);
+        }}
+        activeOpacity={0.7}
+      >
+        <Feather name="message-circle" size={16} color="#FFFFFF" />
+        <Text style={styles.quickRespondText}>Respond</Text>
+      </TouchableOpacity>
     </TouchableOpacity>
   );
+});
 
-  // Render stats card
-  const renderStatsCard = (label: string, count: number, color: string) => (
-    <View style={styles.statsCard}>
-      <View style={[styles.statsIconContainer, { backgroundColor: color + '20' }]}>
-        <View style={[styles.statsIcon, { backgroundColor: color }]} />
-      </View>
-      <Text style={styles.statsCount}>{count}</Text>
-      <Text style={styles.statsLabel}>{label}</Text>
+const StatsCard = React.memo(({ label, count, color }: { label: string; count: number; color: string }) => (
+  <View style={styles.statsCard}>
+    <View style={[styles.statsIconContainer, { backgroundColor: color + '20' }]}>
+      <View style={[styles.statsIcon, { backgroundColor: color }]} />
     </View>
-  );
+    <Text style={styles.statsCount}>{count}</Text>
+    <Text style={styles.statsLabel}>{label}</Text>
+  </View>
+));
 
+const AdminStudentQueriesScreen: React.FC<Props> = ({ navigation }) => {
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [queries, setQueries] = useState<Query[]>([]);
+  const [stats, setStats] = useState<QueryStats>({
+    submitted: 0,
+    in_review: 0,
+    resolved: 0,
+    rejected: 0,
+    closed: 0,
+    total: 0,
+  });
+  
+  // Filter states
+  const [searchText, setSearchText] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState('all');
+  const [showFilters, setShowFilters] = useState(false);
+  
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [hasMoreData, setHasMoreData] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  
+  // Modal states - Simplified approach
+  const [selectedQuery, setSelectedQuery] = useState<Query | null>(null);
+  const [showQueryModal, setShowQueryModal] = useState(false);
+  
+  // Response states - Separate from modal
+  const [isResponseMode, setIsResponseMode] = useState(false);
+  const [responseQuery, setResponseQuery] = useState<Query | null>(null);
+  const [responseText, setResponseText] = useState('');
+  const [responseStatus, setResponseStatus] = useState<string>('in_review');
+  const [isSendingResponse, setIsSendingResponse] = useState(false);
+  
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  // Refs for cleanup
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const apiClientRef = useRef<any>(null);
+  const isMountedRef = useRef(true);
+
+  // Header configuration
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerTitle: 'Student Queries',
+      headerStyle: {
+        backgroundColor: '#4E54C8',
+      },
+      headerTintColor: '#FFFFFF',
+      headerTitleStyle: {
+        fontWeight: 'bold',
+      },
+    });
+  }, [navigation]);
+
+  // Create authenticated API client with better error handling
+  const getAuthenticatedClient = useCallback(async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      const client = axios.create({
+        baseURL: API_URL,
+        timeout: API_TIMEOUT,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      // Add response interceptor for better error handling
+      client.interceptors.response.use(
+        (response) => response,
+        (error) => {
+          if (error.response?.status === 401) {
+            // Token expired or invalid
+            AsyncStorage.removeItem('token');
+            if (isMountedRef.current) {
+              navigation.replace('RoleSelection');
+            }
+          }
+          return Promise.reject(error);
+        }
+      );
+
+      apiClientRef.current = client;
+      return client;
+    } catch (error) {
+      console.error('Error creating authenticated client:', error);
+      throw error;
+    }
+  }, [navigation]);
+
+  // Optimized queries loading with better error handling
+  const loadQueriesAndStats = useCallback(async (page = 1, append = false) => {
+    if (!isMountedRef.current) return;
+
+    try {
+      if (append && isLoadingMore) return;
+      
+      if (!append) {
+        setIsLoading(true);
+      } else {
+        setIsLoadingMore(true);
+      }
+
+      const apiClient = await getAuthenticatedClient();
+      
+      // Build query parameters
+      const params: any = {
+        page,
+        limit: 10,
+      };
+      
+      if (searchText.trim()) params.search = searchText.trim();
+      if (selectedCategory !== 'all') params.category = selectedCategory;
+      if (selectedStatus !== 'all') params.status = selectedStatus;
+
+      // Load queries and stats in parallel for better performance
+      const [queriesResponse, statsResponse] = await Promise.all([
+        apiClient.get('/queries/admin-queries', { params }),
+        page === 1 ? apiClient.get('/queries/stats') : Promise.resolve(null)
+      ]);
+
+      if (!isMountedRef.current) return;
+
+      const { queries: newQueries, pagination } = queriesResponse.data;
+
+      if (append) {
+        setQueries(prev => {
+          // Remove duplicates
+          const existingIds = new Set(prev.map(q => q._id));
+          const uniqueNewQueries = newQueries.filter((q: Query) => !existingIds.has(q._id));
+          return [...prev, ...uniqueNewQueries];
+        });
+      } else {
+        setQueries(newQueries);
+      }
+
+      setCurrentPage(pagination.current);
+      setTotalPages(pagination.pages);
+      setHasMoreData(pagination.current < pagination.pages);
+
+      // Update stats only if we fetched them
+      if (statsResponse && statsResponse.data) {
+        setStats(statsResponse.data.stats);
+      }
+
+    } catch (error) {
+      console.error('Error loading queries:', error);
+      if (isMountedRef.current) {
+        if (axios.isAxiosError(error) && error.response?.status === 401) {
+          Alert.alert(
+            "Session Expired",
+            "Your session has expired. Please login again.",
+            [{ text: "OK", onPress: () => navigation.replace('RoleSelection') }]
+          );
+        } else {
+          const errorMessage = axios.isAxiosError(error) 
+            ? error.response?.data?.msg || 'Failed to load queries'
+            : 'Network error. Please check your connection.';
+          
+          Alert.alert("Error", errorMessage);
+        }
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoading(false);
+        setRefreshing(false);
+        setIsLoadingMore(false);
+      }
+    }
+  }, [searchText, selectedCategory, selectedStatus, navigation, getAuthenticatedClient, isLoadingMore]);
+
+  // Debounced search
+  const debouncedSearch = useCallback(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      if (isMountedRef.current) {
+        setCurrentPage(1);
+        loadQueriesAndStats(1, false);
+      }
+    }, 500);
+  }, [loadQueriesAndStats]);
+
+  // Handle search with debouncing
+  useEffect(() => {
+    debouncedSearch();
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchText, debouncedSearch]);
+
+  // Initial load
+  useEffect(() => {
+    const loadData = () => {
+      InteractionManager.runAfterInteractions(() => {
+        loadQueriesAndStats(1, false);
+      });
+    };
+
+    loadData();
+  }, []);
+
+  // Handle filter change with optimization
+  const handleFilterChange = useCallback((filterType: string, value: string) => {
+    if (filterType === 'category') {
+      setSelectedCategory(value);
+    } else if (filterType === 'status') {
+      setSelectedStatus(value);
+    }
+    setCurrentPage(1);
+    
+    setTimeout(() => {
+      if (isMountedRef.current) {
+        loadQueriesAndStats(1, false);
+      }
+    }, 100);
+  }, [loadQueriesAndStats]);
+
+  // Handle refresh
+  const onRefresh = useCallback(() => {
+    if (refreshing) return;
+    setRefreshing(true);
+    setCurrentPage(1);
+    loadQueriesAndStats(1, false);
+  }, [loadQueriesAndStats, refreshing]);
+
+  // Load more data
+  const loadMoreData = useCallback(() => {
+    if (hasMoreData && !isLoading && !isLoadingMore && currentPage < totalPages) {
+      loadQueriesAndStats(currentPage + 1, true);
+    }
+  }, [hasMoreData, isLoading, isLoadingMore, currentPage, totalPages, loadQueriesAndStats]);
+
+  // Enhanced download attachment
+  const downloadAttachment = useCallback(async (queryId: string, attachmentIndex: number, fileName: string) => {
+    if (isDownloading) return;
+
+    try {
+      setIsDownloading(true);
+      
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+
+      const downloadUrl = `${API_URL}/queries/${queryId}/attachments/${attachmentIndex}`;
+      const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const downloadPath = `${FileSystem.documentDirectory}${sanitizedFileName}`;
+      
+      const downloadResult = await FileSystem.downloadAsync(
+        downloadUrl,
+        downloadPath,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (downloadResult.status === 200) {
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(downloadResult.uri, {
+            mimeType: 'application/octet-stream',
+            dialogTitle: 'Open with...',
+            UTI: 'public.item',
+          });
+        } else {
+          if (Platform.OS === 'ios') {
+            Alert.alert(
+              'Download Complete',
+              `File downloaded: ${fileName}`,
+              [
+                {
+                  text: 'OK',
+                  onPress: () => {
+                    Linking.canOpenURL(downloadResult.uri).then(supported => {
+                      if (supported) {
+                        Linking.openURL(downloadResult.uri);
+                      }
+                    });
+                  },
+                },
+              ]
+            );
+          } else {
+            try {
+              const { status } = await MediaLibrary.requestPermissionsAsync();
+              if (status === 'granted') {
+                await MediaLibrary.createAssetAsync(downloadResult.uri);
+                Alert.alert('Success', `File downloaded: ${fileName}`);
+              } else {
+                Alert.alert('Success', `File downloaded: ${fileName}`);
+              }
+            } catch (permError) {
+              Alert.alert('Success', `File downloaded: ${fileName}`);
+            }
+          }
+        }
+      } else {
+        throw new Error(`Download failed with status: ${downloadResult.status}`);
+      }
+    } catch (error) {
+      console.error('Download error:', error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.msg || 'Failed to download file'
+        : error instanceof Error 
+        ? error.message 
+        : 'Failed to download file';
+        
+      Alert.alert('Download Error', errorMessage);
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [isDownloading]);
+
+  // Simplified response handler
+  const handleQueryResponse = useCallback(async () => {
+    if (!responseQuery) {
+      Alert.alert("Error", "No query selected.");
+      return;
+    }
+
+    const trimmedResponse = responseText.trim();
+    if (!trimmedResponse) {
+      Alert.alert("Error", "Please enter a response message.");
+      return;
+    }
+
+    if (trimmedResponse.length < 10) {
+      Alert.alert("Error", "Response message should be at least 10 characters long.");
+      return;
+    }
+
+    try {
+      setIsSendingResponse(true);
+      const apiClient = await getAuthenticatedClient();
+      
+      const response = await apiClient.put(`/queries/${responseQuery._id}/status`, {
+        status: responseStatus,
+        adminResponse: trimmedResponse,
+      });
+
+      if (response.status === 200) {
+        // Update the query in the local state
+        setQueries(prevQueries => 
+          prevQueries.map(query => 
+            query._id === responseQuery._id 
+              ? { 
+                  ...query, 
+                  status: responseStatus as any,
+                  adminResponse: {
+                    message: trimmedResponse,
+                    respondedBy: {
+                      _id: 'current_admin',
+                      name: 'You',
+                      email: ''
+                    },
+                    respondedAt: new Date().toISOString()
+                  }
+                }
+              : query
+          )
+        );
+
+        Alert.alert("Success", "Query response sent successfully.", [
+          {
+            text: "OK",
+            onPress: () => {
+              // Close response mode
+              setIsResponseMode(false);
+              setResponseQuery(null);
+              setResponseText('');
+              setResponseStatus('in_review');
+              
+              // Refresh data
+              setTimeout(() => {
+                if (isMountedRef.current) {
+                  loadQueriesAndStats(1, false);
+                }
+              }, 500);
+            }
+          }
+        ]);
+      }
+    } catch (error) {
+      console.error('Error responding to query:', error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.msg || 'Failed to send response'
+        : 'Network error. Please check your connection.';
+        
+      Alert.alert("Error", errorMessage);
+    } finally {
+      setIsSendingResponse(false);
+    }
+  }, [responseQuery, responseText, responseStatus, getAuthenticatedClient, loadQueriesAndStats]);
+
+  // Handle query selection
+  const handleQueryPress = useCallback((query: Query) => {
+    setSelectedQuery(query);
+    setShowQueryModal(true);
+  }, []);
+
+  // Handle response mode - Simplified approach
+  const handleRespondPress = useCallback((query: Query) => {
+    setResponseQuery(query);
+    setResponseStatus(query.status === 'submitted' ? 'in_review' : query.status);
+    setResponseText('');
+    setIsResponseMode(true);
+    
+    // If modal is open, close it
+    if (showQueryModal) {
+      setShowQueryModal(false);
+    }
+  }, [showQueryModal]);
+
+  // Cancel response mode
+  const handleCancelResponse = useCallback(() => {
+    setIsResponseMode(false);
+    setResponseQuery(null);
+    setResponseText('');
+    setResponseStatus('in_review');
+  }, []);
+
+  // Handle back button for Android
+  useEffect(() => {
+    const backAction = () => {
+      if (isResponseMode) {
+        handleCancelResponse();
+        return true;
+      }
+      if (showQueryModal) {
+        setShowQueryModal(false);
+        return true;
+      }
+      return false;
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [isResponseMode, showQueryModal, handleCancelResponse]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+      if (apiClientRef.current) {
+        apiClientRef.current = null;
+      }
+    };
+  }, []);
+
+  // Memoized components
+  const memoizedStats = useMemo(() => (
+    <View style={styles.statsContainer}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <StatsCard label="Submitted" count={stats.submitted} color="#3498DB" />
+        <StatsCard label="In Review" count={stats.in_review} color="#F39C12" />
+        <StatsCard label="Resolved" count={stats.resolved} color="#27AE60" />
+        <StatsCard label="Rejected" count={stats.rejected} color="#E74C3C" />
+        <StatsCard label="Total" count={stats.total} color="#4E54C8" />
+      </ScrollView>
+    </View>
+  ), [stats]);
+
+  const memoizedFilters = useMemo(() => showFilters && (
+    <View style={styles.filtersContainer}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={styles.filterSection}>
+          <Text style={styles.filterLabel}>Category:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {CATEGORIES.map((category) => (
+              <TouchableOpacity
+                key={category.key}
+                style={[
+                  styles.filterChip,
+                  selectedCategory === category.key && styles.activeFilterChip
+                ]}
+                onPress={() => handleFilterChange('category', category.key)}
+              >
+                <Text style={[
+                  styles.filterChipText,
+                  selectedCategory === category.key && styles.activeFilterChipText
+                ]}>
+                  {category.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+        
+        <View style={styles.filterSection}>
+          <Text style={styles.filterLabel}>Status:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {[{ key: 'all', label: 'All Status' }, ...STATUS_OPTIONS].map((status) => (
+              <TouchableOpacity
+                key={status.key}
+                style={[
+                  styles.filterChip,
+                  selectedStatus === status.key && styles.activeFilterChip
+                ]}
+                onPress={() => handleFilterChange('status', status.key)}
+              >
+                <Text style={[
+                  styles.filterChipText,
+                  selectedStatus === status.key && styles.activeFilterChipText
+                ]}>
+                  {status.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </ScrollView>
+    </View>
+  ), [showFilters, selectedCategory, selectedStatus, handleFilterChange]);
+
+  // Loading screen
   if (isLoading && queries.length === 0) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#4E54C8" />
         <Text style={styles.loadingText}>Loading queries...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  // Response Mode Screen
+  if (isResponseMode && responseQuery) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="light-content" backgroundColor="#4E54C8" />
+        
+        {/* Response Header */}
+        <View style={styles.responseHeader}>
+          <TouchableOpacity onPress={handleCancelResponse}>
+            <Feather name="arrow-left" size={24} color="#3A4276" />
+          </TouchableOpacity>
+          <Text style={styles.responseTitle}>Respond to Query</Text>
+          <TouchableOpacity
+            style={[styles.sendButton, isSendingResponse && styles.disabledButton]}
+            onPress={handleQueryResponse}
+            disabled={isSendingResponse}
+          >
+            {isSendingResponse ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.sendButtonText}>Send</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.responseContent} keyboardShouldPersistTaps="handled">
+          {/* Query Preview */}
+          <View style={styles.queryPreview}>
+            <Text style={styles.queryPreviewTitle}>{responseQuery.title}</Text>
+            <Text style={styles.queryPreviewDescription}>
+              {responseQuery.description}
+            </Text>
+            <View style={styles.queryPreviewMeta}>
+              <Text style={styles.queryPreviewStudent}>
+                By: {responseQuery.studentId.name} ({responseQuery.classId.name} {responseQuery.classId.section})
+              </Text>
+            </View>
+          </View>
+
+          {/* Status Update */}
+          <View style={styles.responseSection}>
+            <Text style={styles.responseLabel}>Update Status</Text>
+            <View style={styles.statusOptionsContainer}>
+              {STATUS_OPTIONS.map((status) => (
+                <TouchableOpacity
+                  key={status.key}
+                  style={[
+                    styles.statusOption,
+                    responseStatus === status.key && styles.activeStatusOption
+                  ]}
+                  onPress={() => setResponseStatus(status.key)}
+                >
+                  <Text style={[
+                    styles.statusOptionText,
+                    responseStatus === status.key && styles.activeStatusOptionText
+                  ]}>
+                    {status.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Response Message */}
+          <View style={styles.responseSection}>
+            <Text style={styles.responseLabel}>Response Message</Text>
+            <TextInput
+              style={styles.responseTextInput}
+              placeholder="Enter your response to the student..."
+              value={responseText}
+              onChangeText={setResponseText}
+              multiline
+              numberOfLines={6}
+              textAlignVertical="top"
+              autoCapitalize="sentences"
+              autoCorrect={true}
+            />
+            <Text style={styles.characterCount}>
+              {responseText.length} characters (minimum 10 required)
+            </Text>
+          </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -407,8 +858,9 @@ const AdminStudentQueriesScreen: React.FC<Props> = ({ navigation }) => {
             placeholder="Search queries..."
             value={searchText}
             onChangeText={setSearchText}
-            onSubmitEditing={handleSearch}
             returnKeyType="search"
+            autoCapitalize="none"
+            autoCorrect={false}
           />
           {searchText.length > 0 && (
             <TouchableOpacity onPress={() => setSearchText('')}>
@@ -419,144 +871,98 @@ const AdminStudentQueriesScreen: React.FC<Props> = ({ navigation }) => {
         
         <TouchableOpacity
           style={styles.filterButton}
-          onPress={() => setShowFilters(!showFilters)}
-        >
-          <Feather name="filter" size={20} color="#4E54C8" />
+          onPress={() => setShowFilters(!showFilters)}>
+          <Feather name="filter" size={20} color={showFilters ? "#FFFFFF" : "#8A94A6"} />
         </TouchableOpacity>
       </View>
 
-      {/* Filter Options */}
-      {showFilters && (
-        <View style={styles.filtersContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Category:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {CATEGORIES.map((category) => (
-                  <TouchableOpacity
-                    key={category.key}
-                    style={[
-                      styles.filterChip,
-                      selectedCategory === category.key && styles.activeFilterChip
-                    ]}
-                    onPress={() => handleFilterChange('category', category.key)}
-                  >
-                    <Text style={[
-                      styles.filterChipText,
-                      selectedCategory === category.key && styles.activeFilterChipText
-                    ]}>
-                      {category.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-            
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Status:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {STATUS_OPTIONS.map((status) => (
-                  <TouchableOpacity
-                    key={status.key}
-                    style={[
-                      styles.filterChip,
-                      selectedStatus === status.key && styles.activeFilterChip
-                    ]}
-                    onPress={() => handleFilterChange('status', status.key)}
-                  >
-                    <Text style={[
-                      styles.filterChipText,
-                      selectedStatus === status.key && styles.activeFilterChipText
-                    ]}>
-                      {status.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          </ScrollView>
-        </View>
-      )}
+      {/* Filters */}
+      {memoizedFilters}
 
-      {/* Statistics */}
-      <View style={styles.statsContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {renderStatsCard('Submitted', stats.submitted, '#3498DB')}
-          {renderStatsCard('In Review', stats.in_review, '#F39C12')}
-          {renderStatsCard('Resolved', stats.resolved, '#27AE60')}
-          {renderStatsCard('Rejected', stats.rejected, '#E74C3C')}
-          {renderStatsCard('Total', stats.total, '#4E54C8')}
-        </ScrollView>
-      </View>
+      {/* Stats */}
+      {memoizedStats}
 
       {/* Queries List */}
-      <FlatList
-        data={queries}
-        renderItem={renderQueryItem}
-        keyExtractor={(item) => item._id}
-        contentContainerStyle={styles.listContainer}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={["#4E54C8"]}
+      <View style={styles.contentContainer}>
+        {queries.length === 0 && !isLoading ? (
+          <View style={styles.emptyContainer}>
+            <FontAwesome5 name="inbox" size={64} color="#DDD" />
+            <Text style={styles.emptyText}>No queries found</Text>
+            <Text style={styles.emptySubText}>
+              {searchText || selectedCategory !== 'all' || selectedStatus !== 'all'
+                ? 'Try adjusting your filters'
+                : 'Students haven\'t submitted any queries yet'}
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={queries}
+            keyExtractor={(item) => item._id}
+            renderItem={({ item }) => (
+              <QueryCard
+                item={item}
+                onPress={handleQueryPress}
+                onRespond={handleRespondPress}
+              />
+            )}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#4E54C8']} />
+            }
+            onEndReached={loadMoreData}
+            onEndReachedThreshold={0.3}
+            ListFooterComponent={() =>
+              isLoadingMore ? (
+                <View style={styles.loadMoreContainer}>
+                  <ActivityIndicator size="small" color="#4E54C8" />
+                  <Text style={styles.loadMoreText}>Loading more queries...</Text>
+                </View>
+              ) : null
+            }
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContainer}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            windowSize={10}
+            initialNumToRender={10}
           />
-        }
-        onEndReached={loadMoreData}
-        onEndReachedThreshold={0.1}
-        ListFooterComponent={
-          hasMoreData && queries.length > 0 ? (
-            <View style={styles.loadingFooter}>
-              <ActivityIndicator size="small" color="#4E54C8" />
-            </View>
-          ) : null
-        }
-        ListEmptyComponent={
-          !isLoading ? (
-            <View style={styles.emptyContainer}>
-              <FontAwesome5 name="inbox" size={48} color="#BDC3C7" />
-              <Text style={styles.emptyText}>No queries found</Text>
-              <Text style={styles.emptySubtext}>
-                {searchText || selectedCategory !== 'all' || selectedStatus !== 'all'
-                  ? 'Try adjusting your search or filters'
-                  : 'Students haven\'t submitted any queries yet'}
-              </Text>
-            </View>
-          ) : null
-        }
-      />
+        )}
+      </View>
 
       {/* Query Detail Modal */}
       <Modal
         visible={showQueryModal}
         animationType="slide"
         presentationStyle="pageSheet"
+        onRequestClose={() => setShowQueryModal(false)}
       >
-        <SafeAreaView style={styles.modalContainer}>
+        <SafeAreaView style={styles.modalSafeArea}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setShowQueryModal(false)}>
               <Feather name="x" size={24} color="#3A4276" />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Query Details</Text>
             <TouchableOpacity
+              style={styles.respondModalButton}
               onPress={() => {
-                setShowResponseModal(true);
-                setResponseStatus(selectedQuery?.status === 'submitted' ? 'in_review' : selectedQuery?.status || 'in_review');
+                if (selectedQuery) {
+                  handleRespondPress(selectedQuery);
+                }
               }}
             >
-              <Text style={styles.respondButton}>Respond</Text>
+              <Text style={styles.respondModalButtonText}>Respond</Text>
             </TouchableOpacity>
           </View>
-          
+
           {selectedQuery && (
-            <ScrollView style={styles.modalContent}>
-              <View style={styles.queryDetailHeader}>
-                <Text style={styles.queryDetailTitle}>{selectedQuery.title}</Text>
-                <View style={styles.queryDetailBadges}>
-                  <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(selectedQuery.priority) }]}>
+            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+              {/* Query Header */}
+              <View style={styles.modalQueryHeader}>
+                <Text style={styles.modalQueryTitle}>{selectedQuery.title}</Text>
+                <View style={styles.modalQueryBadges}>
+                  <View style={[styles.priorityBadge, { backgroundColor: PRIORITY_COLORS[selectedQuery.priority] }]}>
                     <Text style={styles.badgeText}>{selectedQuery.priority.toUpperCase()}</Text>
                   </View>
-                  <View style={[styles.statusBadge, { backgroundColor: getStatusColor(selectedQuery.status) }]}>
+                  <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[selectedQuery.status] }]}>
                     <Text style={styles.badgeText}>{selectedQuery.status.replace('_', ' ').toUpperCase()}</Text>
                   </View>
                   {selectedQuery.isUrgent && (
@@ -566,145 +972,130 @@ const AdminStudentQueriesScreen: React.FC<Props> = ({ navigation }) => {
                   )}
                 </View>
               </View>
-              
-              <View style={styles.queryDetailSection}>
-                <Text style={styles.sectionTitle}>Description</Text>
-                <Text style={styles.queryDetailDescription}>{selectedQuery.description}</Text>
-              </View>
-              
-              <View style={styles.queryDetailSection}>
-                <Text style={styles.sectionTitle}>Student Information</Text>
-                <View style={styles.studentDetailCard}>
-                  <FontAwesome5 name="user" size={16} color="#4E54C8" />
-                  <View style={styles.studentDetails}>
-                    <Text style={styles.studentDetailName}>{selectedQuery.studentId.name}</Text>
-                    <Text style={styles.studentDetailInfo}>
-                      {selectedQuery.studentId.email} • ID: {selectedQuery.studentId.studentId}
-                    </Text>
-                    <Text style={styles.studentDetailClass}>
-                      Class: {selectedQuery.classId.name} {selectedQuery.classId.section}
+
+              {/* Student Information */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Student Information</Text>
+                <View style={styles.studentDetails}>
+                  <View style={styles.studentDetailRow}>
+                    <FontAwesome5 name="user" size={16} color="#8A94A6" />
+                    <Text style={styles.studentDetailText}>{selectedQuery.studentId.name}</Text>
+                  </View>
+                  <View style={styles.studentDetailRow}>
+                    <MaterialIcons name="email" size={16} color="#8A94A6" />
+                    <Text style={styles.studentDetailText}>{selectedQuery.studentId.email}</Text>
+                  </View>
+                  <View style={styles.studentDetailRow}>
+                    <FontAwesome5 name="id-card" size={16} color="#8A94A6" />
+                    <Text style={styles.studentDetailText}>ID: {selectedQuery.studentId.studentId}</Text>
+                  </View>
+                  <View style={styles.studentDetailRow}>
+                    <FontAwesome5 name="graduation-cap" size={16} color="#8A94A6" />
+                    <Text style={styles.studentDetailText}>
+                      {selectedQuery.classId.name} {selectedQuery.classId.section}
                     </Text>
                   </View>
                 </View>
               </View>
-              
+
+              {/* Query Details */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Query Details</Text>
+                <Text style={styles.queryDescription}>{selectedQuery.description}</Text>
+                
+                <View style={styles.queryMetadata}>
+                  <View style={styles.metadataRow}>
+                    <Text style={styles.metadataLabel}>Category:</Text>
+                    <Text style={styles.metadataValue}>
+                      {CATEGORIES.find(c => c.key === selectedQuery.category)?.label || selectedQuery.category}
+                    </Text>
+                  </View>
+                  <View style={styles.metadataRow}>
+                    <Text style={styles.metadataLabel}>Submitted:</Text>
+                    <Text style={styles.metadataValue}>
+                      {new Date(selectedQuery.createdAt).toLocaleString('en-IN')}
+                    </Text>
+                  </View>
+                  <View style={styles.metadataRow}>
+                    <Text style={styles.metadataLabel}>Last Updated:</Text>
+                    <Text style={styles.metadataValue}>
+                      {new Date(selectedQuery.updatedAt).toLocaleString('en-IN')}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Attachments */}
               {selectedQuery.attachments.length > 0 && (
-                <View style={styles.queryDetailSection}>
-                  <Text style={styles.sectionTitle}>Attachments</Text>
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>Attachments ({selectedQuery.attachments.length})</Text>
                   {selectedQuery.attachments.map((attachment, index) => (
-                    <View key={index} style={styles.attachmentItem}>
-                      <Feather name="paperclip" size={16} color="#8A94A6" />
-                      <Text style={styles.attachmentName}>{attachment.fileName}</Text>
-                      <Text style={styles.attachmentSize}>
-                        ({(attachment.fileSize / 1024).toFixed(1)} KB)
-                      </Text>
-                    </View>
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.attachmentItem}
+                      onPress={() => downloadAttachment(selectedQuery._id, index, attachment.fileName)}
+                      disabled={isDownloading}
+                    >
+                      <View style={styles.attachmentInfo}>
+                        <Feather name="file" size={20} color="#4E54C8" />
+                        <View style={styles.attachmentDetails}>
+                          <Text style={styles.attachmentName} numberOfLines={1}>
+                            {attachment.fileName}
+                          </Text>
+                          <Text style={styles.attachmentSize}>
+                            {(attachment.fileSize / 1024).toFixed(1)} KB • {attachment.mimeType}
+                          </Text>
+                        </View>
+                      </View>
+                      {isDownloading ? (
+                        <ActivityIndicator size="small" color="#4E54C8" />
+                      ) : (
+                        <Feather name="download" size={20} color="#4E54C8" />
+                      )}
+                    </TouchableOpacity>
                   ))}
                 </View>
               )}
-              
+
+              {/* Admin Response */}
               {selectedQuery.adminResponse && (
-                <View style={styles.queryDetailSection}>
-                  <Text style={styles.sectionTitle}>Admin Response</Text>
-                  <View style={styles.responseCard}>
-                    <Text style={styles.responseMessage}>{selectedQuery.adminResponse.message}</Text>
-                    <View style={styles.responseFooter}>
-                      <Text style={styles.responseBy}>
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>Admin Response</Text>
+                  <View style={styles.adminResponseContainer}>
+                    <Text style={styles.adminResponseMessage}>
+                      {selectedQuery.adminResponse.message}
+                    </Text>
+                    <View style={styles.adminResponseMeta}>
+                      <Text style={styles.adminResponseBy}>
                         By: {selectedQuery.adminResponse.respondedBy.name}
                       </Text>
-                      <Text style={styles.responseDate}>
-                        {formatDate(selectedQuery.adminResponse.respondedAt)}
+                      <Text style={styles.adminResponseDate}>
+                        {new Date(selectedQuery.adminResponse.respondedAt).toLocaleString('en-IN')}
                       </Text>
                     </View>
                   </View>
                 </View>
               )}
-              
-              <View style={styles.queryDetailSection}>
-                <Text style={styles.sectionTitle}>Timeline</Text>
-                <View style={styles.timelineItem}>
-                  <Text style={styles.timelineLabel}>Created:</Text>
-                  <Text style={styles.timelineDate}>{formatDate(selectedQuery.createdAt)}</Text>
-                </View>
-                <View style={styles.timelineItem}>
-                  <Text style={styles.timelineLabel}>Last Updated:</Text>
-                  <Text style={styles.timelineDate}>{formatDate(selectedQuery.updatedAt)}</Text>
-                </View>
+
+              {/* Action Buttons */}
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={styles.respondButton}
+                  onPress={() => {
+                    if (selectedQuery) {
+                      handleRespondPress(selectedQuery);
+                    }
+                  }}
+                >
+                  <Feather name="message-circle" size={20} color="#FFFFFF" />
+                  <Text style={styles.respondButtonText}>
+                    {selectedQuery.adminResponse ? 'Update Response' : 'Respond'}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </ScrollView>
           )}
         </SafeAreaView>
-      </Modal>
-
-      {/* Response Modal */}
-      <Modal
-        visible={showResponseModal}
-        animationType="slide"
-        transparent={true}
-      >
-        <View style={styles.responseModalOverlay}>
-          <View style={styles.responseModalContainer}>
-            <View style={styles.responseModalHeader}>
-              <Text style={styles.responseModalTitle}>Respond to Query</Text>
-              <TouchableOpacity onPress={() => setShowResponseModal(false)}>
-                <Feather name="x" size={24} color="#3A4276" />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.statusSelectorContainer}>
-              <Text style={styles.statusSelectorLabel}>Update Status:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {STATUS_OPTIONS.filter(s => s.key !== 'all').map((status) => (
-                  <TouchableOpacity
-                    key={status.key}
-                    style={[
-                      styles.statusSelectorChip,
-                      responseStatus === status.key && styles.activeStatusSelectorChip
-                    ]}
-                    onPress={() => setResponseStatus(status.key)}
-                  >
-                    <Text style={[
-                      styles.statusSelectorChipText,
-                      responseStatus === status.key && styles.activeStatusSelectorChipText
-                    ]}>
-                      {status.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-            
-            <TextInput
-              style={styles.responseInput}
-              placeholder="Enter your response message..."
-              value={responseText}
-              onChangeText={setResponseText}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
-            
-            <View style={styles.responseModalActions}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => setShowResponseModal(false)}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.sendButton, (!responseText.trim() || isLoading) && styles.disabledButton]}
-                onPress={handleQueryResponse}
-                disabled={!responseText.trim() || isLoading}
-              >
-                {isLoading ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.sendButtonText}>Send Response</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -713,60 +1104,62 @@ const AdminStudentQueriesScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F8F9FC',
+    backgroundColor: '#F8F9FA',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8F9FC',
+    backgroundColor: '#F8F9FA',
   },
   loadingText: {
-    marginTop: 12,
+    marginTop: 16,
     fontSize: 16,
-    color: '#3A4276',
+    color: '#8A94A6',
+    textAlign: 'center',
   },
   searchContainer: {
     flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E8ECF0',
+    borderBottomColor: '#E5E5E5',
   },
   searchInputContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8F9FC',
+    backgroundColor: '#F8F9FA',
     borderRadius: 12,
     paddingHorizontal: 12,
+    paddingVertical: 8,
     marginRight: 12,
   },
   searchInput: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
     fontSize: 16,
     color: '#3A4276',
+    marginLeft: 8,
+    marginRight: 8,
   },
   filterButton: {
-    width: 48,
-    height: 48,
+    backgroundColor: '#4E54C8',
     borderRadius: 12,
-    backgroundColor: '#F8F9FC',
-    justifyContent: 'center',
+    padding: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   filtersContainer: {
     backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E8ECF0',
+    borderBottomColor: '#E5E5E5',
+    paddingVertical: 8,
   },
   filterSection: {
-    marginHorizontal: 16,
-    marginVertical: 8,
+    marginBottom: 12,
+    paddingHorizontal: 16,
   },
   filterLabel: {
     fontSize: 14,
@@ -775,45 +1168,49 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   filterChip: {
-    backgroundColor: '#F8F9FC',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
     marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
   },
   activeFilterChip: {
     backgroundColor: '#4E54C8',
+    borderColor: '#4E54C8',
   },
   filterChipText: {
     fontSize: 12,
     color: '#8A94A6',
+    fontWeight: '500',
   },
   activeFilterChipText: {
     color: '#FFFFFF',
   },
   statsContainer: {
     backgroundColor: '#FFFFFF',
-    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E8ECF0',
+    borderBottomColor: '#E5E5E5',
+    paddingVertical: 16,
   },
   statsCard: {
     alignItems: 'center',
-    marginHorizontal: 12,
+    paddingHorizontal: 20,
     minWidth: 80,
   },
   statsIconContainer: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 8,
   },
   statsIcon: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
   },
   statsCount: {
     fontSize: 18,
@@ -824,35 +1221,60 @@ const styles = StyleSheet.create({
   statsLabel: {
     fontSize: 12,
     color: '#8A94A6',
+    textAlign: 'center',
+  },
+  contentContainer: {
+    flex: 1,
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#8A94A6',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: '#B8C2CC',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   listContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingVertical: 8,
   },
   queryCard: {
     backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginVertical: 6,
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     elevation: 3,
   },
   urgentQueryCard: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#E74C3C',
+    borderColor: '#E74C3C',
+    borderWidth: 2,
   },
   unreadQueryCard: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#4E54C8',
+    backgroundColor: '#F8F9FF',
+    borderColor: '#4E54C8',
   },
   queryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   queryHeaderLeft: {
     flex: 1,
@@ -866,28 +1288,23 @@ const styles = StyleSheet.create({
   queryBadges: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 6,
   },
   priorityBadge: {
+    borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
-    marginRight: 8,
-    marginBottom: 4,
   },
   statusBadge: {
+    borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
-    marginRight: 8,
-    marginBottom: 4,
   },
   urgentBadge: {
+    backgroundColor: '#E74C3C',
+    borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: '#E74C3C',
-    marginRight: 8,
-    marginBottom: 4,
   },
   badgeText: {
     fontSize: 10,
@@ -899,11 +1316,11 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     backgroundColor: '#4E54C8',
-    marginLeft: 8,
+    marginTop: 4,
   },
   queryDescription: {
     fontSize: 14,
-    color: '#8A94A6',
+    color: '#6C757D',
     lineHeight: 20,
     marginBottom: 12,
   },
@@ -911,6 +1328,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
   studentInfo: {
     flexDirection: 'row',
@@ -919,13 +1337,13 @@ const styles = StyleSheet.create({
   },
   studentName: {
     fontSize: 12,
-    color: '#3A4276',
-    fontWeight: '500',
+    color: '#8A94A6',
     marginLeft: 6,
+    fontWeight: '500',
   },
   className: {
     fontSize: 12,
-    color: '#8A94A6',
+    color: '#B8C2CC',
     marginLeft: 4,
   },
   queryDate: {
@@ -935,284 +1353,325 @@ const styles = StyleSheet.create({
   attachmentIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#E8ECF0',
+    marginBottom: 12,
   },
   attachmentCount: {
     fontSize: 12,
     color: '#8A94A6',
     marginLeft: 6,
   },
-  loadingFooter: {
-    paddingVertical: 20,
+  quickRespondButton: {
+    backgroundColor: '#4E54C8',
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 8,
   },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 32,
-  },
-  emptyText: {
-    fontSize: 18,
+  quickRespondText: {
+    color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '600',
-    color: '#3A4276',
-    marginTop: 16,
-    marginBottom: 8,
+    marginLeft: 6,
   },
-  emptySubtext: {
+  loadMoreContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  loadMoreText: {
+    marginTop: 8,
     fontSize: 14,
     color: '#8A94A6',
-    textAlign: 'center',
-    lineHeight: 20,
   },
-  modalContainer: {
+  // Modal Styles
+  modalSafeArea: {
     flex: 1,
-    backgroundColor: '#F8F9FC',
+    backgroundColor: '#F8F9FA',
   },
   modalHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E8ECF0',
+    borderBottomColor: '#E5E5E5',
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#3A4276',
   },
-  respondButton: {
-    fontSize: 16,
+  respondModalButton: {
+    backgroundColor: '#4E54C8',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  respondModalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '600',
-    color: '#4E54C8',
   },
   modalContent: {
     flex: 1,
-    paddingHorizontal: 16,
+    padding: 16,
   },
-  queryDetailHeader: {
-    paddingVertical: 20,
-  },
-  queryDetailTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#3A4276',
-    marginBottom: 12,
-  },
-  queryDetailBadges: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  queryDetailSection: {
+  modalQueryHeader: {
     marginBottom: 24,
   },
-  sectionTitle: {
+  modalQueryTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#3A4276',
+    marginBottom: 12,
+  },
+  modalQueryBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  modalSection: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  modalSectionTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#3A4276',
     marginBottom: 12,
   },
-  queryDetailDescription: {
-    fontSize: 16,
-    color: '#3A4276',
-    lineHeight: 24,
-  },
-  studentDetailCard: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
-  },
   studentDetails: {
-    flex: 1,
+    gap: 12,
+  },
+  studentDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  studentDetailText: {
+    fontSize: 14,
+    color: '#6C757D',
     marginLeft: 12,
   },
-  studentDetailName: {
-    fontSize: 16,
-    fontWeight: '600',
+  queryMetadata: {
+    marginTop: 16,
+    gap: 8,
+  },
+  metadataRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  metadataLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#8A94A6',
+  },
+  metadataValue: {
+    fontSize: 14,
     color: '#3A4276',
-    marginBottom: 4,
-  },
-  studentDetailInfo: {
-    fontSize: 14,
-    color: '#8A94A6',
-    marginBottom: 4,
-  },
-  studentDetailClass: {
-    fontSize: 14,
-    color: '#8A94A6',
+    textAlign: 'right',
+    flex: 1,
+    marginLeft: 16,
   },
   attachmentItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 12,
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F8F9FA',
     borderRadius: 8,
     marginBottom: 8,
   },
-  attachmentName: {
+  attachmentInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
+  },
+  attachmentDetails: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  attachmentName: {
     fontSize: 14,
+    fontWeight: '500',
     color: '#3A4276',
-    marginLeft: 8,
   },
   attachmentSize: {
     fontSize: 12,
     color: '#8A94A6',
+    marginTop: 2,
   },
-  responseCard: {
-    backgroundColor: '#FFFFFF',
+  adminResponseContainer: {
+    backgroundColor: '#F8F9FF',
+    borderRadius: 8,
     padding: 16,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4E54C8',
   },
-  responseMessage: {
-    fontSize: 16,
+  adminResponseMessage: {
+    fontSize: 14,
     color: '#3A4276',
-    lineHeight: 24,
+    lineHeight: 20,
     marginBottom: 12,
   },
-  responseFooter: {
+  adminResponseMeta: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#E8ECF0',
   },
-  responseBy: {
+  adminResponseBy: {
     fontSize: 12,
     color: '#8A94A6',
-  },
-  responseDate: {
-    fontSize: 12,
-    color: '#8A94A6',
-  },
-  timelineItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  timelineLabel: {
-    fontSize: 14,
-    color: '#8A94A6',
-  },
-  timelineDate: {
-    fontSize: 14,
-    color: '#3A4276',
     fontWeight: '500',
   },
-  responseModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+  adminResponseDate: {
+    fontSize: 12,
+    color: '#8A94A6',
   },
-  responseModalContainer: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 34,
-    maxHeight: '80%',
+  modalActions: {
+    paddingVertical: 16,
   },
-  responseModalHeader: {
+  respondButton: {
+    backgroundColor: '#4E54C8',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E8ECF0',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
   },
-  responseModalTitle: {
+  respondButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  // Response Mode Styles
+  responseHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5E5',
+  },
+  responseTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#3A4276',
   },
-  statusSelectorContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+  sendButton: {
+    backgroundColor: '#4E54C8',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
-  statusSelectorLabel: {
+  disabledButton: {
+    backgroundColor: '#B8C2CC',
+  },
+  sendButtonText: {
+    color: '#FFFFFF',
     fontSize: 14,
+    fontWeight: '600',
+  },
+  responseContent: {
+    flex: 1,
+    padding: 16,
+  },
+  queryPreview: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  queryPreviewTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3A4276',
+    marginBottom: 8,
+  },
+  queryPreviewDescription: {
+    fontSize: 14,
+    color: '#6C757D',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  queryPreviewMeta: {
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5E5',
+    paddingTop: 12,
+  },
+  queryPreviewStudent: {
+    fontSize: 12,
+    color: '#8A94A6',
+  },
+  responseSection: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  responseLabel: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#3A4276',
     marginBottom: 12,
   },
-  statusSelectorChip: {
-    backgroundColor: '#F8F9FC',
+  statusOptionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  statusOption: {
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 16,
-    marginRight: 8,
+    backgroundColor: '#F8F9FA',
   },
-  activeStatusSelectorChip: {
+  activeStatusOption: {
     backgroundColor: '#4E54C8',
+    borderColor: '#4E54C8',
   },
-  statusSelectorChipText: {
+  statusOptionText: {
     fontSize: 14,
     color: '#8A94A6',
+    fontWeight: '500',
   },
-  activeStatusSelectorChipText: {
+  activeStatusOptionText: {
     color: '#FFFFFF',
   },
-  responseInput: {
-    backgroundColor: '#F8F9FC',
-    marginHorizontal: 20,
-    marginVertical: 16,
+  responseTextInput: {
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    borderRadius: 8,
     padding: 16,
-    borderRadius: 12,
-    fontSize: 16,
+    fontSize: 14,
     color: '#3A4276',
+    backgroundColor: '#F8F9FA',
     minHeight: 120,
   },
-  responseModalActions: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: 12,
-    backgroundColor: '#F8F9FC',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+  characterCount: {
+    fontSize: 12,
     color: '#8A94A6',
-  },
-  sendButton: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: 12,
-    backgroundColor: '#4E54C8',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  sendButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  disabledButton: {
-    backgroundColor: '#BDC3C7',
+    textAlign: 'right',
+    marginTop: 8,
   },
 });
 
