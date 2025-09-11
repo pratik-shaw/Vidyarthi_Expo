@@ -21,22 +21,24 @@ import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { STUDENT_API } from '../config/api';
-
 import { RootStackParamList } from '../App';
 
 const { width } = Dimensions.get('window');
-const PRIMARY_COLOR = '#4F46E5';
-const POSITIVE_COLOR = '#10B981';
+const PRIMARY_COLOR = '#4F46E5'; // Consistent with attendance screen
+const POSITIVE_COLOR = '#22C55E'; // Updated to match attendance screen
 const NEGATIVE_COLOR = '#EF4444';
 const NEUTRAL_COLOR = '#6B7280';
 
 // API configuration
 const API_URL = STUDENT_API;
+const API_TIMEOUT = 15000;
+
 const apiClient = axios.create({
   baseURL: API_URL,
-  timeout: 15000,
+  timeout: API_TIMEOUT,
 });
 
 // Add token interceptor
@@ -115,21 +117,27 @@ interface ConductData {
 
 const StudentConductScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
   
   const [conductData, setConductData] = useState<ConductData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTab, setSelectedTab] = useState<'overview' | 'records' | 'trends' | 'summary'>('overview');
+  const [selectedTab, setSelectedTab] = useState<'records' | 'overview' | 'summary' | 'trends'>('records');
   const [selectedType, setSelectedType] = useState<'all' | 'positive' | 'negative' | 'neutral'>('all');
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const headerOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    navigation.setOptions({
+      headerShown: false,
+    });
+
     fetchConductData();
     startAnimations();
-  }, []);
+  }, [navigation]);
 
   const startAnimations = () => {
     Animated.parallel([
@@ -142,6 +150,11 @@ const StudentConductScreen: React.FC = () => {
         toValue: 0,
         duration: 600,
         useNativeDriver: true,
+      }),
+      Animated.timing(headerOpacity, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
       })
     ]).start();
   };
@@ -153,23 +166,45 @@ const StudentConductScreen: React.FC = () => {
       setConductData(response.data);
     } catch (err: any) {
       console.error('Error fetching conduct data:', err);
-      if (err.response?.status === 401) {
-        Alert.alert('Session Expired', 'Please log in again.', [
-          { text: 'OK', onPress: () => navigation.replace('StudentLogin') }
-        ]);
-      } else {
-        setError(err.response?.data?.msg || 'Failed to load conduct data');
-      }
+      handleApiError(err);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchConductData();
-    setRefreshing(false);
+  const handleApiError = (error: any) => {
+    if (axios.isAxiosError(error)) {
+      if (error.response?.status === 401) {
+        Alert.alert(
+          "Session Expired",
+          "Your session has expired. Please log in again.",
+          [{ text: "OK", onPress: () => navigation.replace('StudentLogin') }]
+        );
+        return;
+      } else if (error.response?.status === 403) {
+        setError("You don't have permission to view this data.");
+      } else if (error.response?.status === 404) {
+        setError("Conduct data not found.");
+      } else if (error.code === 'ECONNABORTED') {
+        setError("Request timeout. Please check your internet connection.");
+      } else if (error.response) {
+        setError(error.response.data?.msg || `Server error (${error.response.status})`);
+      } else if (error.request) {
+        setError("Could not reach the server. Please check your connection.");
+      } else {
+        setError("An error occurred while fetching data.");
+      }
+    } else {
+      setError(error.message || "An unexpected error occurred.");
+    }
   };
+
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    fetchConductData().finally(() => {
+      setRefreshing(false);
+    });
+  }, []);
 
   const getConductTypeColor = (type: string) => {
     switch (type) {
@@ -180,11 +215,20 @@ const StudentConductScreen: React.FC = () => {
     }
   };
 
+  const getConductTypeIcon = (type: string) => {
+    switch (type) {
+      case 'positive': return 'thumbs-up';
+      case 'negative': return 'thumbs-down';
+      case 'neutral': return 'minus';
+      default: return 'help-circle';
+    }
+  };
+
   const getSeverityColor = (severity: string) => {
     switch (severity) {
-      case 'low': return '#10B981';
+      case 'low': return POSITIVE_COLOR;
       case 'medium': return '#F59E0B';
-      case 'high': return '#EF4444';
+      case 'high': return NEGATIVE_COLOR;
       default: return '#6B7280';
     }
   };
@@ -195,186 +239,114 @@ const StudentConductScreen: React.FC = () => {
     return conductData.conducts.filter(record => record.type === selectedType);
   };
 
-  const renderOverviewTab = () => {
-    if (!conductData || !conductData.hasData) {
-      return (
-        <View style={styles.noDataContainer}>
-          <Ionicons name="clipboard-outline" size={64} color="#9CA3AF" />
-          <Text style={styles.noDataTitle}>No Conduct Records</Text>
-          <Text style={styles.noDataText}>
-            Your conduct records will appear here once they are created by your teachers.
-          </Text>
-        </View>
-      );
-    }
+  const renderHeader = () => (
+    <Animated.View 
+      style={[
+        styles.header, 
+        { 
+          opacity: headerOpacity,
+          paddingTop: insets.top > 0 ? 0 : 20 
+        }
+      ]}
+    >
+      <TouchableOpacity 
+        style={styles.backButton}
+        onPress={() => navigation.goBack()}
+        activeOpacity={0.7}
+      >
+        <Feather name="arrow-left" size={24} color={PRIMARY_COLOR} />
+      </TouchableOpacity>
+      
+      <Text style={styles.headerTitle}>My Conduct</Text>
+      
+      <View style={styles.headerSpacer} />
+    </Animated.View>
+  );
 
-    const { summary } = conductData;
-
-    return (
-      <View style={styles.tabContent}>
-        {/* Overall Conduct Card */}
-        <LinearGradient
-          colors={[PRIMARY_COLOR, '#6366F1']}
-          style={styles.conductCard}
-        >
-          <View style={styles.conductHeader}>
-            <Text style={styles.conductTitle}>Overall Conduct</Text>
-            <View style={[styles.conductChip, { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
-              <Text style={styles.conductChipText}>
-                {summary.positiveCount > summary.negativeCount ? 'Good' : 
-                 summary.negativeCount > summary.positiveCount ? 'Needs Improvement' : 'Average'}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.totalRecordsText}>{summary.totalRecords} Total Records</Text>
-          <Text style={styles.conductSubtitle}>
-            {summary.positiveCount} positive • {summary.negativeCount} negative • {summary.neutralCount} neutral
-          </Text>
-        </LinearGradient>
-
-        {/* Quick Stats Grid */}
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: POSITIVE_COLOR + '15' }]}>
-              <Ionicons name="thumbs-up-outline" size={20} color={POSITIVE_COLOR} />
-            </View>
-            <Text style={styles.statValue}>{summary.positiveCount}</Text>
-            <Text style={styles.statLabel}>Positive</Text>
-            <Text style={styles.statPercentage}>{summary.positivePercentage}%</Text>
-          </View>
-          <View style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: NEGATIVE_COLOR + '15' }]}>
-              <Ionicons name="thumbs-down-outline" size={20} color={NEGATIVE_COLOR} />
-            </View>
-            <Text style={styles.statValue}>{summary.negativeCount}</Text>
-            <Text style={styles.statLabel}>Negative</Text>
-            <Text style={styles.statPercentage}>{summary.negativePercentage}%</Text>
-          </View>
-          <View style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: NEUTRAL_COLOR + '15' }]}>
-              <Ionicons name="remove-outline" size={20} color={NEUTRAL_COLOR} />
-            </View>
-            <Text style={styles.statValue}>{summary.neutralCount}</Text>
-            <Text style={styles.statLabel}>Neutral</Text>
-            <Text style={styles.statPercentage}>{summary.neutralPercentage}%</Text>
-          </View>
-        </View>
-
-        {/* Conduct Distribution Chart */}
-        {summary.totalRecords > 0 && (
-          <View style={styles.chartCard}>
-            <View style={styles.chartHeader}>
-              <Text style={styles.chartTitle}>Conduct Distribution</Text>
-              <Text style={styles.chartSubtitle}>All time records</Text>
-            </View>
-            <PieChart
-              data={[
-                {
-                  name: 'Positive',
-                  population: summary.positiveCount,
-                  color: POSITIVE_COLOR,
-                  legendFontColor: '#374151',
-                  legendFontSize: 12
-                },
-                {
-                  name: 'Negative',
-                  population: summary.negativeCount,
-                  color: NEGATIVE_COLOR,
-                  legendFontColor: '#374151',
-                  legendFontSize: 12
-                },
-                {
-                  name: 'Neutral',
-                  population: summary.neutralCount,
-                  color: NEUTRAL_COLOR,
-                  legendFontColor: '#374151',
-                  legendFontSize: 12
-                }
-              ].filter(item => item.population > 0)}
-              width={width - 80}
-              height={200}
-              chartConfig={{
-                color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`
-              }}
-              accessor="population"
-              backgroundColor="transparent"
-              paddingLeft="15"
-              hasLegend={true}
+  const renderTabSelector = () => (
+    <Animated.View
+      style={[
+        styles.tabContainer,
+        {
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }]
+        }
+      ]}
+    >
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tabScrollContent}
+      >
+        {[
+          { key: 'records', label: 'Records', icon: 'list' },
+          { key: 'overview', label: 'Overview', icon: 'pie-chart' },
+          { key: 'summary', label: 'Summary', icon: 'bar-chart-2' },
+          { key: 'trends', label: 'Trends', icon: 'trending-up' }
+        ].map((tab) => (
+          <TouchableOpacity
+            key={tab.key}
+            style={[
+              styles.tabButton,
+              selectedTab === tab.key && styles.tabButtonActive
+            ]}
+            onPress={() => setSelectedTab(tab.key as any)}
+            activeOpacity={0.7}
+          >
+            <Feather 
+              name={tab.icon as any} 
+              size={16} 
+              color={selectedTab === tab.key ? '#FFFFFF' : PRIMARY_COLOR} 
             />
-          </View>
-        )}
-
-        {/* Recent Trends */}
-        {summary.recentTrends.length > 0 && (
-          <View style={styles.chartCard}>
-            <View style={styles.chartHeader}>
-              <Text style={styles.chartTitle}>Monthly Trends</Text>
-              <Text style={styles.chartSubtitle}>Last 30 days</Text>
-            </View>
-            <LineChart
-              data={{
-                labels: summary.recentTrends.map(trend => trend.month.split('-')[1]),
-                datasets: [
-                  {
-                    data: summary.recentTrends.map(trend => trend.positive),
-                    color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-                    strokeWidth: 2
-                  },
-                  {
-                    data: summary.recentTrends.map(trend => trend.negative),
-                    color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
-                    strokeWidth: 2
-                  }
-                ]
-              }}
-              width={width - 80}
-              height={200}
-              chartConfig={{
-                backgroundColor: 'transparent',
-                backgroundGradientFrom: '#FFFFFF',
-                backgroundGradientTo: '#FFFFFF',
-                decimalPlaces: 0,
-                color: (opacity = 1) => `rgba(79, 70, 229, ${opacity})`,
-                labelColor: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
-                style: { borderRadius: 16 },
-                propsForDots: {
-                  r: '4',
-                  strokeWidth: '2',
-                  stroke: PRIMARY_COLOR
-                }
-              }}
-              bezier
-              style={styles.chart}
-              withDots={true}
-              withShadow={false}
-              withVerticalLines={false}
-              withHorizontalLines={true}
-            />
-          </View>
-        )}
-      </View>
-    );
-  };
+            <Text
+              style={[
+                styles.tabButtonText,
+                selectedTab === tab.key && styles.tabButtonTextActive
+              ]}
+            >
+              {tab.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </Animated.View>
+  );
 
   const renderRecordsTab = () => {
     const filteredRecords = getFilteredRecords();
 
     if (!conductData?.hasData || filteredRecords.length === 0) {
       return (
-        <View style={styles.noDataContainer}>
-          <Ionicons name="document-outline" size={64} color="#9CA3AF" />
+        <Animated.View
+          style={[
+            styles.noDataContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
+          <Ionicons name="document-outline" size={60} color="#8A94A6" />
           <Text style={styles.noDataTitle}>No Records Found</Text>
           <Text style={styles.noDataText}>
             {selectedType === 'all' 
               ? 'No conduct records available.'
               : `No ${selectedType} conduct records found.`}
           </Text>
-        </View>
+        </Animated.View>
       );
     }
 
     return (
-      <View style={styles.tabContent}>
+      <Animated.View
+        style={[
+          styles.section,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }]
+          }
+        ]}
+      >
         {/* Filter Buttons */}
         <View style={styles.filterContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -409,42 +381,45 @@ const StudentConductScreen: React.FC = () => {
         {filteredRecords.map((record, index) => (
           <View key={record._id} style={styles.recordCard}>
             <View style={styles.recordHeader}>
-              <View style={styles.recordInfo}>
-                <View style={styles.recordTitleRow}>
-                  <Text style={styles.recordTitle}>{record.title}</Text>
-                  <View style={[
-                    styles.typeChip,
-                    { backgroundColor: getConductTypeColor(record.type) + '20' }
+              <View style={styles.recordTitleRow}>
+                <Text style={styles.recordTitle}>{record.title}</Text>
+                <View style={[
+                  styles.typeChip,
+                  { backgroundColor: getConductTypeColor(record.type) + '15' }
+                ]}>
+                  <Feather 
+                    name={getConductTypeIcon(record.type) as any} 
+                    size={12} 
+                    color={getConductTypeColor(record.type)} 
+                  />
+                  <Text style={[
+                    styles.typeChipText,
+                    { color: getConductTypeColor(record.type) }
                   ]}>
-                    <Text style={[
-                      styles.typeChipText,
-                      { color: getConductTypeColor(record.type) }
-                    ]}>
-                      {record.type.charAt(0).toUpperCase() + record.type.slice(1)}
-                    </Text>
-                  </View>
+                    {record.type.charAt(0).toUpperCase() + record.type.slice(1)}
+                  </Text>
                 </View>
-                <Text style={styles.recordDescription}>{record.description}</Text>
-                <Text style={styles.recordDate}>
-                  {new Date(record.createdAt).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </Text>
               </View>
+              <Text style={styles.recordDescription}>{record.description}</Text>
+              <Text style={styles.recordDate}>
+                {new Date(record.createdAt).toLocaleDateString('en-US', {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </Text>
             </View>
 
             <View style={styles.recordDetails}>
               <View style={styles.recordMeta}>
                 <View style={styles.metaItem}>
-                  <Ionicons name="person-outline" size={16} color="#6B7280" />
+                  <Feather name="user" size={14} color="#8A94A6" />
                   <Text style={styles.metaText}>{record.teacherId.name}</Text>
                 </View>
                 <View style={styles.metaItem}>
-                  <Ionicons name="school-outline" size={16} color="#6B7280" />
+                  <Feather name="home" size={14} color="#8A94A6" />
                   <Text style={styles.metaText}>
                     {record.classId.name} - {record.classId.section}
                   </Text>
@@ -454,7 +429,7 @@ const StudentConductScreen: React.FC = () => {
               <View style={styles.recordFlags}>
                 <View style={[
                   styles.severityChip,
-                  { backgroundColor: getSeverityColor(record.severity) + '20' }
+                  { backgroundColor: getSeverityColor(record.severity) + '15' }
                 ]}>
                   <Text style={[
                     styles.severityChipText,
@@ -465,13 +440,13 @@ const StudentConductScreen: React.FC = () => {
                 </View>
                 {record.parentNotified && (
                   <View style={styles.flagChip}>
-                    <Ionicons name="mail-outline" size={12} color="#3B82F6" />
+                    <Feather name="mail" size={12} color="#3B82F6" />
                     <Text style={styles.flagText}>Parent Notified</Text>
                   </View>
                 )}
                 {record.followUpRequired && (
                   <View style={styles.flagChip}>
-                    <Ionicons name="time-outline" size={12} color="#F59E0B" />
+                    <Feather name="clock" size={12} color="#F59E0B" />
                     <Text style={styles.flagText}>Follow-up Required</Text>
                   </View>
                 )}
@@ -486,107 +461,220 @@ const StudentConductScreen: React.FC = () => {
             </View>
           </View>
         ))}
-      </View>
+      </Animated.View>
     );
   };
 
-  const renderTrendsTab = () => {
-    if (!conductData?.hasData || conductData.summary.recentTrends.length === 0) {
+  const renderOverviewTab = () => {
+    if (!conductData || !conductData.hasData) {
       return (
-        <View style={styles.noDataContainer}>
-          <Ionicons name="trending-up-outline" size={64} color="#9CA3AF" />
-          <Text style={styles.noDataTitle}>No Trend Data</Text>
-          <Text style={styles.noDataText}>Trend analysis will be available once you have more conduct records.</Text>
-        </View>
+        <Animated.View
+          style={[
+            styles.noDataContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
+          <Ionicons name="clipboard-outline" size={60} color="#8A94A6" />
+          <Text style={styles.noDataTitle}>No Conduct Records</Text>
+          <Text style={styles.noDataText}>
+            Your conduct records will appear here once they are created by your teachers.
+          </Text>
+        </Animated.View>
       );
     }
 
     const { summary } = conductData;
 
     return (
-      <View style={styles.tabContent}>
-        {/* Monthly Breakdown Chart */}
-        <View style={styles.chartCard}>
-          <View style={styles.chartHeader}>
-            <Text style={styles.chartTitle}>Monthly Breakdown</Text>
-            <Text style={styles.chartSubtitle}>Conduct records by month</Text>
+      <Animated.View
+        style={[
+          styles.section,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }]
+          }
+        ]}
+      >
+        {/* Overall Conduct Card */}
+        <LinearGradient
+          colors={[PRIMARY_COLOR, '#6366F1']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.mainStatsCard}
+        >
+          <Text style={styles.mainStatsTitle}>Overall Conduct</Text>
+          <Text style={styles.mainStatsPercentage}>
+            {summary.positiveCount > summary.negativeCount ? 'Good' : 
+             summary.negativeCount > summary.positiveCount ? 'Needs Improvement' : 'Average'}
+          </Text>
+          <Text style={styles.mainStatsSubtitle}>
+            {summary.totalRecords} Total Records
+          </Text>
+        </LinearGradient>
+
+        {/* Quick Stats Grid */}
+        <View style={styles.subStatsContainer}>
+          <View style={styles.subStatsCard}>
+            <View style={[styles.subStatsIcon, { backgroundColor: POSITIVE_COLOR + '15' }]}>
+              <Feather name="thumbs-up" size={20} color={POSITIVE_COLOR} />
+            </View>
+            <Text style={styles.subStatsValue}>{summary.positiveCount}</Text>
+            <Text style={styles.subStatsLabel}>Positive</Text>
+            <Text style={styles.subStatsPercentage}>{summary.positivePercentage}%</Text>
           </View>
-          <BarChart
-            data={{
-              labels: summary.recentTrends.map(trend => trend.month.split('-')[1]),
-              datasets: [{
-                data: summary.recentTrends.map(trend => trend.total)
-              }]
-            }}
-            width={width - 80}
-            height={220}
-            chartConfig={{
-              backgroundColor: 'transparent',
-              backgroundGradientFrom: '#FFFFFF',
-              backgroundGradientTo: '#FFFFFF',
-              decimalPlaces: 0,
-              color: (opacity = 1) => `rgba(79, 70, 229, ${opacity})`,
-              labelColor: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
-              style: { borderRadius: 16 }
-            }}
-            style={styles.chart}
-            showValuesOnTopOfBars={true}
-            yAxisLabel={''}
-            yAxisSuffix={''}
-            fromZero={true}
-          />
+          
+          <View style={styles.subStatsCard}>
+            <View style={[styles.subStatsIcon, { backgroundColor: NEGATIVE_COLOR + '15' }]}>
+              <Feather name="thumbs-down" size={20} color={NEGATIVE_COLOR} />
+            </View>
+            <Text style={styles.subStatsValue}>{summary.negativeCount}</Text>
+            <Text style={styles.subStatsLabel}>Negative</Text>
+            <Text style={styles.subStatsPercentage}>{summary.negativePercentage}%</Text>
+          </View>
+          
+          <View style={styles.subStatsCard}>
+            <View style={[styles.subStatsIcon, { backgroundColor: NEUTRAL_COLOR + '15' }]}>
+              <Feather name="minus" size={20} color={NEUTRAL_COLOR} />
+            </View>
+            <Text style={styles.subStatsValue}>{summary.neutralCount}</Text>
+            <Text style={styles.subStatsLabel}>Neutral</Text>
+            <Text style={styles.subStatsPercentage}>{summary.neutralPercentage}%</Text>
+          </View>
         </View>
 
-        {/* Monthly Details */}
-        {summary.recentTrends.map((trend, index) => (
-          <View key={index} style={styles.trendCard}>
-            <View style={styles.trendHeader}>
-              <Text style={styles.trendMonth}>
-                {new Date(trend.month + '-01').toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'long'
-                })}
-              </Text>
-              <Text style={styles.trendTotal}>{trend.total} records</Text>
+        {/* Conduct Distribution Chart */}
+        {summary.totalRecords > 0 && (
+          <View style={styles.chartCard}>
+            <View style={styles.sectionHeaderContainer}>
+              <Text style={styles.sectionTitle}>Conduct Distribution</Text>
+              <Text style={styles.chartSubtitle}>All time records</Text>
             </View>
-            <View style={styles.trendBreakdown}>
-              <View style={styles.trendItem}>
-                <View style={[styles.trendDot, { backgroundColor: POSITIVE_COLOR }]} />
-                <Text style={styles.trendLabel}>Positive: {trend.positive}</Text>
-              </View>
-              <View style={styles.trendItem}>
-                <View style={[styles.trendDot, { backgroundColor: NEGATIVE_COLOR }]} />
-                <Text style={styles.trendLabel}>Negative: {trend.negative}</Text>
-              </View>
-              <View style={styles.trendItem}>
-                <View style={[styles.trendDot, { backgroundColor: NEUTRAL_COLOR }]} />
-                <Text style={styles.trendLabel}>Neutral: {trend.neutral}</Text>
-              </View>
-            </View>
+            <PieChart
+              data={[
+                {
+                  name: 'Positive',
+                  population: summary.positiveCount,
+                  color: POSITIVE_COLOR,
+                  legendFontColor: '#3A4276',
+                  legendFontSize: 12
+                },
+                {
+                  name: 'Negative',
+                  population: summary.negativeCount,
+                  color: NEGATIVE_COLOR,
+                  legendFontColor: '#3A4276',
+                  legendFontSize: 12
+                },
+                {
+                  name: 'Neutral',
+                  population: summary.neutralCount,
+                  color: NEUTRAL_COLOR,
+                  legendFontColor: '#3A4276',
+                  legendFontSize: 12
+                }
+              ].filter(item => item.population > 0)}
+              width={width - 80}
+              height={200}
+              chartConfig={{
+                color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`
+              }}
+              accessor="population"
+              backgroundColor="transparent"
+              paddingLeft="15"
+              hasLegend={true}
+            />
           </View>
-        ))}
-      </View>
+        )}
+
+        {/* Recent Trends */}
+        {summary.recentTrends.length > 0 && (
+          <View style={styles.chartCard}>
+            <View style={styles.sectionHeaderContainer}>
+              <Text style={styles.sectionTitle}>Monthly Trends</Text>
+              <Text style={styles.chartSubtitle}>Last 6 months</Text>
+            </View>
+            <LineChart
+              data={{
+                labels: summary.recentTrends.map(trend => trend.month.split('-')[1]),
+                datasets: [
+                  {
+                    data: summary.recentTrends.map(trend => trend.positive),
+                    color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
+                    strokeWidth: 2
+                  },
+                  {
+                    data: summary.recentTrends.map(trend => trend.negative),
+                    color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
+                    strokeWidth: 2
+                  }
+                ]
+              }}
+              width={width - 80}
+              height={200}
+              chartConfig={{
+                backgroundColor: 'transparent',
+                backgroundGradientFrom: '#FFFFFF',
+                backgroundGradientTo: '#FFFFFF',
+                decimalPlaces: 0,
+                color: (opacity = 1) => `rgba(79, 70, 229, ${opacity})`,
+                labelColor: (opacity = 1) => `rgba(138, 148, 166, ${opacity})`,
+                style: { borderRadius: 16 },
+                propsForDots: {
+                  r: '4',
+                  strokeWidth: '2',
+                  stroke: PRIMARY_COLOR
+                }
+              }}
+              bezier
+              style={styles.chart}
+              withDots={true}
+              withShadow={false}
+              withVerticalLines={false}
+              withHorizontalLines={true}
+            />
+          </View>
+        )}
+      </Animated.View>
     );
   };
 
   const renderSummaryTab = () => {
     if (!conductData?.hasData) {
       return (
-        <View style={styles.noDataContainer}>
-          <Ionicons name="bar-chart-outline" size={64} color="#9CA3AF" />
+        <Animated.View
+          style={[
+            styles.noDataContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
+          <Ionicons name="bar-chart-outline" size={60} color="#8A94A6" />
           <Text style={styles.noDataTitle}>No Summary Data</Text>
           <Text style={styles.noDataText}>Summary statistics will be available once you have conduct records.</Text>
-        </View>
+        </Animated.View>
       );
     }
 
     const { summary, studentInfo } = conductData;
 
     return (
-      <View style={styles.tabContent}>
+      <Animated.View
+        style={[
+          styles.section,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }]
+          }
+        ]}
+      >
         {/* Student Info Card */}
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Student Information</Text>
+          <Text style={styles.sectionTitle}>Student Information</Text>
           <View style={styles.summaryGrid}>
             <View style={styles.summaryItem}>
               <Text style={styles.summaryLabel}>Name</Text>
@@ -605,7 +693,7 @@ const StudentConductScreen: React.FC = () => {
 
         {/* Overall Statistics */}
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Overall Statistics</Text>
+          <Text style={styles.sectionTitle}>Overall Statistics</Text>
           <View style={styles.summaryGrid}>
             <View style={styles.summaryItem}>
               <Text style={styles.summaryLabel}>Total Records</Text>
@@ -628,12 +716,12 @@ const StudentConductScreen: React.FC = () => {
 
         {/* Conduct Breakdown */}
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Conduct Breakdown</Text>
+          <Text style={styles.sectionTitle}>Conduct Breakdown</Text>
           <View style={styles.breakdownContainer}>
             <View style={styles.breakdownItem}>
               <View style={styles.breakdownHeader}>
                 <View style={[styles.breakdownIcon, { backgroundColor: POSITIVE_COLOR + '15' }]}>
-                  <Ionicons name="thumbs-up" size={20} color={POSITIVE_COLOR} />
+                  <Feather name="thumbs-up" size={20} color={POSITIVE_COLOR} />
                 </View>
                 <Text style={styles.breakdownTitle}>Positive Conduct</Text>
               </View>
@@ -644,7 +732,7 @@ const StudentConductScreen: React.FC = () => {
             <View style={styles.breakdownItem}>
               <View style={styles.breakdownHeader}>
                 <View style={[styles.breakdownIcon, { backgroundColor: NEGATIVE_COLOR + '15' }]}>
-                  <Ionicons name="thumbs-down" size={20} color={NEGATIVE_COLOR} />
+                  <Feather name="thumbs-down" size={20} color={NEGATIVE_COLOR} />
                 </View>
                 <Text style={styles.breakdownTitle}>Negative Conduct</Text>
               </View>
@@ -655,7 +743,7 @@ const StudentConductScreen: React.FC = () => {
             <View style={styles.breakdownItem}>
               <View style={styles.breakdownHeader}>
                 <View style={[styles.breakdownIcon, { backgroundColor: NEUTRAL_COLOR + '15' }]}>
-                  <Ionicons name="remove" size={20} color={NEUTRAL_COLOR} />
+                  <Feather name="minus" size={20} color={NEUTRAL_COLOR} />
                 </View>
                 <Text style={styles.breakdownTitle}>Neutral Records</Text>
               </View>
@@ -666,8 +754,8 @@ const StudentConductScreen: React.FC = () => {
         </View>
 
         {/* Last Updated */}
-        <View style={styles.lastUpdatedCard}>
-          <Text style={styles.lastUpdatedText}>
+        <View style={styles.dateRangeInfo}>
+          <Text style={styles.dateRangeText}>
             Last updated: {new Date(conductData.lastUpdated).toLocaleDateString('en-US', {
               year: 'numeric',
               month: 'long',
@@ -677,339 +765,391 @@ const StudentConductScreen: React.FC = () => {
             })}
           </Text>
         </View>
-      </View>
+      </Animated.View>
     );
   };
 
+  const renderTrendsTab = () => {
+    if (!conductData?.hasData || conductData.summary.recentTrends.length === 0) {
+      return (
+        <Animated.View
+          style={[
+            styles.noDataContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
+          <Ionicons name="trending-up-outline" size={60} color="#8A94A6" />
+          <Text style={styles.noDataTitle}>No Trend Data</Text>
+          <Text style={styles.noDataText}>Trend analysis will be available once you have more conduct records.</Text>
+        </Animated.View>
+      );
+    }
+
+    const { summary } = conductData;
+
+    return (
+      <Animated.View
+        style={[
+          styles.section,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }]
+          }
+        ]}
+      >
+        {/* Monthly Breakdown Chart */}
+        <View style={styles.chartCard}>
+          <View style={styles.sectionHeaderContainer}>
+            <Text style={styles.sectionTitle}>Monthly Breakdown</Text>
+            <Text style={styles.chartSubtitle}>Conduct records by month</Text>
+          </View>
+          <BarChart
+            data={{
+              labels: summary.recentTrends.map(trend => trend.month.split('-')[1]),
+              datasets: [{
+                data: summary.recentTrends.map(trend => trend.total)
+              }]
+            }}
+            width={width - 80}
+            height={220}
+            chartConfig={{
+              backgroundColor: 'transparent',
+              backgroundGradientFrom: '#FFFFFF',
+              backgroundGradientTo: '#FFFFFF',
+              decimalPlaces: 0,
+              color: (opacity = 1) => `rgba(79, 70, 229, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(138, 148, 166, ${opacity})`,
+              style: { borderRadius: 16 }
+            }}
+            style={styles.chart}
+            showValuesOnTopOfBars={true}
+            yAxisLabel={''}
+            yAxisSuffix={''}
+            fromZero={true}
+            withVerticalLabels={false}
+          />
+        </View>
+
+        {/* Monthly Details */}
+        {summary.recentTrends.map((trend, index) => (
+          <View key={index} style={styles.trendCard}>
+            <View style={styles.trendHeader}>
+              <Text style={styles.trendMonth}>
+                {new Date(trend.month + '-01').toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'long'
+                })}
+              </Text>
+              <Text style={styles.trendTotal}>{trend.total} records</Text>
+            </View>
+            <View style={styles.trendBreakdown}>
+              <View style={styles.trendItem}>
+                <View style={[styles.trendDot, { backgroundColor: POSITIVE_COLOR }]} />
+                <Text style={styles.trendItemText}>Positive: {trend.positive}</Text>
+              </View>
+              <View style={styles.trendItem}>
+                <View style={[styles.trendDot, { backgroundColor: NEGATIVE_COLOR }]} />
+                <Text style={styles.trendItemText}>Negative: {trend.negative}</Text>
+              </View>
+              <View style={styles.trendItem}>
+                <View style={[styles.trendDot, { backgroundColor: NEUTRAL_COLOR }]} />
+                <Text style={styles.trendItemText}>Neutral: {trend.neutral}</Text>
+              </View>
+            </View>
+          </View>
+        ))}
+      </Animated.View>
+    );
+  };
+
+  // Loading state
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={PRIMARY_COLOR} />
-        <Text style={styles.loadingText}>Loading conduct data...</Text>
-      </View>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
+        {renderHeader()}
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={PRIMARY_COLOR} />
+          <Text style={styles.loadingText}>Loading conduct data...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
-  if (error) {
+  // Error state
+  if (error && !conductData) {
     return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
-        <Text style={styles.errorTitle}>Error Loading Data</Text>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={fetchConductData}>
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
+        {renderHeader()}
+        <View style={styles.errorContainer}>
+          <Ionicons name="cloud-offline" size={60} color="#8A94A6" />
+          <Text style={styles.errorTitle}>Unable to Load Data</Text>
+          <Text style={styles.errorMessage}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={fetchConductData}
+          >
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
+      {renderHeader()}
       
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#374151" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Conduct</Text>
-        <View style={styles.headerRight} />
-      </View>
-
-      {/* Tab Navigation */}
-      <Animated.View style={[styles.tabContainer, { opacity: fadeAnim }]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScrollView}>
-          {[
-            { key: 'overview', label: 'Overview', icon: 'analytics' },
-            { key: 'records', label: 'Records', icon: 'list' },
-            { key: 'trends', label: 'Trends', icon: 'trending-up' },
-            { key: 'summary', label: 'Summary', icon: 'bar-chart' }
-          ].map((tab) => (
-            <TouchableOpacity
-              key={tab.key}
-              style={[styles.tabButton, selectedTab === tab.key && styles.tabButtonActive]}
-              onPress={() => setSelectedTab(tab.key as any)}
-              activeOpacity={0.7}
-            >
-              <Ionicons 
-                name={tab.icon as any} 
-                size={18} 
-                color={selectedTab === tab.key ? '#FFFFFF' : PRIMARY_COLOR} 
-              />
-              <Text style={[
-                styles.tabButtonText, 
-                selectedTab === tab.key && styles.tabButtonTextActive
-              ]}>
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </Animated.View>
-
-      {/* Content */}
-      <Animated.View style={[
-        styles.contentContainer, 
-        { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
-      ]}>
-        <ScrollView 
-          style={styles.scrollView}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[PRIMARY_COLOR]}
-              tintColor={PRIMARY_COLOR}
-            />
-          }
-        >
-          {selectedTab === 'overview' && renderOverviewTab()}
-          {selectedTab === 'records' && renderRecordsTab()}
-          {selectedTab === 'trends' && renderTrendsTab()}
-          {selectedTab === 'summary' && renderSummaryTab()}
-        </ScrollView>
-      </Animated.View>
+      <ScrollView 
+        style={styles.container}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh} 
+            colors={[PRIMARY_COLOR]}
+            tintColor={PRIMARY_COLOR}
+          />
+        }
+      >
+        {renderTabSelector()}
+        
+        {selectedTab === 'records' && renderRecordsTab()}
+        {selectedTab === 'overview' && renderOverviewTab()}
+        {selectedTab === 'summary' && renderSummaryTab()}
+        {selectedTab === 'trends' && renderTrendsTab()}
+        
+        {/* Date Range Info */}
+        {conductData && (
+          <View style={styles.dateRangeInfo}>
+            <Text style={styles.dateRangeText}>
+              Last updated: {new Date(conductData.lastUpdated).toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              })}
+            </Text>
+          </View>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#F8F9FC',
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 10,
+    backgroundColor: '#F8F9FC',
+    zIndex: 10,
   },
   backButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '600',
-    color: '#111827',
+    fontWeight: '700',
+    color: '#3A4276',
+    flex: 1,
+    textAlign: 'center',
   },
-  headerRight: {
+  headerSpacer: {
     width: 40,
   },
-  tabContainer: {
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+  container: {
+    flex: 1,
+    backgroundColor: '#F8F9FC',
+    paddingHorizontal: 24,
   },
-  tabScrollView: {
-    paddingHorizontal: 20,
+  scrollContent: {
+    paddingBottom: 20,
+  },
+  tabContainer: {
+    marginBottom: 20,
+  },
+  tabScrollContent: {
+    paddingVertical: 8,
   },
   tabButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     marginRight: 12,
     borderRadius: 20,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    gap: 6,
   },
   tabButtonActive: {
     backgroundColor: PRIMARY_COLOR,
   },
   tabButtonText: {
-    marginLeft: 6,
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
     color: PRIMARY_COLOR,
   },
   tabButtonTextActive: {
     color: '#FFFFFF',
   },
-  contentContainer: {
-    flex: 1,
+  section: {
+    marginBottom: 30,
   },
-  scrollView: {
-    flex: 1,
-  },
-  tabContent: {
-    padding: 20,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  sectionHeaderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    marginBottom: 16,
   },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#6B7280',
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#3A4276',
   },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  // Overview Tab Styles
+  mainStatsCard: {
+    borderRadius: 16,
+    padding: 24,
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    paddingHorizontal: 40,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#111827',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  errorText: {
+  mainStatsTitle: {
     fontSize: 16,
-    color: '#6B7280',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  retryButton: {
-    marginTop: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: PRIMARY_COLOR,
-    borderRadius: 8,
-  },
-  retryButtonText: {
+    fontWeight: '500',
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    opacity: 0.9,
+    marginBottom: 8,
   },
+  mainStatsPercentage: {
+    fontSize: 48,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  mainStatsSubtitle: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    opacity: 0.8,
+  },
+  subStatsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 20,
+  },
+  subStatsCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  subStatsIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  subStatsValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#3A4276',
+    marginBottom: 4,
+  },
+  subStatsLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#8A94A6',
+  },
+  subStatsPercentage: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#8A94A6',
+    marginTop: 2,
+  },
+  chartCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  chartSubtitle: {
+    fontSize: 12,
+    color: '#8A94A6',
+    marginTop: 2,
+  },
+  chart: {
+    marginTop: 12,
+    borderRadius: 12,
+  },
+  // Records Tab Styles
   noDataContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 60,
+    paddingVertical: 80,
     paddingHorizontal: 40,
   },
   noDataTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#111827',
+    color: '#3A4276',
     marginTop: 16,
+    marginBottom: 8,
     textAlign: 'center',
   },
   noDataText: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginTop: 8,
+    fontSize: 14,
+    color: '#8A94A6',
     textAlign: 'center',
-    lineHeight: 24,
-  },
-  conductCard: {
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 16,
-  },
-  conductHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  conductTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  conductChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  conductChipText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#FFFFFF',
-  },
-  totalRecordsText: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 4,
-  },
-  conductSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    marginHorizontal: 4,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  statPercentage: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4F46E5',
-  },
-  chartCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  chartHeader: {
-    marginBottom: 16,
-  },
-  chartTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  chartSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  chart: {
-    borderRadius: 16,
-    marginVertical: 8,
+    lineHeight: 20,
   },
   filterContainer: {
     marginBottom: 20,
@@ -1017,37 +1157,36 @@ const styles = StyleSheet.create({
   filterButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
     marginRight: 12,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   filterButtonActive: {
-    backgroundColor: PRIMARY_COLOR,
+    borderColor: 'transparent',
   },
   filterButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#3A4276',
   },
   filterButtonTextActive: {
     color: '#FFFFFF',
   },
   recordCard: {
     backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     padding: 16,
-    borderRadius: 12,
     marginBottom: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   recordHeader: {
     marginBottom: 12,
-  },
-  recordInfo: {
-    flex: 1,
   },
   recordTitleRow: {
     flexDirection: 'row',
@@ -1058,28 +1197,32 @@ const styles = StyleSheet.create({
   recordTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#111827',
+    color: '#3A4276',
     flex: 1,
     marginRight: 12,
   },
   typeChip: {
-    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 12,
+    gap: 4,
   },
   typeChipText: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   recordDescription: {
     fontSize: 14,
-    color: '#4B5563',
+    color: '#6B7280',
     lineHeight: 20,
     marginBottom: 8,
   },
   recordDate: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: '#8A94A6',
+    fontWeight: '500',
   },
   recordDetails: {
     borderTopWidth: 1,
@@ -1094,44 +1237,43 @@ const styles = StyleSheet.create({
   metaItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
     flex: 1,
   },
   metaText: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginLeft: 6,
+    fontSize: 13,
+    color: '#8A94A6',
+    fontWeight: '500',
   },
   recordFlags: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    alignItems: 'center',
+    gap: 8,
     marginBottom: 8,
   },
   severityChip: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
-    marginRight: 8,
-    marginBottom: 4,
+    borderRadius: 8,
   },
   severityChipText: {
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   flagChip: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 4,
+    borderRadius: 8,
     backgroundColor: '#F3F4F6',
-    borderRadius: 6,
-    marginRight: 8,
-    marginBottom: 4,
+    gap: 4,
   },
   flagText: {
-    fontSize: 10,
+    fontSize: 11,
     color: '#6B7280',
-    marginLeft: 4,
+    fontWeight: '500',
   },
   actionTaken: {
     marginTop: 8,
@@ -1142,77 +1284,28 @@ const styles = StyleSheet.create({
   actionLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#374151',
+    color: '#3A4276',
     marginBottom: 4,
   },
   actionText: {
-    fontSize: 14,
-    color: '#4B5563',
-    lineHeight: 20,
-  },
-  trendCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  trendHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  trendMonth: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  trendTotal: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#6B7280',
+    lineHeight: 18,
   },
-  trendBreakdown: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  trendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  trendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  trendLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
+  // Summary Tab Styles
   summaryCard: {
     backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     padding: 20,
-    borderRadius: 16,
     marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  summaryTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 16,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   summaryGrid: {
-    gap: 12,
+    gap: 16,
   },
   summaryItem: {
     flexDirection: 'row',
@@ -1224,12 +1317,13 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#8A94A6',
+    fontWeight: '500',
   },
   summaryValue: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#111827',
+    color: '#3A4276',
   },
   breakdownContainer: {
     gap: 16,
@@ -1243,40 +1337,142 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
+    gap: 12,
   },
   breakdownIcon: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
+    borderRadius: 10,
     alignItems: 'center',
-    marginRight: 12,
+    justifyContent: 'center',
   },
   breakdownTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#111827',
+    color: '#3A4276',
+    flex: 1,
   },
   breakdownCount: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#111827',
+    color: '#3A4276',
     marginBottom: 4,
   },
   breakdownPercentage: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: 13,
+    color: '#8A94A6',
+    fontWeight: '500',
   },
-  lastUpdatedCard: {
-    backgroundColor: '#F9FAFB',
+  // Trends Tab Styles
+  trendCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     padding: 16,
-    borderRadius: 12,
-    marginTop: 8,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  lastUpdatedText: {
+  trendHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  trendMonth: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3A4276',
+  },
+  trendTotal: {
+    fontSize: 14,
+    color: '#8A94A6',
+    fontWeight: '500',
+  },
+  trendBreakdown: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  trendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  trendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  trendItemText: {
     fontSize: 12,
     color: '#6B7280',
+    fontWeight: '500',
+  },
+  // Common Styles
+  dateRangeInfo: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 10,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  dateRangeText: {
+    fontSize: 13,
+    color: '#8A94A6',
     textAlign: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#8A94A6',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#3A4276',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: '#8A94A6',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  retryButton: {
+    backgroundColor: PRIMARY_COLOR,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
 

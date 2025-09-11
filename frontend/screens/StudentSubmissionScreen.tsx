@@ -109,9 +109,18 @@ const StudentSubmissionScreen: React.FC = () => {
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const headerOpacity = useRef(new Animated.Value(0)).current;
 
   // Initialize animations
   useEffect(() => {
+    navigation.setOptions({
+      headerShown: false,
+    });
+    
+    startAnimations();
+  }, [navigation]);
+
+  const startAnimations = () => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -122,9 +131,14 @@ const StudentSubmissionScreen: React.FC = () => {
         toValue: 0,
         duration: 600,
         useNativeDriver: true,
+      }),
+      Animated.timing(headerOpacity, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
       })
     ]).start();
-  }, []);
+  };
 
   // Fetch data when screen focuses
   useFocusEffect(
@@ -357,10 +371,10 @@ const StudentSubmissionScreen: React.FC = () => {
   // Get status color
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'submitted': return '#FFA500';
+      case 'submitted': return '#F59E0B';
       case 'reviewed': return '#2196F3';
-      case 'graded': return '#4CAF50';
-      case 'returned': return '#9C27B0';
+      case 'graded': return '#22C55E';
+      case 'returned': return '#8B5CF6';
       default: return '#8A94A6';
     }
   };
@@ -385,11 +399,187 @@ const StudentSubmissionScreen: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const renderHeader = () => (
+    <Animated.View 
+      style={[
+        styles.header,
+        { 
+          opacity: headerOpacity,
+          paddingTop: insets.top > 0 ? 0 : 20 
+        }
+      ]}
+    >
+      <TouchableOpacity 
+        style={styles.backButton}
+        onPress={() => navigation.goBack()}
+        activeOpacity={0.7}
+      >
+        <Feather name="arrow-left" size={24} color={PRIMARY_COLOR} />
+      </TouchableOpacity>
+      
+      <Text style={styles.headerTitle}>Submissions</Text>
+      
+      <TouchableOpacity 
+        style={styles.uploadButton}
+        onPress={() => setShowUploadModal(true)}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="add" size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+    </Animated.View>
+  );
+
+  const renderOverallStats = () => (
+    <Animated.View
+      style={[
+        styles.statsContainer,
+        {
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }]
+        }
+      ]}
+    >
+      <LinearGradient
+        colors={[PRIMARY_COLOR, '#6366F1']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.mainStatsCard}
+      >
+        <Text style={styles.mainStatsTitle}>Total Submissions</Text>
+        <Text style={styles.mainStatsPercentage}>
+          {submissions.length}
+        </Text>
+        <Text style={styles.mainStatsSubtitle}>
+          {classInfo ? `${classInfo.name} ${classInfo.section}` : 'My Submissions'}
+        </Text>
+      </LinearGradient>
+
+      <View style={styles.subStatsContainer}>
+        <View style={styles.subStatsCard}>
+          <View style={[styles.subStatsIcon, { backgroundColor: '#22C55E15' }]}>
+            <Feather name="award" size={20} color="#22C55E" />
+          </View>
+          <Text style={styles.subStatsValue}>
+            {submissions.filter(s => s.status === 'graded').length}
+          </Text>
+          <Text style={styles.subStatsLabel}>Graded</Text>
+        </View>
+        
+        <View style={styles.subStatsCard}>
+          <View style={[styles.subStatsIcon, { backgroundColor: '#F59E0B15' }]}>
+            <Feather name="clock" size={20} color="#F59E0B" />
+          </View>
+          <Text style={styles.subStatsValue}>
+            {submissions.filter(s => s.status === 'submitted').length}
+          </Text>
+          <Text style={styles.subStatsLabel}>Pending</Text>
+        </View>
+        
+        <View style={styles.subStatsCard}>
+          <View style={[styles.subStatsIcon, { backgroundColor: '#2196F315' }]}>
+            <Feather name="eye" size={20} color="#2196F3" />
+          </View>
+          <Text style={styles.subStatsValue}>
+            {submissions.filter(s => s.status === 'reviewed').length}
+          </Text>
+          <Text style={styles.subStatsLabel}>Reviewed</Text>
+        </View>
+      </View>
+    </Animated.View>
+  );
+
+  const renderSubmissionsList = () => (
+    <Animated.View
+      style={[
+        styles.section,
+        {
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }]
+        }
+      ]}
+    >
+      <View style={styles.sectionHeaderContainer}>
+        <Text style={styles.sectionTitle}>Recent Submissions</Text>
+      </View>
+      
+      {submissions.length > 0 ? (
+        submissions.map((submission) => (
+          <TouchableOpacity
+            key={submission._id}
+            style={styles.submissionCard}
+            onPress={() => handleSubmissionPress(submission)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.submissionHeader}>
+              <View style={styles.submissionTitleContainer}>
+                <Text style={styles.submissionTitle} numberOfLines={1}>
+                  {submission.title}
+                </Text>
+                <Text style={styles.submissionSubject}>
+                  {submission.subjectName} ({submission.subjectCode})
+                </Text>
+              </View>
+              <View style={[
+                styles.statusIcon,
+                { backgroundColor: `${getStatusColor(submission.status)}15` }
+              ]}>
+                <Feather 
+                  name={getStatusIcon(submission.status)} 
+                  size={16} 
+                  color={getStatusColor(submission.status)} 
+                />
+              </View>
+            </View>
+            
+            <View style={styles.submissionDetails}>
+              <View style={styles.submissionInfo}>
+                <Feather name="calendar" size={14} color="#8A94A6" />
+                <Text style={styles.submissionDate}>
+                  {new Date(submission.createdAt).toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric',
+                    year: 'numeric'
+                  })}
+                </Text>
+              </View>
+              <View style={styles.submissionInfo}>
+                <Feather name="file" size={14} color="#8A94A6" />
+                <Text style={styles.submissionSize}>
+                  {formatFileSize(submission.pdfSize)}
+                </Text>
+              </View>
+            </View>
+
+            {submission.grade && (
+              <View style={styles.gradeContainer}>
+                <View style={[styles.gradeIcon, { backgroundColor: '#22C55E15' }]}>
+                  <Feather name="award" size={14} color="#22C55E" />
+                </View>
+                <Text style={styles.gradeText}>Grade: {submission.grade}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ))
+      ) : (
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIcon}>
+            <Feather name="upload" size={48} color="#8A94A6" style={{ opacity: 0.3 }} />
+          </View>
+          <Text style={styles.emptyTitle}>No Submissions Yet</Text>
+          <Text style={styles.emptyText}>
+            Tap the + button to upload your first submission
+          </Text>
+        </View>
+      )}
+    </Animated.View>
+  );
+
   // Loading state
-  if (isLoading) {
+  if (isLoading && !submissions.length) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
+        {renderHeader()}
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={PRIMARY_COLOR} />
           <Text style={styles.loadingText}>Loading submissions...</Text>
@@ -403,12 +593,16 @@ const StudentSubmissionScreen: React.FC = () => {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
+        {renderHeader()}
         <View style={styles.errorContainer}>
           <Ionicons name="cloud-offline" size={60} color="#8A94A6" />
-          <Text style={styles.errorTitle}>Connection Problem</Text>
+          <Text style={styles.errorTitle}>Unable to Load Data</Text>
           <Text style={styles.errorMessage}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={fetchData}>
-            <Text style={styles.retryButtonText}>Retry</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={fetchData}
+          >
+            <Text style={styles.retryButtonText}>Try Again</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -418,35 +612,7 @@ const StudentSubmissionScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
-      
-      {/* Header */}
-      <Animated.View 
-        style={[
-          styles.header,
-          { 
-            opacity: fadeAnim,
-            paddingTop: insets.top > 0 ? 0 : 20 
-          }
-        ]}
-      >
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="arrow-back" size={24} color={PRIMARY_COLOR} />
-        </TouchableOpacity>
-        
-        <Text style={styles.headerTitle}>Submissions</Text>
-        
-        <TouchableOpacity 
-          style={styles.uploadButton}
-          onPress={() => setShowUploadModal(true)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="add" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-      </Animated.View>
+      {renderHeader()}
 
       <ScrollView
         style={styles.container}
@@ -461,119 +627,8 @@ const StudentSubmissionScreen: React.FC = () => {
           />
         }
       >
-        {/* Class Info */}
-        {classInfo && (
-          <Animated.View
-            style={[
-              styles.classInfoCard,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }]
-              }
-            ]}
-          >
-            <MaterialIcons name="class" size={24} color={PRIMARY_COLOR} />
-            <View style={styles.classInfoText}>
-              <Text style={styles.className}>{classInfo.name} {classInfo.section}</Text>
-              <Text style={styles.classLabel}>Your Class</Text>
-            </View>
-          </Animated.View>
-        )}
-
-        {/* Quick Stats */}
-        <Animated.View
-          style={[
-            styles.statsContainer,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }]
-            }
-          ]}
-        >
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{submissions.length}</Text>
-            <Text style={styles.statLabel}>Total</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>
-              {submissions.filter(s => s.status === 'graded').length}
-            </Text>
-            <Text style={styles.statLabel}>Graded</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>
-              {submissions.filter(s => s.status === 'submitted').length}
-            </Text>
-            <Text style={styles.statLabel}>Pending</Text>
-          </View>
-        </Animated.View>
-
-        {/* Submissions List */}
-        <View style={styles.submissionsSection}>
-          <Text style={styles.sectionTitle}>My Submissions</Text>
-          
-          {submissions.length > 0 ? (
-            submissions.map((submission) => (
-              <TouchableOpacity
-                key={submission._id}
-                style={styles.submissionCard}
-                onPress={() => handleSubmissionPress(submission)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.submissionHeader}>
-                  <View style={styles.submissionTitleContainer}>
-                    <Text style={styles.submissionTitle} numberOfLines={1}>
-                      {submission.title}
-                    </Text>
-                    <Text style={styles.submissionSubject}>
-                      {submission.subjectName} ({submission.subjectCode})
-                    </Text>
-                  </View>
-                  <View style={[
-                    styles.statusBadge,
-                    { backgroundColor: getStatusColor(submission.status) }
-                  ]}>
-                    <Feather 
-                      name={getStatusIcon(submission.status)} 
-                      size={12} 
-                      color="#FFFFFF" 
-                    />
-                  </View>
-                </View>
-                
-                <View style={styles.submissionDetails}>
-                  <View style={styles.submissionInfo}>
-                    <Feather name="calendar" size={14} color="#8A94A6" />
-                    <Text style={styles.submissionDate}>
-                      {new Date(submission.createdAt).toLocaleDateString()}
-                    </Text>
-                  </View>
-                  <View style={styles.submissionInfo}>
-                    <Feather name="file" size={14} color="#8A94A6" />
-                    <Text style={styles.submissionSize}>
-                      {formatFileSize(submission.pdfSize)}
-                    </Text>
-                  </View>
-                </View>
-
-                {submission.grade && (
-                  <View style={styles.gradeContainer}>
-                    <Feather name="award" size={14} color="#4CAF50" />
-                    <Text style={styles.gradeText}>Grade: {submission.grade}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Feather name="upload" size={60} color="#8A94A6" style={{ opacity: 0.3 }} />
-              <Text style={styles.emptyTitle}>No Submissions Yet</Text>
-              <Text style={styles.emptyText}>
-                Tap the + button to upload your first submission
-              </Text>
-            </View>
-          )}
-        </View>
+        {renderOverallStats()}
+        {renderSubmissionsList()}
       </ScrollView>
 
       {/* Upload Modal */}
@@ -703,21 +758,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8F9FC',
   },
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F9FC',
-  },
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingBottom: 20,
-  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingTop: 20,
+    paddingBottom: 10,
     backgroundColor: '#F8F9FC',
+    zIndex: 10,
   },
   backButton: {
     width: 40,
@@ -736,6 +785,8 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: '#3A4276',
+    flex: 1,
+    textAlign: 'center',
   },
   uploadButton: {
     width: 40,
@@ -750,75 +801,101 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  classInfoCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  classInfoText: {
-    marginLeft: 16,
+  container: {
     flex: 1,
+    backgroundColor: '#F8F9FC',
+    paddingHorizontal: 24,
   },
-  className: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#3A4276',
-  },
-  classLabel: {
-    fontSize: 14,
-    color: '#8A94A6',
-    marginTop: 4,
+  scrollContent: {
+    paddingBottom: 20,
   },
   statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     marginBottom: 30,
   },
-  statCard: {
+  mainStatsCard: {
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  mainStatsTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    opacity: 0.9,
+    marginBottom: 8,
+  },
+  mainStatsPercentage: {
+    fontSize: 48,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  mainStatsSubtitle: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    opacity: 0.8,
+  },
+  subStatsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  subStatsCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 14,
+    padding: 16,
     alignItems: 'center',
-    marginHorizontal: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
   },
-  statNumber: {
-    fontSize: 24,
+  subStatsIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  subStatsValue: {
+    fontSize: 18,
     fontWeight: '700',
-    color: PRIMARY_COLOR,
+    color: '#3A4276',
+    marginBottom: 4,
   },
-  statLabel: {
-    fontSize: 14,
+  subStatsLabel: {
+    fontSize: 12,
+    fontWeight: '500',
     color: '#8A94A6',
-    marginTop: 4,
   },
-  submissionsSection: {
-    marginBottom: 20,
+  section: {
+    marginBottom: 30,
+  },
+  sectionHeaderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#3A4276',
-    marginBottom: 16,
   },
   submissionCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 20,
-    marginBottom: 16,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
@@ -839,75 +916,137 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#3A4276',
+    marginBottom: 4,
   },
   submissionSubject: {
     fontSize: 14,
+    fontWeight: '500',
     color: '#8A94A6',
-    marginTop: 4,
   },
-  statusBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
+  statusIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   submissionDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
   },
   submissionInfo: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
   },
   submissionDate: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#8A94A6',
-    marginLeft: 6,
+    fontWeight: '500',
   },
   submissionSize: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#8A94A6',
-    marginLeft: 6,
+    fontWeight: '500',
   },
   gradeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F1F6',
+    backgroundColor: '#22C55E0A',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  gradeIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
   },
   gradeText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#4CAF50',
-    marginLeft: 6,
+    color: '#22C55E',
   },
   emptyContainer: {
     alignItems: 'center',
-    justifyContent: 'center',
     padding: 40,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
   },
+  emptyIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
   emptyTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#3A4276',
-    marginTop: 16,
+    marginBottom: 8,
   },
   emptyText: {
     fontSize: 14,
     color: '#8A94A6',
     textAlign: 'center',
-    marginTop: 8,
     lineHeight: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#8A94A6',
+    marginTop: 16,
+    fontWeight: '500',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#3A4276',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: '#8A94A6',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  retryButton: {
+    backgroundColor: PRIMARY_COLOR,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   modalOverlay: {
     flex: 1,
@@ -916,18 +1055,20 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     paddingHorizontal: 24,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    paddingBottom: 24,
     maxHeight: '90%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    paddingVertical: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    marginBottom: 20,
   },
   modalTitle: {
     fontSize: 20,
@@ -937,10 +1078,10 @@ const styles = StyleSheet.create({
   modalCloseButton: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F0F1F6',
-    justifyContent: 'center',
+    borderRadius: 8,
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F4F6',
   },
   inputContainer: {
     marginBottom: 24,
@@ -952,93 +1093,97 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   textInput: {
-    backgroundColor: '#F0F1F6',
+    backgroundColor: '#F8F9FC',
     borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     fontSize: 16,
     color: '#3A4276',
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: '#E5E7EB',
   },
   subjectScrollView: {
-    marginHorizontal: -8,
+    marginTop: 8,
   },
   subjectCard: {
-    backgroundColor: '#F0F1F6',
+    backgroundColor: '#F8F9FC',
     borderRadius: 12,
     padding: 16,
-    marginHorizontal: 8,
+    marginRight: 12,
     minWidth: 140,
-    borderWidth: 2,
-    borderColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
   },
   subjectCardSelected: {
-    backgroundColor: '#E8E7FF',
+    backgroundColor: `${PRIMARY_COLOR}15`,
     borderColor: PRIMARY_COLOR,
   },
   subjectCode: {
     fontSize: 14,
     fontWeight: '700',
-    color: PRIMARY_COLOR,
+    color: '#8A94A6',
+    marginBottom: 4,
     textAlign: 'center',
   },
   subjectCodeSelected: {
     color: PRIMARY_COLOR,
   },
   subjectName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#3A4276',
     textAlign: 'center',
-    marginTop: 4,
-    minHeight: 36,
+    marginBottom: 6,
+    lineHeight: 16,
   },
   subjectNameSelected: {
-    color: '#3A4276',
+    color: PRIMARY_COLOR,
   },
   teacherName: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#8A94A6',
     textAlign: 'center',
-    marginTop: 4,
   },
   teacherNameSelected: {
-    color: '#8A94A6',
+    color: PRIMARY_COLOR,
   },
   fileSelector: {
-    backgroundColor: '#F0F1F6',
+    backgroundColor: '#F8F9FC',
     borderRadius: 12,
-    padding: 16,
     borderWidth: 2,
-    borderColor: 'transparent',
+    borderColor: '#E5E7EB',
     borderStyle: 'dashed',
+    padding: 20,
+    alignItems: 'center',
   },
   fileSelectorContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 12,
   },
   fileSelectorText: {
     fontSize: 16,
     color: '#8A94A6',
-    marginLeft: 12,
+    fontWeight: '500',
     flex: 1,
+    textAlign: 'center',
   },
   fileSizeText: {
     fontSize: 12,
     color: '#8A94A6',
-    textAlign: 'center',
     marginTop: 8,
+    fontWeight: '500',
   },
   uploadSubmissionButton: {
     backgroundColor: PRIMARY_COLOR,
     borderRadius: 12,
     paddingVertical: 16,
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 16,
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 20,
     shadowColor: PRIMARY_COLOR,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -1051,51 +1196,6 @@ const styles = StyleSheet.create({
     elevation: 0,
   },
   uploadSubmissionButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginLeft: 8,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FC',
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#8A94A6',
-    marginTop: 16,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FC',
-    paddingHorizontal: 24,
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#3A4276',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  errorMessage: {
-    fontSize: 16,
-    color: '#8A94A6',
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 22,
-  },
-  retryButton: {
-    backgroundColor: PRIMARY_COLOR,
-    borderRadius: 12,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    marginTop: 20,
-  },
-  retryButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',

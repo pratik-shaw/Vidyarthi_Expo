@@ -21,7 +21,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
-import { FontAwesome5, Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { FontAwesome5, Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -117,12 +117,12 @@ interface MaterialsResponse {
 }
 
 const CATEGORIES = [
-  { value: 'lecture_notes', label: 'Lecture Notes', icon: 'book', color: '#10B981' },
-  { value: 'assignment', label: 'Assignment', icon: 'clipboard-list', color: '#EF4444' },
-  { value: 'homework', label: 'Homework', icon: 'edit', color: '#F59E0B' },
-  { value: 'reference_material', label: 'Reference', icon: 'bookmark', color: '#06B6D4' },
-  { value: 'exam_papers', label: 'Exam Papers', icon: 'graduation-cap', color: '#DC2626' },
-  { value: 'other', label: 'Other', icon: 'folder', color: '#6B7280' },
+  { value: 'lecture_notes', label: 'Lecture Notes', icon: 'book-open' as const, color: '#10B981' },
+  { value: 'assignment', label: 'Assignment', icon: 'clipboard' as const, color: '#EF4444' },
+  { value: 'homework', label: 'Homework', icon: 'edit-3' as const, color: '#F59E0B' },
+  { value: 'reference_material', label: 'Reference', icon: 'bookmark' as const, color: '#06B6D4' },
+  { value: 'exam_papers', label: 'Exam Papers', icon: 'award' as const, color: '#DC2626' },
+  { value: 'other', label: 'Other', icon: 'folder' as const, color: '#8A94A6' },
 ];
 
 const PRIMARY_COLOR = '#4F46E5';
@@ -244,9 +244,17 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
     navigation.setOptions({
       title: 'Study Materials',
+      headerStyle: {
+        backgroundColor: '#F8F9FC',
+      },
+      headerTitleStyle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#3A4276',
+      },
       headerRight: () => (
         <TouchableOpacity onPress={() => setSearchModalVisible(true)} style={styles.searchIconButton}>
-          <FontAwesome5 name="search" size={18} color="#007AFF" />
+          <Feather name="search" size={20} color={PRIMARY_COLOR} />
         </TouchableOpacity>
       ),
     });
@@ -355,22 +363,22 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
     return CATEGORIES.find(cat => cat.value === category) || CATEGORIES[CATEGORIES.length - 1];
   }, []);
 
-  const getFileIcon = useCallback((fileName: string, mimeType?: string) => {
+  const getFileIcon = useCallback((fileName: string, mimeType?: string): keyof typeof Feather.glyphMap => {
     const extension = fileName.toLowerCase().split('.').pop();
     const type = mimeType?.toLowerCase();
     
     if (type?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(extension || '')) {
       return 'image';
     } else if (type === 'application/pdf' || extension === 'pdf') {
-      return 'file-pdf';
+      return 'file-text';
     } else if (['doc', 'docx'].includes(extension || '') || type?.includes('word')) {
-      return 'file-word';
+      return 'file-text';
     } else if (['xls', 'xlsx'].includes(extension || '') || type?.includes('sheet')) {
-      return 'file-excel';
+      return 'grid';
     } else if (['ppt', 'pptx'].includes(extension || '') || type?.includes('presentation')) {
-      return 'file-powerpoint';
+      return 'monitor';
     } else if (['txt'].includes(extension || '') || type?.startsWith('text/')) {
-      return 'file-alt';
+      return 'file-text';
     } else {
       return 'file';
     }
@@ -403,6 +411,7 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
     return (
       <View style={styles.filtersContainer}>
         {/* Category Filter */}
+        <Text style={styles.filterSectionTitle}>Categories</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScrollView}>
           <TouchableOpacity
             style={[
@@ -429,12 +438,13 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
                 ]}
                 onPress={() => setSelectedCategory(category._id)}
               >
-                <FontAwesome5 
-                  name={categoryInfo.icon} 
-                  size={12} 
-                  color={selectedCategory === category._id ? '#FFFFFF' : categoryInfo.color} 
-                  style={styles.filterChipIcon}
-                />
+                <View style={[styles.filterChipIconContainer, { backgroundColor: categoryInfo.color + '15' }]}>
+                  <Feather 
+                    name={categoryInfo.icon} 
+                    size={12} 
+                    color={selectedCategory === category._id ? '#FFFFFF' : categoryInfo.color} 
+                  />
+                </View>
                 <Text style={[
                   styles.filterChipText,
                   selectedCategory === category._id && styles.filterChipTextActive
@@ -448,43 +458,57 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
 
         {/* Subject Filter */}
         {materialsData.summary.subjectsBreakdown.length > 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScrollView}>
-            <TouchableOpacity
-              style={[
-                styles.subjectChip,
-                selectedSubject === 'all' && styles.subjectChipActive
-              ]}
-              onPress={() => setSelectedSubject('all')}
-            >
-              <Text style={[
-                styles.subjectChipText,
-                selectedSubject === 'all' && styles.subjectChipTextActive
-              ]}>
-                All Subjects
-              </Text>
-            </TouchableOpacity>
-            {materialsData.summary.subjectsBreakdown.map((subject) => (
+          <>
+            <Text style={styles.filterSectionTitle}>Subjects</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScrollView}>
               <TouchableOpacity
-                key={subject._id}
                 style={[
                   styles.subjectChip,
-                  selectedSubject === subject._id && styles.subjectChipActive
+                  selectedSubject === 'all' && styles.subjectChipActive
                 ]}
-                onPress={() => setSelectedSubject(subject._id)}
+                onPress={() => setSelectedSubject('all')}
               >
                 <Text style={[
                   styles.subjectChipText,
-                  selectedSubject === subject._id && styles.subjectChipTextActive
+                  selectedSubject === 'all' && styles.subjectChipTextActive
                 ]}>
-                  {subject.name} ({subject.count})
+                  All Subjects
                 </Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
+              {materialsData.summary.subjectsBreakdown.map((subject) => (
+                <TouchableOpacity
+                  key={subject._id}
+                  style={[
+                    styles.subjectChip,
+                    selectedSubject === subject._id && styles.subjectChipActive
+                  ]}
+                  onPress={() => setSelectedSubject(subject._id)}
+                >
+                  <Text style={[
+                    styles.subjectChipText,
+                    selectedSubject === subject._id && styles.subjectChipTextActive
+                  ]}>
+                    {subject.name} ({subject.count})
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </>
+        )}
+
+        {/* Active Filters Summary */}
+        {(selectedCategory !== 'all' || selectedSubject !== 'all' || appliedSearchQuery) && (
+          <TouchableOpacity
+            style={styles.clearFiltersButton}
+            onPress={clearAllFilters}
+          >
+            <Feather name="x" size={14} color={PRIMARY_COLOR} />
+            <Text style={styles.clearFiltersText}>Clear all filters</Text>
+          </TouchableOpacity>
         )}
       </View>
     );
-  }, [materialsData, selectedCategory, selectedSubject, getCategoryInfo]);
+  }, [materialsData, selectedCategory, selectedSubject, appliedSearchQuery, getCategoryInfo, clearAllFilters]);
 
   const renderMaterial = useCallback(({ item }: { item: Material }) => {
     const categoryInfo = getCategoryInfo(item.documentCategory);
@@ -498,7 +522,7 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
         >
           <View style={styles.materialHeader}>
             <View style={[styles.materialIconContainer, { backgroundColor: categoryInfo.color + '15' }]}>
-              <FontAwesome5 
+              <Feather 
                 name={getFileIcon(item.originalFileName, item.mimeType)} 
                 size={24} 
                 color={categoryInfo.color} 
@@ -514,7 +538,7 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
                 {item.documentTitle}
               </Text>
               <View style={styles.categoryBadge}>
-                <FontAwesome5 name={categoryInfo.icon} size={10} color={categoryInfo.color} />
+                <Feather name={categoryInfo.icon} size={10} color={categoryInfo.color} />
                 <Text style={[styles.categoryText, { color: categoryInfo.color }]}>
                   {categoryInfo.label}
                 </Text>
@@ -530,33 +554,33 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
               }}
               style={styles.shareButton}
             >
-              <FontAwesome5 name="share-alt" size={16} color="#6B7280" />
+              <Feather name="share" size={16} color="#8A94A6" />
             </TouchableOpacity>
           </View>
 
           <View style={styles.materialFooter}>
-            <View style={styles.teacherInfo}>
-              <FontAwesome5 name="user" size={12} color="#9CA3AF" />
-              <Text style={styles.teacherName}>{item.teacherId.name}</Text>
+            <View style={styles.infoItem}>
+              <Feather name="user" size={12} color="#8A94A6" />
+              <Text style={styles.infoText}>{item.teacherId.name}</Text>
             </View>
             {item.subjectId && (
-              <View style={styles.subjectInfo}>
-                <FontAwesome5 name="book" size={12} color="#9CA3AF" />
-                <Text style={styles.subjectName}>{item.subjectId.name}</Text>
+              <View style={styles.infoItem}>
+                <Feather name="book" size={12} color="#8A94A6" />
+                <Text style={styles.infoText}>{item.subjectId.name}</Text>
               </View>
             )}
-            <View style={styles.dateInfo}>
-              <FontAwesome5 name="calendar" size={12} color="#9CA3AF" />
-              <Text style={styles.dateText}>{formatDate(item.createdAt)}</Text>
+            <View style={styles.infoItem}>
+              <Feather name="calendar" size={12} color="#8A94A6" />
+              <Text style={styles.infoText}>{formatDate(item.createdAt)}</Text>
             </View>
-            <View style={styles.downloadInfo}>
-              <FontAwesome5 name="download" size={12} color="#9CA3AF" />
-              <Text style={styles.downloadText}>{item.downloadCount}</Text>
+            <View style={styles.infoItem}>
+              <Feather name="download" size={12} color="#8A94A6" />
+              <Text style={styles.infoText}>{item.downloadCount}</Text>
             </View>
           </View>
 
           <View style={styles.tapHint}>
-            <Text style={styles.tapHintText}>Tap to download and open</Text>
+            <Text style={styles.tapHintText}>Tap to download and view</Text>
           </View>
         </TouchableOpacity>
       </Animated.View>
@@ -570,16 +594,17 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
           <View style={styles.searchModalHeader}>
             <Text style={styles.searchModalTitle}>Search Materials</Text>
             <TouchableOpacity onPress={() => setSearchModalVisible(false)}>
-              <FontAwesome5 name="times" size={20} color="#666" />
+              <Feather name="x" size={20} color="#8A94A6" />
             </TouchableOpacity>
           </View>
           <View style={styles.searchInputContainer}>
-            <FontAwesome5 name="search" size={16} color="#9CA3AF" style={styles.searchIcon} />
+            <Feather name="search" size={16} color="#8A94A6" style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder="Search by title, category, or teacher..."
+              placeholderTextColor="#B0B7C3"
               autoFocus
               returnKeyType="search"
               onSubmitEditing={handleSearch}
@@ -589,11 +614,17 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
                 onPress={clearSearch}
                 style={styles.clearSearch}
               >
-                <FontAwesome5 name="times-circle" size={16} color="#9CA3AF" />
+                <Feather name="x-circle" size={16} color="#8A94A6" />
               </TouchableOpacity>
             )}
           </View>
           <View style={styles.searchActions}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setSearchModalVisible(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.searchButton}
               onPress={handleSearch}
@@ -620,21 +651,23 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
   if (!materialsData || materialsData.materials.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
         <View style={styles.emptyState}>
-          <FontAwesome5 name="folder-open" size={64} color="#C7C7CC" />
+          <View style={styles.emptyStateIconContainer}>
+            <Feather name="folder-minus" size={48} color="#8A94A6" />
+          </View>
           <Text style={styles.emptyTitle}>No Study Materials</Text>
           <Text style={styles.emptyDescription}>
             {selectedCategory !== 'all' || selectedSubject !== 'all' || appliedSearchQuery
-              ? 'No materials found with the selected filters.'
+              ? 'No materials found with the selected filters. Try adjusting your search criteria.'
               : 'Study materials will appear here once uploaded by your teachers.'}
           </Text>
           {(selectedCategory !== 'all' || selectedSubject !== 'all' || appliedSearchQuery) && (
             <TouchableOpacity
-              style={styles.clearFiltersButton}
+              style={styles.emptyActionButton}
               onPress={clearAllFilters}
             >
-              <Text style={styles.clearFiltersButtonText}>Clear Filters</Text>
+              <Text style={styles.emptyActionButtonText}>Clear Filters</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -645,14 +678,21 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
       
       <Animated.View style={[
         styles.contentContainer, 
         { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
       ]}>
+        {renderFilters()}
+        
         <View style={styles.materialsContainer}>
-          {renderFilters()}
+          <View style={styles.materialsHeader}>
+            <Text style={styles.materialsCount}>
+              {materialsData.materials.length} of {materialsData.pagination.total} materials
+            </Text>
+          </View>
+          
           <FlatList
             data={materialsData.materials}
             keyExtractor={(item, index) => `${item._id}-${index}`}
@@ -662,6 +702,7 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
                 refreshing={refreshing}
                 onRefresh={onRefresh}
                 tintColor={PRIMARY_COLOR}
+                colors={[PRIMARY_COLOR]}
               />
             }
             onEndReached={loadMoreMaterials}
@@ -688,86 +729,132 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F8F9FC',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F8F9FC',
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#6B7280',
+    color: '#3A4276',
     fontWeight: '500',
   },
   searchIconButton: {
     padding: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(79, 70, 229, 0.1)',
+    marginRight: 16,
   },
   contentContainer: {
     flex: 1,
   },
-  materialsContainer: {
-    flex: 1,
-  },
   filtersContainer: {
     backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
+    paddingVertical: 20,
+    paddingHorizontal: 24,
     marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  filterSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#3A4276',
+    marginBottom: 12,
+    opacity: 0.8,
   },
   filterScrollView: {
-    paddingHorizontal: 16,
-    marginBottom: 8,
+    marginBottom: 16,
   },
   filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginRight: 8,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginRight: 12,
+    backgroundColor: '#F8F9FC',
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E5E7EB',
   },
   filterChipActive: {
     backgroundColor: PRIMARY_COLOR,
     borderColor: PRIMARY_COLOR,
   },
-  filterChipIcon: {
-    marginRight: 6,
+  filterChipIconContainer: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
   },
   filterChipText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '500',
-    color: '#64748B',
+    color: '#3A4276',
   },
   filterChipTextActive: {
     color: '#FFFFFF',
   },
   subjectChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 12,
+    backgroundColor: '#F8F9FC',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E5E7EB',
   },
   subjectChipActive: {
     backgroundColor: SECONDARY_COLOR,
     borderColor: SECONDARY_COLOR,
   },
   subjectChipText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '500',
-    color: '#64748B',
+    color: '#3A4276',
   },
   subjectChipTextActive: {
     color: '#FFFFFF',
   },
-  listContent: {
+  clearFiltersButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
     paddingHorizontal: 16,
+    backgroundColor: 'rgba(79, 70, 229, 0.1)',
+    borderRadius: 20,
+    alignSelf: 'center',
+    marginTop: 8,
+  },
+  clearFiltersText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: PRIMARY_COLOR,
+    marginLeft: 6,
+  },
+  materialsContainer: {
+    flex: 1,
+    paddingHorizontal: 24,
+  },
+  materialsHeader: {
+    marginBottom: 16,
+  },
+  materialsCount: {
+    fontSize: 14,
+    color: '#8A94A6',
+    fontWeight: '500',
+  },
+  listContent: {
     paddingBottom: 100,
   },
   materialCard: {
@@ -775,142 +862,105 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
   },
   materialTouchable: {
-    padding: 16,
+    padding: 20,
   },
   materialHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   materialIconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 12,
+    width: 56,
+    height: 56,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
     position: 'relative',
   },
   downloadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 12,
   },
   materialInfo: {
     flex: 1,
+    marginRight: 12,
   },
   materialTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#1F2937',
-    marginBottom: 4,
+    marginBottom: 8,
     lineHeight: 22,
   },
   categoryBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
+    backgroundColor: 'rgba(79, 70, 229, 0.1)',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    backgroundColor: '#F1F5F9',
     borderRadius: 12,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   categoryText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '600',
     marginLeft: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   materialDetails: {
     fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '400',
+    color: '#8A94A6',
+    fontWeight: '500',
   },
   shareButton: {
     padding: 8,
     borderRadius: 8,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F8F9FC',
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   materialFooter: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    flexWrap: 'wrap',
+    marginBottom: 12,
+  },
+  infoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  infoText: {
+    fontSize: 11,
+    color: '#8A94A6',
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  tapHint: {
+    alignItems: 'center',
     marginTop: 8,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  teacherInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 16,
-    marginBottom: 4,
-  },
-  teacherName: {
-    fontSize: 11,
-    color: '#6B7280',
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-  subjectInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 16,
-    marginBottom: 4,
-  },
-  subjectName: {
-    fontSize: 11,
-    color: '#6B7280',
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-  dateInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 16,
-    marginBottom: 4,
-  },
-  dateText: {
-    fontSize: 11,
-    color: '#6B7280',
-    marginLeft: 4,
-  },
-  downloadInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  downloadText: {
-    fontSize: 11,
-    color: '#6B7280',
-    marginLeft: 4,
-  },
-  tapHint: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    borderTopColor: '#F3F4F6',
   },
   tapHintText: {
-    fontSize: 10,
-    color: '#9CA3AF',
-    textAlign: 'center',
-    fontStyle: 'italic',
+    fontSize: 12,
+    color: PRIMARY_COLOR,
+    fontWeight: '500',
   },
   loadingMore: {
     flexDirection: 'row',
@@ -919,9 +969,10 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
   },
   loadingMoreText: {
-    marginLeft: 8,
+    marginLeft: 12,
     fontSize: 14,
-    color: '#6B7280',
+    color: '#8A94A6',
+    fontWeight: '500',
   },
   emptyState: {
     flex: 1,
@@ -929,27 +980,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 32,
   },
+  emptyStateIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
   emptyTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#374151',
-    marginTop: 16,
-    marginBottom: 8,
+    color: '#1F2937',
+    marginBottom: 12,
+    textAlign: 'center',
   },
   emptyDescription: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#8A94A6',
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 24,
   },
-  clearFiltersButton: {
+  emptyActionButton: {
+    backgroundColor: PRIMARY_COLOR,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    backgroundColor: PRIMARY_COLOR,
-    borderRadius: 8,
+    borderRadius: 24,
   },
-  clearFiltersButtonText: {
+  emptyActionButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
@@ -957,21 +1017,21 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   searchModalContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    width: width - 32,
-    maxWidth: 400,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
   },
   searchModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    padding: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
   searchModalTitle: {
     fontSize: 18,
@@ -981,21 +1041,23 @@ const styles = StyleSheet.create({
   searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
+    margin: 24,
+    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#F8F9FC',
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 12,
-    marginBottom: 20,
+    borderColor: '#E5E7EB',
   },
   searchIcon: {
-    marginRight: 8,
+    marginRight: 12,
   },
   searchInput: {
     flex: 1,
-    height: 48,
     fontSize: 16,
     color: '#1F2937',
+    fontWeight: '500',
   },
   clearSearch: {
     padding: 4,
@@ -1003,18 +1065,32 @@ const styles = StyleSheet.create({
   },
   searchActions: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    paddingHorizontal: 24,
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 16,
+    backgroundColor: '#F8F9FC',
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#8A94A6',
   },
   searchButton: {
+    flex: 1,
+    paddingVertical: 16,
     backgroundColor: PRIMARY_COLOR,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 16,
+    alignItems: 'center',
   },
   searchButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
 

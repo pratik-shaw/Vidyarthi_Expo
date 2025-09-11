@@ -16,6 +16,7 @@ import {
   Dimensions,
   Platform,
   KeyboardAvoidingView,
+  Animated,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -26,6 +27,7 @@ import axios from 'axios';
 import * as DocumentPicker from 'expo-document-picker';
 import { RootStackParamList } from '../App';
 import { STUDENT_API } from '../config/api';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width, height } = Dimensions.get('window');
 const PRIMARY_COLOR = '#4F46E5';
@@ -95,6 +97,7 @@ apiClient.interceptors.request.use(
 
 const StudentQueryScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
   
   // States
   const [queries, setQueries] = useState<QueryData[]>([]);
@@ -191,6 +194,9 @@ const StudentQueryScreen: React.FC = () => {
 
   // Effects
   useEffect(() => {
+    navigation.setOptions({
+      headerShown: false,
+    });
     fetchQueries();
   }, []);
 
@@ -349,6 +355,29 @@ const StudentQueryScreen: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  // Render header
+  const renderHeader = () => (
+    <View style={[styles.header, { paddingTop: insets.top > 0 ? 0 : 20 }]}>
+      <TouchableOpacity 
+        style={styles.backButton}
+        onPress={() => navigation.goBack()}
+        activeOpacity={0.7}
+      >
+        <Feather name="arrow-left" size={24} color={PRIMARY_COLOR} />
+      </TouchableOpacity>
+      
+      <Text style={styles.headerTitle}>My Queries</Text>
+      
+      <TouchableOpacity
+        style={styles.createButton}
+        onPress={() => setShowCreateModal(true)}
+        activeOpacity={0.7}
+      >
+        <Feather name="plus" size={20} color="#FFFFFF" />
+      </TouchableOpacity>
+    </View>
+  );
+
   // Render query card
   const renderQueryCard = (query: QueryData) => {
     const categoryInfo = getCategoryInfo(query.category);
@@ -367,7 +396,9 @@ const StudentQueryScreen: React.FC = () => {
       >
         <View style={styles.queryHeader}>
           <View style={styles.queryTitleContainer}>
-            <Feather name={categoryInfo.icon} size={16} color={PRIMARY_COLOR} />
+            <View style={[styles.categoryIcon, { backgroundColor: `${PRIMARY_COLOR}15` }]}>
+              <Feather name={categoryInfo.icon} size={14} color={PRIMARY_COLOR} />
+            </View>
             <Text style={styles.queryTitle} numberOfLines={1}>
               {query.title}
             </Text>
@@ -388,11 +419,11 @@ const StudentQueryScreen: React.FC = () => {
 
         <View style={styles.queryMeta}>
           <View style={styles.metaItem}>
-            <Feather name="tag" size={12} color="#8A94A6" />
+            <View style={[styles.metaDot, { backgroundColor: PRIMARY_COLOR }]} />
             <Text style={styles.metaText}>{categoryInfo.label}</Text>
           </View>
           <View style={styles.metaItem}>
-            <Feather name="flag" size={12} color={priorityInfo.color} />
+            <View style={[styles.metaDot, { backgroundColor: priorityInfo.color }]} />
             <Text style={[styles.metaText, { color: priorityInfo.color }]}>
               {priorityInfo.label}
             </Text>
@@ -605,52 +636,40 @@ const StudentQueryScreen: React.FC = () => {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
       
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
-          <Feather name="arrow-left" size={24} color="#3A4276" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Queries</Text>
-        <TouchableOpacity
-          style={styles.createButton}
-          onPress={() => setShowCreateModal(true)}
-          activeOpacity={0.7}
-        >
-          <Feather name="plus" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
+      {renderHeader()}
 
       {/* Filter Tabs */}
       <View style={styles.filterContainer}>
-  <ScrollView 
-    horizontal 
-    showsHorizontalScrollIndicator={false} 
-    style={styles.filterTabs}
-    contentContainerStyle={styles.filterTabsContent}
-  >
-    {filters.map((filter) => (
-      <TouchableOpacity
-        key={filter.key}
-        style={[
-          styles.filterTab,
-          activeFilter === filter.key && styles.filterTabActive
-        ]}
-        onPress={() => setActiveFilter(filter.key)}
-        activeOpacity={0.7}
-      >
-        <Text style={[
-          styles.filterTabText,
-          activeFilter === filter.key && styles.filterTabTextActive
-        ]}>
-          {filter.label}
-        </Text>
-      </TouchableOpacity>
-    ))}
-  </ScrollView>
-</View>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false} 
+          style={styles.filterTabs}
+          contentContainerStyle={styles.filterTabsContent}
+        >
+          {filters.map((filter) => (
+            <TouchableOpacity
+              key={filter.key}
+              style={[
+                styles.filterTab,
+                activeFilter === filter.key && styles.filterTabActive
+              ]}
+              onPress={() => setActiveFilter(filter.key)}
+              activeOpacity={0.7}
+            >
+              <Text style={[
+                styles.filterTabText,
+                activeFilter === filter.key && styles.filterTabTextActive
+              ]}>
+                {filter.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
       {/* Content */}
       {loading ? (
@@ -701,9 +720,8 @@ const StudentQueryScreen: React.FC = () => {
   );
 };
 
-
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
     backgroundColor: '#F8F9FC',
   },
@@ -712,43 +730,73 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingTop: 20,
+    paddingBottom: 10,
     backgroundColor: '#F8F9FC',
+    zIndex: 10,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: '#3A4276',
+    flex: 1,
+    textAlign: 'center',
   },
   createButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     backgroundColor: PRIMARY_COLOR,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: PRIMARY_COLOR,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  filterContainer: {
+    backgroundColor: '#F8F9FC',
+    paddingBottom: 16,
   },
   filterTabs: {
     paddingHorizontal: 24,
-    marginBottom: 16,
+  },
+  filterTabsContent: {
+    paddingVertical: 8,
   },
   filterTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     marginRight: 12,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   filterTabActive: {
     backgroundColor: PRIMARY_COLOR,
-    borderColor: PRIMARY_COLOR,
   },
   filterTabText: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
+    fontWeight: '600',
+    color: '#3A4276',
   },
   filterTabTextActive: {
     color: '#FFFFFF',
@@ -759,13 +807,13 @@ const styles = StyleSheet.create({
   },
   queryCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
-    shadowRadius: 4,
+    shadowRadius: 8,
     elevation: 2,
   },
   queryHeader: {
@@ -780,11 +828,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
   },
+  categoryIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
   queryTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#3A4276',
-    marginLeft: 8,
     flex: 1,
   },
   urgentBadge: {
@@ -818,17 +873,25 @@ const styles = StyleSheet.create({
   queryMeta: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     marginBottom: 8,
   },
   metaItem: {
     flexDirection: 'row',
     alignItems: 'center',
     marginRight: 16,
+    marginBottom: 4,
+  },
+  metaDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
   },
   metaText: {
     fontSize: 12,
     color: '#8A94A6',
-    marginLeft: 4,
+    fontWeight: '500',
   },
   attachmentIndicator: {
     flexDirection: 'row',
@@ -854,21 +917,24 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 40,
   },
   loadingText: {
-    marginTop: 12,
     fontSize: 16,
-    color: '#6B7280',
+    color: '#8A94A6',
+    marginTop: 12,
+    fontWeight: '500',
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 60,
+    paddingHorizontal: 40,
   },
   emptyTitle: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#3A4276',
     marginTop: 16,
     marginBottom: 8,
@@ -884,7 +950,12 @@ const styles = StyleSheet.create({
     backgroundColor: PRIMARY_COLOR,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 12,
+    shadowColor: PRIMARY_COLOR,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   emptyButtonText: {
     fontSize: 14,
@@ -908,27 +979,31 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E5E7EB',
   },
   modalCloseButton: {
-    width: 32,
-    height: 32,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
   },
- modalTitle: {
+  modalTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#3A4276',
+    flex: 1,
+    textAlign: 'center',
   },
   submitButton: {
     backgroundColor: PRIMARY_COLOR,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 8,
-    minWidth: 70,
+    borderRadius: 12,
+    minWidth: 80,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   submitButtonDisabled: {
-    backgroundColor: '#9CA3AF',
-    opacity: 0.6,
+    backgroundColor: '#D1D5DB',
   },
   submitButtonText: {
     fontSize: 14,
@@ -937,13 +1012,14 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     flex: 1,
-    padding: 24,
+    paddingHorizontal: 24,
+    paddingTop: 20,
   },
   inputGroup: {
     marginBottom: 24,
   },
   inputLabel: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
     color: '#3A4276',
     marginBottom: 8,
@@ -952,16 +1028,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
     color: '#3A4276',
-    minHeight: 48,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   textInputMultiline: {
-    minHeight: 120,
-    paddingTop: 12,
+    height: 120,
+    textAlignVertical: 'top',
   },
   charCounter: {
     fontSize: 12,
@@ -969,18 +1049,20 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     marginTop: 4,
   },
+  
+  // Category Selection Styles
   categoryScroll: {
-    marginTop: 4,
+    marginVertical: 4,
   },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: `${PRIMARY_COLOR}30`,
     marginRight: 8,
   },
   categoryChipSelected: {
@@ -989,13 +1071,15 @@ const styles = StyleSheet.create({
   },
   categoryChipText: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
     color: PRIMARY_COLOR,
-    marginLeft: 6,
+    marginLeft: 4,
   },
   categoryChipTextSelected: {
     color: '#FFFFFF',
   },
+  
+  // Priority Selection Styles
   priorityContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1004,36 +1088,32 @@ const styles = StyleSheet.create({
   priorityOption: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginRight: 8,
-    marginBottom: 8,
+    minWidth: '22%',
   },
   priorityDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginRight: 8,
+    marginRight: 6,
   },
   priorityText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '500',
     color: '#6B7280',
   },
+  
+  // Urgent Toggle Styles
   urgentToggle: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    justifyContent: 'space-between',
+    paddingVertical: 4,
   },
   urgentToggleLeft: {
     flexDirection: 'row',
@@ -1054,36 +1134,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   toggleActive: {
-    backgroundColor: '#EF4444',
+    backgroundColor: '#10B981',
   },
   toggleThumb: {
     width: 20,
     height: 20,
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
-    alignSelf: 'flex-start',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   toggleThumbActive: {
     alignSelf: 'flex-end',
   },
+  
+  // Attachment Styles
   attachmentButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
     backgroundColor: '#FFFFFF',
     borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderColor: `${PRIMARY_COLOR}30`,
     borderStyle: 'dashed',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 20,
-    justifyContent: 'center',
+    borderRadius: 12,
+    marginBottom: 12,
   },
   attachmentButtonText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
     color: PRIMARY_COLOR,
     marginLeft: 8,
-    marginRight: 12,
+    marginRight: 8,
   },
   attachmentLimit: {
     fontSize: 12,
@@ -1091,47 +1177,44 @@ const styles = StyleSheet.create({
   },
   attachmentItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
+    justifyContent: 'space-between',
     paddingHorizontal: 12,
     paddingVertical: 10,
-    marginTop: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   attachmentInfo: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   attachmentDetails: {
-    flex: 1,
     marginLeft: 8,
+    flex: 1,
   },
   attachmentName: {
     fontSize: 14,
     fontWeight: '500',
     color: '#3A4276',
+    marginBottom: 2,
   },
   attachmentSize: {
     fontSize: 12,
     color: '#8A94A6',
-    marginTop: 2,
   },
   removeAttachmentButton: {
-    padding: 4,
-  },
-  filterContainer: {
-    backgroundColor: '#F8F9FC',
-    paddingBottom: 16,
-  },
-  filterTabsContent: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 4,
+    marginLeft: 12,
   },
-  
 });
 
 export default StudentQueryScreen;

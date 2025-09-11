@@ -21,19 +21,17 @@ import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { STUDENT_API } from '../config/api';
 
 import { RootStackParamList } from '../App';
 
 const { width } = Dimensions.get('window');
-const PRIMARY_COLOR = '#4F46E5';
+const PRIMARY_COLOR = '#4F46E5'; // Matching home screen
 const SECONDARY_COLOR = '#E0E7FF';
 
 // API configuration
-
-
-// API URL with configurable timeout
 const API_URL = STUDENT_API;
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -138,6 +136,7 @@ interface AcademicData {
 
 const StudentAcademicsScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
   
   const [academicData, setAcademicData] = useState<AcademicData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -148,10 +147,15 @@ const StudentAcademicsScreen: React.FC = () => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
-  useEffect(() => {
-    fetchAcademicData();
-    startAnimations();
-  }, []);
+useEffect(() => {
+  // Set header options to hide the default header
+  navigation.setOptions({
+    headerShown: false,
+  });
+
+  fetchAcademicData();
+  startAnimations();
+}, [navigation]);
 
   const startAnimations = () => {
     Animated.parallel([
@@ -224,7 +228,7 @@ const StudentAcademicsScreen: React.FC = () => {
     if (!academicData || !academicData.hasData) {
       return (
         <View style={styles.noDataContainer}>
-          <Ionicons name="school-outline" size={64} color="#9CA3AF" />
+          <Ionicons name="school-outline" size={64} color="#8A94A6" />
           <Text style={styles.noDataTitle}>No Academic Records</Text>
           <Text style={styles.noDataText}>
             {academicData?.message || 'Your academic records will appear here once exams are conducted and marked.'}
@@ -356,7 +360,7 @@ const StudentAcademicsScreen: React.FC = () => {
     if (!academicData?.hasData || academicData.subjectSummary.length === 0) {
       return (
         <View style={styles.noDataContainer}>
-          <Ionicons name="book-outline" size={64} color="#9CA3AF" />
+          <Ionicons name="book-outline" size={64} color="#8A94A6" />
           <Text style={styles.noDataTitle}>No Subject Data</Text>
           <Text style={styles.noDataText}>Subject performance will be shown here once marks are available.</Text>
         </View>
@@ -468,7 +472,7 @@ const StudentAcademicsScreen: React.FC = () => {
     if (!academicData?.hasData || academicData.exams.length === 0) {
       return (
         <View style={styles.noDataContainer}>
-          <Ionicons name="document-outline" size={64} color="#9CA3AF" />
+          <Ionicons name="document-outline" size={64} color="#8A94A6" />
           <Text style={styles.noDataTitle}>No Exam Records</Text>
           <Text style={styles.noDataText}>Your exam results will appear here once they are available.</Text>
         </View>
@@ -529,7 +533,7 @@ const StudentAcademicsScreen: React.FC = () => {
                   <View style={styles.subjectItemScore}>
                     <Text style={[
                       styles.subjectItemGrade,
-                      { color: subject.isCompleted ? getGradeColor(subject.grade || 'F') : '#9CA3AF' }
+                      { color: subject.isCompleted ? getGradeColor(subject.grade || 'F') : '#8A94A6' }
                     ]}>
                       {subject.isCompleted ? subject.grade : 'Pending'}
                     </Text>
@@ -552,7 +556,7 @@ const StudentAcademicsScreen: React.FC = () => {
     if (!academicData?.hasData) {
       return (
         <View style={styles.noDataContainer}>
-          <Ionicons name="analytics-outline" size={64} color="#9CA3AF" />
+          <Ionicons name="analytics-outline" size={64} color="#8A94A6" />
           <Text style={styles.noDataTitle}>No Progress Data</Text>
           <Text style={styles.noDataText}>Progress analytics will be available once you have exam data.</Text>
         </View>
@@ -647,37 +651,67 @@ const StudentAcademicsScreen: React.FC = () => {
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={PRIMARY_COLOR} />
-        <Text style={styles.loadingText}>Loading academic data...</Text>
-      </View>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={PRIMARY_COLOR} />
+          <Text style={styles.loadingText}>Loading academic data...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
-        <Text style={styles.errorTitle}>Error Loading Data</Text>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={fetchAcademicData}>
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
+          <Text style={styles.errorTitle}>Error Loading Data</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={fetchAcademicData}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
+      
+      {/* Header matching home screen style */}
+      <Animated.View 
+        style={[
+          styles.header, 
+          { 
+            opacity: fadeAnim,
+            paddingTop: insets.top > 0 ? 0 : 20 
+          }
+        ]}
+      >
+        <TouchableOpacity 
+          onPress={() => navigation.goBack()} 
+          style={styles.headerButton}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={24} color={PRIMARY_COLOR} />
+        </TouchableOpacity>
+        
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>My Academics</Text>
+        </View>
+        
+        <TouchableOpacity 
+          style={styles.headerButton}
+          onPress={onRefresh}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="refresh" size={22} color={PRIMARY_COLOR} />
+        </TouchableOpacity>
+      </Animated.View>
 
-      {/* Header */}
-            <View style={styles.header}>
-              <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                <Ionicons name="arrow-back" size={24} color="#374151" />
-              </TouchableOpacity>
-              <Text style={styles.headerTitle}>My Academics</Text>
-              <View style={styles.headerRight} />
-            </View>
       {/* Tab Navigation */}
       <Animated.View style={[styles.tabContainer, { opacity: fadeAnim }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScrollView}>
@@ -717,6 +751,7 @@ const StudentAcademicsScreen: React.FC = () => {
         <ScrollView 
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -732,10 +767,14 @@ const StudentAcademicsScreen: React.FC = () => {
           {selectedTab === 'progress' && renderProgressTab()}
         </ScrollView>
       </Animated.View>
-    </View>
+    </SafeAreaView>
   );
 };
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F8F9FC',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F8F9FC',
@@ -749,7 +788,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#6B7280',
+    color: '#3A4276',
   },
   errorContainer: {
     flex: 1,
@@ -760,82 +799,87 @@ const styles = StyleSheet.create({
   },
   errorTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#EF4444',
+    fontWeight: '600',
+    color: '#3A4276',
     marginTop: 16,
     marginBottom: 8,
   },
   errorText: {
     fontSize: 16,
-    color: '#6B7280',
+    color: '#8A94A6',
     textAlign: 'center',
     marginBottom: 24,
   },
   retryButton: {
-    backgroundColor: PRIMARY_COLOR,
-    paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 8,
+    paddingHorizontal: 24,
+    backgroundColor: PRIMARY_COLOR,
+    borderRadius: 12,
   },
   retryButtonText: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+    color: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 16,
+    backgroundColor: '#F8F9FC',
+    zIndex: 10,
   },
-  backButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: SECONDARY_COLOR,
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   headerTitleContainer: {
     flex: 1,
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1F2937',
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  refreshButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: SECONDARY_COLOR,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#3A4276',
   },
   tabContainer: {
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    backgroundColor: '#F8F9FC',
   },
   tabScrollView: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    flexGrow: 0,
   },
   tabButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     marginRight: 12,
     borderRadius: 20,
-    backgroundColor: SECONDARY_COLOR,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: PRIMARY_COLOR + '20',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   tabButtonActive: {
     backgroundColor: PRIMARY_COLOR,
+    borderColor: PRIMARY_COLOR,
   },
   tabButtonText: {
     fontSize: 14,
@@ -852,158 +896,155 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  scrollContent: {
+    paddingBottom: 20,
+  },
   tabContent: {
-    padding: 20,
+    paddingHorizontal: 24,
   },
   noDataContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 40,
     paddingVertical: 80,
   },
   noDataTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#374151',
-    marginTop: 16,
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#3A4276',
+    marginTop: 20,
     marginBottom: 8,
   },
   noDataText: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: 16,
+    color: '#8A94A6',
     textAlign: 'center',
-    paddingHorizontal: 40,
-    lineHeight: 20,
+    lineHeight: 24,
   },
-  // Performance Card Styles
   performanceCard: {
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
-    marginBottom: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
   },
   performanceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   performanceTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     color: '#FFFFFF',
   },
-  gradeChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  gradeChipText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
   percentageText: {
-    fontSize: 32,
-    fontWeight: 'bold',
+    fontSize: 48,
+    fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 8,
   },
   performanceSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
+    fontSize: 16,
+    color: '#FFFFFF',
+    opacity: 0.9,
   },
-  // Stats Grid Styles
+  gradeChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  gradeChipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
   statsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   statCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
     alignItems: 'center',
     marginHorizontal: 4,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   statIcon: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   statValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#3A4276',
     marginBottom: 4,
   },
   statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#8A94A6',
     textAlign: 'center',
   },
-  // Chart Styles
   chartCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
-    marginBottom: 20,
+    marginBottom: 24,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   chartHeader: {
     marginBottom: 16,
   },
   chartTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#3A4276',
     marginBottom: 4,
   },
   chartSubtitle: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#8A94A6',
   },
   chart: {
-    marginVertical: 8,
     borderRadius: 16,
+    marginVertical: 8,
   },
-  // Summary Card Styles
   summaryCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   summaryTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontWeight: '600',
+    color: '#3A4276',
     marginBottom: 16,
   },
   summaryGrid: {
@@ -1014,34 +1055,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   summaryValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#3A4276',
     marginBottom: 4,
   },
   summaryLabel: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 14,
+    color: '#8A94A6',
+    fontWeight: '500',
   },
-  // Subject Card Styles
   subjectCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
     marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   subjectHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 16,
   },
   subjectInfo: {
@@ -1049,13 +1087,13 @@ const styles = StyleSheet.create({
   },
   subjectName: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontWeight: '600',
+    color: '#3A4276',
     marginBottom: 4,
   },
   subjectDetails: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#8A94A6',
   },
   subjectProgress: {
     flexDirection: 'row',
@@ -1065,9 +1103,10 @@ const styles = StyleSheet.create({
   progressBar: {
     flex: 1,
     height: 8,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#F0F1F6',
     borderRadius: 4,
     marginRight: 12,
+    overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
@@ -1076,8 +1115,9 @@ const styles = StyleSheet.create({
   progressText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1F2937',
+    color: '#3A4276',
     minWidth: 40,
+    textAlign: 'right',
   },
   subjectStats: {
     flexDirection: 'row',
@@ -1088,28 +1128,25 @@ const styles = StyleSheet.create({
   },
   subjectStatValue: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 4,
+    fontWeight: '600',
+    color: '#3A4276',
+    marginBottom: 2,
   },
   subjectStatLabel: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#8A94A6',
+    fontWeight: '500',
   },
-  // Exam Card Styles
   examCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
     marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   examHeader: {
     flexDirection: 'row',
@@ -1119,35 +1156,36 @@ const styles = StyleSheet.create({
   },
   examInfo: {
     flex: 1,
+    marginRight: 16,
   },
   examName: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontWeight: '600',
+    color: '#3A4276',
     marginBottom: 4,
   },
   examCode: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#8A94A6',
     marginBottom: 2,
   },
   examDate: {
-    fontSize: 12,
-    color: '#9CA3AF',
+    fontSize: 13,
+    color: '#8A94A6',
   },
   examGrade: {
     alignItems: 'flex-end',
   },
   examPercentage: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontWeight: '600',
+    color: '#3A4276',
     marginTop: 8,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   examMarks: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#8A94A6',
   },
   examProgress: {
     flexDirection: 'row',
@@ -1156,14 +1194,15 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   examStatus: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#8A94A6',
     marginLeft: 12,
   },
   subjectBreakdown: {
-    paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    borderTopColor: '#F0F1F6',
+    paddingTop: 16,
   },
   subjectItem: {
     flexDirection: 'row',
@@ -1173,7 +1212,8 @@ const styles = StyleSheet.create({
   },
   subjectItemName: {
     fontSize: 14,
-    color: '#1F2937',
+    fontWeight: '500',
+    color: '#3A4276',
     flex: 1,
   },
   subjectItemScore: {
@@ -1186,21 +1226,13 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   subjectItemMarks: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 13,
+    color: '#8A94A6',
   },
-  moreSubjects: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  // Progress Tab Styles
   progressMetrics: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   metricCard: {
     flex: 1,
@@ -1208,25 +1240,24 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     alignItems: 'center',
-    marginHorizontal: 8,
+    marginHorizontal: 6,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   metricValue: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginVertical: 12,
+    fontWeight: '700',
+    color: '#3A4276',
+    marginTop: 12,
+    marginBottom: 4,
   },
   metricLabel: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#8A94A6',
+    fontWeight: '500',
     textAlign: 'center',
   },
   recentCard: {
@@ -1234,18 +1265,15 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   recentTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontWeight: '600',
+    color: '#3A4276',
     marginBottom: 16,
   },
   recentItem: {
@@ -1254,7 +1282,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: '#F0F1F6',
   },
   recentExamInfo: {
     flex: 1,
@@ -1262,28 +1290,25 @@ const styles = StyleSheet.create({
   recentExamName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 4,
+    color: '#3A4276',
+    marginBottom: 2,
   },
   recentExamDate: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 13,
+    color: '#8A94A6',
   },
   recentScore: {
     alignItems: 'flex-end',
   },
   recentPercentage: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontWeight: '600',
+    color: '#3A4276',
     marginBottom: 2,
   },
   recentMarks: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  headerRight: {
-    width: 40,
+    fontSize: 13,
+    color: '#8A94A6',
   },
 });
 export default StudentAcademicsScreen;

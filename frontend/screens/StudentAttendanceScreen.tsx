@@ -23,9 +23,10 @@ import { RootStackParamList } from '../App';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { STUDENT_API } from '../config/api';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
-const PRIMARY_COLOR = '#4F46E5';
+const PRIMARY_COLOR = '#4F46E5'; // Consistent with home screen
 
 // API configuration
 const API_URL = STUDENT_API;
@@ -138,6 +139,7 @@ interface AttendanceData {
 
 const StudentAttendanceScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
   
   // State management
   const [attendanceData, setAttendanceData] = useState<AttendanceData | null>(null);
@@ -149,6 +151,7 @@ const StudentAttendanceScreen: React.FC = () => {
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const headerOpacity = useRef(new Animated.Value(0)).current;
 
   // Timeframe options
   const timeframes = [
@@ -160,9 +163,14 @@ const StudentAttendanceScreen: React.FC = () => {
   ];
 
   useEffect(() => {
+    // Set header options to hide the default header
+    navigation.setOptions({
+      headerShown: false,
+    });
+
     fetchAttendanceData();
     startAnimations();
-  }, []);
+  }, [navigation]);
 
   useEffect(() => {
     if (selectedTimeframe) {
@@ -180,6 +188,11 @@ const StudentAttendanceScreen: React.FC = () => {
       Animated.timing(slideAnim, {
         toValue: 0,
         duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(headerOpacity, {
+        toValue: 1,
+        duration: 1000,
         useNativeDriver: true,
       })
     ]).start();
@@ -284,14 +297,14 @@ const StudentAttendanceScreen: React.FC = () => {
   };
 
   const getInsightIcon = (type: string) => {
-  switch (type) {
-    case 'positive': return 'trending-up';
-    case 'warning': return 'alert-triangle';
-    case 'achievement': return 'award';
-    case 'suggestion': return 'zap'; // Changed from 'lightbulb' to 'zap'
-    default: return 'info';
-  }
-};
+    switch (type) {
+      case 'positive': return 'trending-up';
+      case 'warning': return 'alert-triangle';
+      case 'achievement': return 'award';
+      case 'suggestion': return 'zap';
+      default: return 'info';
+    }
+  };
 
   const getInsightColor = (type: string) => {
     switch (type) {
@@ -304,7 +317,15 @@ const StudentAttendanceScreen: React.FC = () => {
   };
 
   const renderHeader = () => (
-    <View style={styles.header}>
+    <Animated.View 
+      style={[
+        styles.header, 
+        { 
+          opacity: headerOpacity,
+          paddingTop: insets.top > 0 ? 0 : 20 
+        }
+      ]}
+    >
       <TouchableOpacity 
         style={styles.backButton}
         onPress={() => navigation.goBack()}
@@ -312,13 +333,23 @@ const StudentAttendanceScreen: React.FC = () => {
       >
         <Feather name="arrow-left" size={24} color={PRIMARY_COLOR} />
       </TouchableOpacity>
+      
       <Text style={styles.headerTitle}>My Attendance</Text>
+      
       <View style={styles.headerSpacer} />
-    </View>
+    </Animated.View>
   );
 
   const renderTimeframeSelector = () => (
-    <View style={styles.timeframeContainer}>
+    <Animated.View
+      style={[
+        styles.timeframeContainer,
+        {
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }]
+        }
+      ]}
+    >
       <ScrollView 
         horizontal 
         showsHorizontalScrollIndicator={false}
@@ -345,7 +376,7 @@ const StudentAttendanceScreen: React.FC = () => {
           </TouchableOpacity>
         ))}
       </ScrollView>
-    </View>
+    </Animated.View>
   );
 
   const renderOverallStats = () => {
@@ -380,19 +411,25 @@ const StudentAttendanceScreen: React.FC = () => {
 
         <View style={styles.subStatsContainer}>
           <View style={styles.subStatsCard}>
-            <Feather name="x-circle" size={20} color="#EF4444" />
+            <View style={[styles.subStatsIcon, { backgroundColor: '#EF444415' }]}>
+              <Feather name="x-circle" size={20} color="#EF4444" />
+            </View>
             <Text style={styles.subStatsValue}>{overallStats.absentPercentage}%</Text>
             <Text style={styles.subStatsLabel}>Absent</Text>
           </View>
           
           <View style={styles.subStatsCard}>
-            <Feather name="clock" size={20} color="#F59E0B" />
+            <View style={[styles.subStatsIcon, { backgroundColor: '#F59E0B15' }]}>
+              <Feather name="clock" size={20} color="#F59E0B" />
+            </View>
             <Text style={styles.subStatsValue}>{overallStats.latePercentage}%</Text>
             <Text style={styles.subStatsLabel}>Late</Text>
           </View>
           
           <View style={styles.subStatsCard}>
-            <Feather name="star" size={20} color="#8B5CF6" />
+            <View style={[styles.subStatsIcon, { backgroundColor: '#8B5CF615' }]}>
+              <Feather name="star" size={20} color="#8B5CF6" />
+            </View>
             <Text style={styles.subStatsValue}>{overallStats.punctualityScore}%</Text>
             <Text style={styles.subStatsLabel}>Punctuality</Text>
           </View>
@@ -416,7 +453,9 @@ const StudentAttendanceScreen: React.FC = () => {
           }
         ]}
       >
-        <Text style={styles.sectionTitle}>Streaks</Text>
+        <View style={styles.sectionHeaderContainer}>
+          <Text style={styles.sectionTitle}>Streaks</Text>
+        </View>
         
         <View style={styles.streaksContainer}>
           <View style={styles.streakCard}>
@@ -456,7 +495,9 @@ const StudentAttendanceScreen: React.FC = () => {
           }
         ]}
       >
-        <Text style={styles.sectionTitle}>Monthly Breakdown</Text>
+        <View style={styles.sectionHeaderContainer}>
+          <Text style={styles.sectionTitle}>Monthly Breakdown</Text>
+        </View>
         
         {attendanceData.monthlyBreakdown.map((month, index) => (
           <View key={index} style={styles.monthCard}>
@@ -516,7 +557,9 @@ const StudentAttendanceScreen: React.FC = () => {
           }
         ]}
       >
-        <Text style={styles.sectionTitle}>Recent Attendance</Text>
+        <View style={styles.sectionHeaderContainer}>
+          <Text style={styles.sectionTitle}>Recent Attendance</Text>
+        </View>
         
         {attendanceData.recentAttendance.map((record, index) => (
           <View key={index} style={styles.attendanceRecord}>
@@ -565,7 +608,9 @@ const StudentAttendanceScreen: React.FC = () => {
           }
         ]}
       >
-        <Text style={styles.sectionTitle}>Insights & Recommendations</Text>
+        <View style={styles.sectionHeaderContainer}>
+          <Text style={styles.sectionTitle}>Insights & Recommendations</Text>
+        </View>
         
         {attendanceData.insights.map((insight, index) => (
           <View key={index} style={styles.insightCard}>
@@ -604,7 +649,9 @@ const StudentAttendanceScreen: React.FC = () => {
           }
         ]}
       >
-        <Text style={styles.sectionTitle}>Attendance Trend</Text>
+        <View style={styles.sectionHeaderContainer}>
+          <Text style={styles.sectionTitle}>Attendance Trend</Text>
+        </View>
         
         <View style={styles.trendCard}>
           <View style={[styles.trendIcon, { backgroundColor: `${trendColor}15` }]}>
@@ -667,6 +714,7 @@ const StudentAttendanceScreen: React.FC = () => {
       <ScrollView 
         style={styles.container}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl 
             refreshing={refreshing} 
@@ -705,21 +753,31 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 10,
+    backgroundColor: '#F8F9FC',
+    zIndex: 10,
   },
   backButton: {
-    padding: 8,
-    marginRight: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1F2937',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#3A4276',
     flex: 1,
     textAlign: 'center',
   },
@@ -728,42 +786,54 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+    backgroundColor: '#F8F9FC',
+    paddingHorizontal: 24,
+  },
+  scrollContent: {
+    paddingBottom: 20,
   },
   timeframeContainer: {
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    marginBottom: 20,
   },
   timeframeScrollContent: {
-    paddingHorizontal: 20,
+    paddingVertical: 8,
   },
   timeframeButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     marginRight: 12,
     borderRadius: 20,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   timeframeButtonActive: {
     backgroundColor: PRIMARY_COLOR,
   },
   timeframeButtonText: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
+    fontWeight: '600',
+    color: '#3A4276',
   },
   timeframeButtonTextActive: {
     color: '#FFFFFF',
   },
   statsContainer: {
-    padding: 20,
+    marginBottom: 30,
   },
   mainStatsCard: {
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
     marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   mainStatsTitle: {
     fontSize: 16,
@@ -774,7 +844,7 @@ const styles = StyleSheet.create({
   },
   mainStatsPercentage: {
     fontSize: 48,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 4,
   },
@@ -786,106 +856,99 @@ const styles = StyleSheet.create({
   subStatsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 12,
   },
   subStatsCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     alignItems: 'center',
-    marginHorizontal: 4,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  subStatsIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
   },
   subStatsValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginTop: 8,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#3A4276',
     marginBottom: 4,
   },
   subStatsLabel: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#6B7280',
+    color: '#8A94A6',
   },
   section: {
-    padding: 20,
+    marginBottom: 30,
+  },
+  sectionHeaderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 16,
+    fontWeight: '700',
+    color: '#3A4276',
   },
   streaksContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 12,
   },
   streakCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     alignItems: 'center',
-    marginHorizontal: 4,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   streakIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
   },
   streakValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#3A4276',
     marginBottom: 4,
   },
   streakLabel: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#6B7280',
+    color: '#8A94A6',
     textAlign: 'center',
   },
   monthCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     marginBottom: 12,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   monthHeader: {
     flexDirection: 'row',
@@ -896,33 +959,32 @@ const styles = StyleSheet.create({
   monthName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1F2937',
+    color: '#3A4276',
   },
   monthPercentage: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: PRIMARY_COLOR,
+    fontWeight: '700',
+    color: '#3A4276',
   },
   monthStats: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 16,
     marginBottom: 12,
   },
   monthStat: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 16,
-    marginBottom: 4,
+    gap: 6,
   },
   monthStatDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginRight: 6,
   },
   monthStatText: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 13,
+    color: '#8A94A6',
     fontWeight: '500',
   },
   progressBarContainer: {
@@ -930,7 +992,7 @@ const styles = StyleSheet.create({
   },
   progressBarBackground: {
     height: 6,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#F1F3F5',
     borderRadius: 3,
     overflow: 'hidden',
   },
@@ -942,157 +1004,138 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   attendanceDate: {
-    minWidth: 80,
-    marginRight: 16,
+    flex: 1,
   },
   attendanceDateText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1F2937',
+    color: '#3A4276',
   },
   attendanceStatus: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    gap: 8,
   },
   statusIcon: {
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
   },
   statusText: {
     fontSize: 14,
     fontWeight: '600',
-    textTransform: 'capitalize',
   },
   attendanceRemarks: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#8A94A6',
     fontStyle: 'italic',
-    marginLeft: 44,
-    marginTop: 4,
+    marginLeft: 8,
   },
   insightCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   insightIcon: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
-    flexShrink: 0,
   },
   insightContent: {
     flex: 1,
   },
   insightTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#1F2937',
+    color: '#3A4276',
     marginBottom: 4,
   },
   insightMessage: {
-    fontSize: 14,
-    color: '#6B7280',
-    lineHeight: 20,
+    fontSize: 13,
+    color: '#8A94A6',
+    lineHeight: 18,
   },
   trendCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 14,
+    padding: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
+    gap: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   trendIcon: {
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
   },
   trendContent: {
     flex: 1,
   },
   trendLabel: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
     marginBottom: 4,
   },
   trendDescription: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#8A94A6',
   },
   dateRangeInfo: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    padding: 12,
-    margin: 20,
-    marginTop: 0,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 10,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   dateRangeText: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 13,
+    color: '#8A94A6',
     textAlign: 'center',
-    fontWeight: '500',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
+    paddingHorizontal: 24,
   },
   loadingText: {
     fontSize: 16,
-    color: '#6B7280',
+    color: '#8A94A6',
     marginTop: 16,
     textAlign: 'center',
   },
@@ -1100,28 +1143,28 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
+    paddingHorizontal: 24,
   },
   errorTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#1F2937',
+    color: '#3A4276',
     marginTop: 16,
     marginBottom: 8,
     textAlign: 'center',
   },
   errorMessage: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#8A94A6',
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 24,
   },
   retryButton: {
     backgroundColor: PRIMARY_COLOR,
-    borderRadius: 8,
     paddingHorizontal: 24,
     paddingVertical: 12,
+    borderRadius: 12,
   },
   retryButtonText: {
     fontSize: 16,

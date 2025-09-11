@@ -24,6 +24,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Calendar } from 'react-native-calendars';
 import { STUDENT_API } from '../config/api';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RootStackParamList } from '../App';
 
@@ -117,6 +118,7 @@ const categoryColors: { [key: string]: string } = {
 
 const StudentCalendarScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
   
   const [calendarData, setCalendarData] = useState<CalendarData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -131,11 +133,17 @@ const StudentCalendarScreen: React.FC = () => {
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const headerOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    // Set header options to hide the default header
+    navigation.setOptions({
+      headerShown: false,
+    });
+
     fetchCalendarData();
     startAnimations();
-  }, []);
+  }, [navigation]);
 
   useEffect(() => {
     if (calendarData) {
@@ -153,6 +161,11 @@ const StudentCalendarScreen: React.FC = () => {
       Animated.timing(slideAnim, {
         toValue: 0,
         duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(headerOpacity, {
+        toValue: 1,
+        duration: 1000,
         useNativeDriver: true,
       })
     ]).start();
@@ -282,6 +295,72 @@ const StudentCalendarScreen: React.FC = () => {
     });
   };
 
+  const renderHeader = () => (
+    <Animated.View 
+      style={[
+        styles.header, 
+        { 
+          opacity: headerOpacity,
+          paddingTop: insets.top > 0 ? 0 : 20 
+        }
+      ]}
+    >
+      <TouchableOpacity 
+        style={styles.backButton}
+        onPress={() => navigation.goBack()}
+        activeOpacity={0.7}
+      >
+        <Feather name="arrow-left" size={24} color={PRIMARY_COLOR} />
+      </TouchableOpacity>
+      
+      <Text style={styles.headerTitle}>Class Calendar</Text>
+      
+      <View style={styles.headerSpacer} />
+    </Animated.View>
+  );
+
+  const renderStatsOverview = () => {
+    if (!calendarData?.hasData) return null;
+
+    return (
+      <Animated.View
+        style={[
+          styles.statsContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }]
+          }
+        ]}
+      >
+        <View style={styles.subStatsContainer}>
+          <View style={styles.subStatsCard}>
+            <View style={[styles.subStatsIcon, { backgroundColor: '#10B98115' }]}>
+              <Ionicons name="calendar-outline" size={20} color="#10B981" />
+            </View>
+            <Text style={styles.subStatsValue}>{calendarData.totalEvents}</Text>
+            <Text style={styles.subStatsLabel}>Total Events</Text>
+          </View>
+          
+          <View style={styles.subStatsCard}>
+            <View style={[styles.subStatsIcon, { backgroundColor: '#3B82F615' }]}>
+              <Ionicons name="time-outline" size={20} color="#3B82F6" />
+            </View>
+            <Text style={styles.subStatsValue}>{calendarData.upcomingEvents}</Text>
+            <Text style={styles.subStatsLabel}>Upcoming</Text>
+          </View>
+          
+          <View style={styles.subStatsCard}>
+            <View style={[styles.subStatsIcon, { backgroundColor: '#F59E0B15' }]}>
+              <Ionicons name="school-outline" size={20} color="#F59E0B" />
+            </View>
+            <Text style={styles.subStatsValue}>{calendarData.studentInfo.className}</Text>
+            <Text style={styles.subStatsLabel}>Class</Text>
+          </View>
+        </View>
+      </Animated.View>
+    );
+  };
+
   const renderEventItem = ({ item }: { item: Event }) => {
     const categoryColor = categoryColors[item.category] || categoryColors.other;
     const isMultiDay = new Date(item.startDate).toDateString() !== new Date(item.endDate).toDateString();
@@ -295,36 +374,35 @@ const StudentCalendarScreen: React.FC = () => {
         }}
         activeOpacity={0.7}
       >
-        <View style={[styles.eventIndicator, { backgroundColor: categoryColor }]} />
         <View style={styles.eventContent}>
           <View style={styles.eventHeader}>
-            <Text style={styles.eventTitle} numberOfLines={1}>
-              {item.title}
-            </Text>
-            <View style={[styles.categoryBadge, { backgroundColor: categoryColor }]}>
-              <Ionicons name={getCategoryIcon(item.category)} size={12} color="#FFFFFF" />
-              <Text style={styles.categoryText}>
-                {calendarData?.categories.find(c => c.value === item.category)?.label || item.category}
-              </Text>
+            <View style={[styles.eventIcon, { backgroundColor: `${categoryColor}15` }]}>
+              <Ionicons name={getCategoryIcon(item.category)} size={16} color={categoryColor} />
             </View>
-          </View>
-          
-          <View style={styles.eventDetails}>
-            <View style={styles.dateContainer}>
-              <Ionicons name="calendar-outline" size={14} color="#6B7280" />
-              <Text style={styles.dateText}>
-                {isMultiDay 
-                  ? `${formatDate(item.startDate)} - ${formatDate(item.endDate)}`
-                  : formatDate(item.startDate)
-                }
+            <View style={styles.eventInfo}>
+              <Text style={styles.eventTitle} numberOfLines={1}>
+                {item.title}
               </Text>
+              <View style={styles.eventMeta}>
+                <Text style={styles.eventDate}>
+                  {isMultiDay 
+                    ? `${formatDate(item.startDate)} - ${formatDate(item.endDate)}`
+                    : formatDate(item.startDate)
+                  }
+                </Text>
+                <View style={[styles.categoryBadge, { backgroundColor: categoryColor }]}>
+                  <Text style={styles.categoryText}>
+                    {calendarData?.categories.find(c => c.value === item.category)?.label || item.category}
+                  </Text>
+                </View>
+              </View>
+              
+              {item.description && (
+                <Text style={styles.eventDescription} numberOfLines={2}>
+                  {item.description}
+                </Text>
+              )}
             </View>
-            
-            {item.description && (
-              <Text style={styles.eventDescription} numberOfLines={2}>
-                {item.description}
-              </Text>
-            )}
           </View>
         </View>
       </TouchableOpacity>
@@ -344,7 +422,7 @@ const StudentCalendarScreen: React.FC = () => {
             onPress={() => setShowEventModal(false)}
             style={styles.modalCloseButton}
           >
-            <Ionicons name="close" size={24} color="#6B7280" />
+            <Feather name="x" size={24} color="#3A4276" />
           </TouchableOpacity>
           <Text style={styles.modalTitle}>Event Details</Text>
           <View style={styles.headerSpacer} />
@@ -355,6 +433,8 @@ const StudentCalendarScreen: React.FC = () => {
             <View style={styles.eventDetailsContainer}>
               <LinearGradient
                 colors={[categoryColors[selectedEvent.category] || categoryColors.other, '#6366F1']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
                 style={styles.eventDetailsBanner}
               >
                 <View style={styles.eventDetailsBadge}>
@@ -373,7 +453,9 @@ const StudentCalendarScreen: React.FC = () => {
               <View style={styles.eventDetailsBody}>
                 <View style={styles.detailSection}>
                   <View style={styles.detailRow}>
-                    <Ionicons name="calendar-outline" size={20} color={PRIMARY_COLOR} />
+                    <View style={[styles.detailIcon, { backgroundColor: `${PRIMARY_COLOR}15` }]}>
+                      <Ionicons name="calendar-outline" size={20} color={PRIMARY_COLOR} />
+                    </View>
                     <View style={styles.detailContent}>
                       <Text style={styles.detailLabel}>Date</Text>
                       <Text style={styles.detailValue}>
@@ -389,7 +471,9 @@ const StudentCalendarScreen: React.FC = () => {
                 {selectedEvent.description && (
                   <View style={styles.detailSection}>
                     <View style={styles.detailRow}>
-                      <Ionicons name="document-text-outline" size={20} color={PRIMARY_COLOR} />
+                      <View style={[styles.detailIcon, { backgroundColor: `${PRIMARY_COLOR}15` }]}>
+                        <Ionicons name="document-text-outline" size={20} color={PRIMARY_COLOR} />
+                      </View>
                       <View style={styles.detailContent}>
                         <Text style={styles.detailLabel}>Description</Text>
                         <Text style={styles.detailValue}>{selectedEvent.description}</Text>
@@ -400,7 +484,9 @@ const StudentCalendarScreen: React.FC = () => {
 
                 <View style={styles.detailSection}>
                   <View style={styles.detailRow}>
-                    <Ionicons name="person-outline" size={20} color={PRIMARY_COLOR} />
+                    <View style={[styles.detailIcon, { backgroundColor: `${PRIMARY_COLOR}15` }]}>
+                      <Ionicons name="person-outline" size={20} color={PRIMARY_COLOR} />
+                    </View>
                     <View style={styles.detailContent}>
                       <Text style={styles.detailLabel}>Created By</Text>
                       <Text style={styles.detailValue}>{selectedEvent.createdBy.name}</Text>
@@ -411,7 +497,9 @@ const StudentCalendarScreen: React.FC = () => {
 
                 <View style={styles.detailSection}>
                   <View style={styles.detailRow}>
-                    <Ionicons name="time-outline" size={20} color={PRIMARY_COLOR} />
+                    <View style={[styles.detailIcon, { backgroundColor: `${PRIMARY_COLOR}15` }]}>
+                      <Ionicons name="time-outline" size={20} color={PRIMARY_COLOR} />
+                    </View>
                     <View style={styles.detailContent}>
                       <Text style={styles.detailLabel}>Created On</Text>
                       <Text style={styles.detailValue}>
@@ -434,95 +522,91 @@ const StudentCalendarScreen: React.FC = () => {
     </Modal>
   );
 
+  // Loading state
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={PRIMARY_COLOR} />
-        <Text style={styles.loadingText}>Loading calendar...</Text>
-      </View>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
+        {renderHeader()}
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={PRIMARY_COLOR} />
+          <Text style={styles.loadingText}>Loading calendar...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
+  // Error state
   if (error) {
     return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
-        <Text style={styles.errorTitle}>Error Loading Calendar</Text>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={fetchCalendarData}>
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
+        {renderHeader()}
+        <View style={styles.errorContainer}>
+          <Ionicons name="cloud-offline" size={60} color="#8A94A6" />
+          <Text style={styles.errorTitle}>Unable to Load Calendar</Text>
+          <Text style={styles.errorMessage}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={fetchCalendarData}
+          >
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
   const selectedDateEvents = getEventsForSelectedDate();
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
+      {renderHeader()}
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#374151" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Class Calendar</Text>
-        <View style={styles.headerRight} />
-      </View>
+      <ScrollView 
+        style={styles.container}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[PRIMARY_COLOR]}
+            tintColor={PRIMARY_COLOR}
+          />
+        }
+      >
+        {!calendarData?.hasData ? (
+          <Animated.View
+            style={[
+              styles.noDataContainer,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <Ionicons name="calendar-outline" size={60} color="#8A94A6" />
+            <Text style={styles.noDataTitle}>No Events Available</Text>
+            <Text style={styles.noDataText}>
+              {calendarData?.message || 'Your class events will appear here once they are created.'}
+            </Text>
+          </Animated.View>
+        ) : (
+          <>
+            {renderStatsOverview()}
 
-      <Animated.View style={[
-        styles.contentContainer, 
-        { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
-      ]}>
-        <ScrollView 
-          style={styles.scrollView}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[PRIMARY_COLOR]}
-              tintColor={PRIMARY_COLOR}
-            />
-          }
-        >
-          {!calendarData?.hasData ? (
-            <View style={styles.noDataContainer}>
-              <Ionicons name="calendar-outline" size={64} color="#9CA3AF" />
-              <Text style={styles.noDataTitle}>No Events Available</Text>
-              <Text style={styles.noDataText}>
-                {calendarData?.message || 'Your class events will appear here once they are created.'}
-              </Text>
-            </View>
-          ) : (
-            <>
-              {/* Stats Overview */}
-              <View style={styles.statsGrid}>
-                <View style={styles.statCard}>
-                  <View style={[styles.statIcon, { backgroundColor: '#10B981' + '15' }]}>
-                    <Ionicons name="calendar-outline" size={20} color="#10B981" />
-                  </View>
-                  <Text style={styles.statValue}>{calendarData.totalEvents}</Text>
-                  <Text style={styles.statLabel}>Total Events</Text>
-                </View>
-                <View style={styles.statCard}>
-                  <View style={[styles.statIcon, { backgroundColor: '#3B82F6' + '15' }]}>
-                    <Ionicons name="time-outline" size={20} color="#3B82F6" />
-                  </View>
-                  <Text style={styles.statValue}>{calendarData.upcomingEvents}</Text>
-                  <Text style={styles.statLabel}>Upcoming</Text>
-                </View>
-                <View style={styles.statCard}>
-                  <View style={[styles.statIcon, { backgroundColor: '#F59E0B' + '15' }]}>
-                    <Ionicons name="school-outline" size={20} color="#F59E0B" />
-                  </View>
-                  <Text style={styles.statValue}>{calendarData.studentInfo.className}</Text>
-                  <Text style={styles.statLabel}>Class</Text>
-                </View>
-              </View>
-
-              {/* Calendar */}
+            {/* Calendar */}
+            <Animated.View
+              style={[
+                styles.section,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ translateY: slideAnim }]
+                }
+              ]}
+            >
               <View style={styles.calendarCard}>
                 <Calendar
                   onDayPress={(day) => setSelectedDate(day.dateString)}
@@ -532,20 +616,20 @@ const StudentCalendarScreen: React.FC = () => {
                   theme={{
                     backgroundColor: '#FFFFFF',
                     calendarBackground: '#FFFFFF',
-                    textSectionTitleColor: '#374151',
+                    textSectionTitleColor: '#3A4276',
                     selectedDayBackgroundColor: PRIMARY_COLOR,
                     selectedDayTextColor: '#FFFFFF',
                     todayTextColor: PRIMARY_COLOR,
-                    dayTextColor: '#374151',
-                    textDisabledColor: '#9CA3AF',
+                    dayTextColor: '#3A4276',
+                    textDisabledColor: '#8A94A6',
                     arrowColor: PRIMARY_COLOR,
-                    monthTextColor: '#374151',
+                    monthTextColor: '#3A4276',
                     indicatorColor: PRIMARY_COLOR,
                     textDayFontFamily: 'System',
                     textMonthFontFamily: 'System',
                     textDayHeaderFontFamily: 'System',
-                    textDayFontWeight: '400',
-                    textMonthFontWeight: '600',
+                    textDayFontWeight: '500',
+                    textMonthFontWeight: '700',
                     textDayHeaderFontWeight: '600',
                     textDayFontSize: 16,
                     textMonthFontSize: 18,
@@ -553,110 +637,267 @@ const StudentCalendarScreen: React.FC = () => {
                   }}
                 />
               </View>
+            </Animated.View>
 
-              {/* Selected Date Events */}
-              <View style={styles.eventsSection}>
+            {/* Selected Date Events */}
+            <Animated.View
+              style={[
+                styles.section,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ translateY: slideAnim }]
+                }
+              ]}
+            >
+              <Text style={styles.sectionTitle}>
+                Events for {new Date(selectedDate).toLocaleDateString('en-US', {
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric'
+                })}
+              </Text>
+              
+              {selectedDateEvents.length > 0 ? (
+                <FlatList
+                  data={selectedDateEvents}
+                  renderItem={renderEventItem}
+                  keyExtractor={(item) => item.eventId}
+                  showsVerticalScrollIndicator={false}
+                  scrollEnabled={false}
+                />
+              ) : (
+                <View style={styles.noEventsContainer}>
+                  <Ionicons name="calendar-outline" size={32} color="#8A94A6" />
+                  <Text style={styles.noEventsText}>No events on this date</Text>
+                </View>
+              )}
+            </Animated.View>
+
+            {/* All Events This Month */}
+            {calendarData.events.length > 0 && (
+              <Animated.View
+                style={[
+                  styles.section,
+                  {
+                    opacity: fadeAnim,
+                    transform: [{ translateY: slideAnim }]
+                  }
+                ]}
+              >
                 <Text style={styles.sectionTitle}>
-                  Events for {new Date(selectedDate).toLocaleDateString('en-US', {
+                  All Events - {new Date(currentYear, currentMonth - 1).toLocaleDateString('en-US', {
                     month: 'long',
-                    day: 'numeric',
                     year: 'numeric'
                   })}
                 </Text>
                 
-                {selectedDateEvents.length > 0 ? (
-                  <FlatList
-                    data={selectedDateEvents}
-                    renderItem={renderEventItem}
-                    keyExtractor={(item) => item.eventId}
-                    showsVerticalScrollIndicator={false}
-                    scrollEnabled={false}
-                  />
-                ) : (
-                  <View style={styles.noEventsContainer}>
-                    <Ionicons name="calendar-outline" size={32} color="#9CA3AF" />
-                    <Text style={styles.noEventsText}>No events on this date</Text>
-                  </View>
-                )}
-              </View>
-
-              {/* All Events This Month */}
-              {calendarData.events.length > 0 && (
-                <View style={styles.eventsSection}>
-                  <Text style={styles.sectionTitle}>
-                    All Events - {new Date(currentYear, currentMonth - 1).toLocaleDateString('en-US', {
-                      month: 'long',
-                      year: 'numeric'
-                    })}
-                  </Text>
-                  
-                  <FlatList
-                    data={calendarData.events}
-                    renderItem={renderEventItem}
-                    keyExtractor={(item) => item.eventId}
-                    showsVerticalScrollIndicator={false}
-                    scrollEnabled={false}
-                  />
-                </View>
-              )}
-            </>
-          )}
-        </ScrollView>
-      </Animated.View>
+                <FlatList
+                  data={calendarData.events}
+                  renderItem={renderEventItem}
+                  keyExtractor={(item) => item.eventId}
+                  showsVerticalScrollIndicator={false}
+                  scrollEnabled={false}
+                />
+              </Animated.View>
+            )}
+          </>
+        )}
+      </ScrollView>
 
       {renderEventModal()}
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
     backgroundColor: '#F8F9FC',
   },
-  
-  // Header Styles
+
+  // Header Styles (consistent with attendance screen)
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E8E8E8',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 10,
+    backgroundColor: '#F8F9FC',
+    zIndex: 10,
   },
   backButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#374151',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#3A4276',
+    flex: 1,
+    textAlign: 'center',
   },
-  headerRight: {
-    width: 40, // Same width as back button to center the title
+  headerSpacer: {
+    width: 40,
   },
 
   // Content Container
-  contentContainer: {
+  container: {
     flex: 1,
+    backgroundColor: '#F8F9FC',
+    paddingHorizontal: 24,
   },
-  scrollView: {
-    flex: 1,
+  scrollContent: {
+    paddingBottom: 20,
   },
 
-  // Loading States
+  // Stats Container (consistent with attendance screen)
+  statsContainer: {
+    marginBottom: 30,
+  },
+  subStatsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  subStatsCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  subStatsIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  subStatsValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#3A4276',
+    marginBottom: 4,
+  },
+  subStatsLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#8A94A6',
+  },
+
+  // Section Styles
+  section: {
+    marginBottom: 30,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#3A4276',
+    marginBottom: 16,
+  },
+
+  // Calendar Styles (updated for consistency)
+  calendarCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+
+  // Event Card Styles (updated for consistency)
+  eventCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  eventContent: {
+    padding: 16,
+  },
+  eventHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  eventIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  eventInfo: {
+    flex: 1,
+  },
+  eventTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3A4276',
+    marginBottom: 4,
+  },
+  eventMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  eventDate: {
+    fontSize: 13,
+    color: '#8A94A6',
+    fontWeight: '500',
+  },
+  categoryBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  categoryText: {
+    fontSize: 11,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  eventDescription: {
+    fontSize: 13,
+    color: '#8A94A6',
+    lineHeight: 18,
+  },
+
+  // Loading States (consistent with attendance screen)
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 24,
   },
   loadingText: {
-    marginTop: 12,
     fontSize: 16,
-    color: '#7F8C8D',
+    color: '#8A94A6',
+    marginTop: 16,
     fontWeight: '500',
   },
 
@@ -665,227 +906,71 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 24,
   },
   errorTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#EF4444',
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#3A4276',
     marginTop: 16,
     marginBottom: 8,
-    textAlign: 'center',
   },
-  errorText: {
-    fontSize: 16,
-    color: '#7F8C8D',
+  errorMessage: {
+    fontSize: 14,
+    color: '#8A94A6',
     textAlign: 'center',
     marginBottom: 24,
-    lineHeight: 22,
+    lineHeight: 20,
   },
   retryButton: {
     backgroundColor: PRIMARY_COLOR,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 12,
   },
   retryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
   },
 
   // No Data States
   noDataContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    padding: 40,
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: '#000000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    paddingHorizontal: 24,
+    paddingVertical: 60,
   },
   noDataTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#374151',
+    fontWeight: '700',
+    color: '#3A4276',
     marginTop: 16,
     marginBottom: 8,
   },
   noDataText: {
-    fontSize: 16,
-    color: '#7F8C8D',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-
-  // Stats Grid
-  statsGrid: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginTop: 16,
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#374151',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-
-  // Calendar Styles
-  calendarCard: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 12,
-    padding: 16,
-    elevation: 2,
-    shadowColor: '#000000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-
-  // Events Section
-  eventsSection: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 16,
-  },
-
-  // Event Card Styles
-  eventCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    marginBottom: 12,
-    elevation: 2,
-    shadowColor: '#000000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    flexDirection: 'row',
-    overflow: 'hidden',
-  },
-  eventIndicator: {
-    width: 4,
-    height: '100%',
-  },
-  eventContent: {
-    flex: 1,
-    padding: 16,
-  },
-  eventHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  eventTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-    flex: 1,
-    marginRight: 12,
-  },
-  categoryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  categoryText: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    fontWeight: '500',
-    marginLeft: 4,
-    textTransform: 'capitalize',
-  },
-  eventDetails: {
-    gap: 8,
-  },
-  dateContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  dateText: {
     fontSize: 14,
-    color: '#6B7280',
-    marginLeft: 6,
-    fontWeight: '500',
-  },
-  eventDescription: {
-    fontSize: 14,
-    color: '#6B7280',
+    color: '#8A94A6',
+    textAlign: 'center',
     lineHeight: 20,
   },
 
-  // No Events State
+  // No Events for Selected Date
   noEventsContainer: {
-    alignItems: 'center',
-    padding: 32,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    elevation: 1,
-    shadowColor: '#000000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
+    borderRadius: 14,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowRadius: 8,
+    elevation: 2,
   },
   noEventsText: {
     fontSize: 14,
-    color: '#9CA3AF',
+    color: '#8A94A6',
     marginTop: 8,
     fontWeight: '500',
   },
@@ -897,47 +982,44 @@ const styles = StyleSheet.create({
   },
   modalHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E8E8E8',
+    borderBottomColor: '#E5E7EB',
   },
   modalCloseButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  headerSpacer: {
-    width: 40, // Same width as close button to center the title
+    fontWeight: '700',
+    color: '#3A4276',
+    flex: 1,
+    textAlign: 'center',
   },
   modalContent: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: 24,
+    paddingTop: 20,
   },
 
   // Event Details Modal
   eventDetailsContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    overflow: 'hidden',
-    elevation: 4,
-    shadowColor: '#000000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
+    marginBottom: 24,
   },
   eventDetailsBanner: {
+    borderRadius: 16,
     padding: 24,
     alignItems: 'center',
+    marginBottom: 20,
   },
   eventDetailsBadge: {
     width: 60,
@@ -949,174 +1031,66 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   eventDetailsTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: 8,
   },
   eventDetailsCategory: {
-    fontSize: 16,
+    fontSize: 14,
     color: 'rgba(255, 255, 255, 0.8)',
-    textTransform: 'capitalize',
     fontWeight: '500',
+    textTransform: 'capitalize',
   },
   eventDetailsBody: {
-    padding: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
+
+  // Detail Section Styles
   detailSection: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    gap: 12,
+  },
+  detailIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   detailContent: {
     flex: 1,
-    marginLeft: 16,
   },
   detailLabel: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: 12,
     fontWeight: '600',
+    color: '#8A94A6',
+    marginBottom: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: 4,
   },
   detailValue: {
     fontSize: 16,
-    color: '#374151',
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#3A4276',
     lineHeight: 22,
   },
   detailSubValue: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#8A94A6',
     marginTop: 2,
-  },
-
-  // Network Status (if needed)
-  networkStatusBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#EF4444',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  networkStatusText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 8,
-  },
-
-  // Legacy styles (keeping for backward compatibility)
-  calendarContainer: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: '#000000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  eventsSectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  eventsSectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  eventsCount: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  eventsList: {
-    paddingBottom: 20,
-  },
-  emptyEventsContainer: {
-    alignItems: 'center',
-    padding: 40,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: '#000000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  emptyEventsTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#374151',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyEventsMessage: {
-    fontSize: 16,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  errorMessage: {
-    fontSize: 16,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 22,
-  },
-  eventDetailsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  eventDetailsInfo: {
-    flex: 1,
-  },
-  eventDetailsSection: {
-    marginBottom: 20,
-  },
-  eventDetailsSectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  eventDetailsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  eventDetailsText: {
-    fontSize: 16,
-    color: '#374151',
-    marginLeft: 8,
-    flex: 1,
-  },
-  eventDetailsDescription: {
-    fontSize: 16,
-    color: '#374151',
-    lineHeight: 24,
   },
 });
 
