@@ -244,6 +244,11 @@ const AdminHomeScreen: React.FC<Props> = ({ navigation }) => {
     navigation.navigate('AdminClasses');
   };
 
+  const navigateToCreateAccounts = () => {
+    navigation.navigate('AdminCreateAccountsScreen');
+    // navigation.navigate('AdminCreateAccounts');
+  };
+
   const navigateToSchoolProfile = () => {
     Alert.alert("Coming Soon", "School profile screen is under development.");
     // navigation.navigate('SchoolProfile');
@@ -392,9 +397,9 @@ const AdminHomeScreen: React.FC<Props> = ({ navigation }) => {
             
             <TouchableOpacity style={styles.actionCard} onPress={navigateToStudentsOueries}>
               <View style={[styles.actionIconContainer, { backgroundColor: '#2ED573' }]}>
-                <FontAwesome5 name="user-plus" size={20} color="#FFFFFF" />
+                <FontAwesome5 name="question-circle" size={20} color="#FFFFFF" />
               </View>
-              <Text style={styles.actionText}>Add Student</Text>
+              <Text style={styles.actionText}>Student Queries</Text>
             </TouchableOpacity>
             
             <TouchableOpacity style={styles.actionCard} onPress={navigateToClasses}>
@@ -402,6 +407,13 @@ const AdminHomeScreen: React.FC<Props> = ({ navigation }) => {
                 <Ionicons name="add" size={24} color="#FFFFFF" />
               </View>
               <Text style={styles.actionText}>Create Class</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.actionCard} onPress={navigateToCreateAccounts}>
+              <View style={[styles.actionIconContainer, { backgroundColor: '#FF6348' }]}>
+                <FontAwesome5 name="user-cog" size={20} color="#FFFFFF" />
+              </View>
+              <Text style={styles.actionText}>Create Accounts</Text>
             </TouchableOpacity>
             
             <TouchableOpacity style={styles.actionCard} onPress={navigateToSettings}>
@@ -666,6 +678,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#3A4276',
     fontWeight: '500',
+    textAlign: 'center',
   },
   notificationsCard: {
     borderRadius: 12,

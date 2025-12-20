@@ -493,31 +493,10 @@ const AdminLoginScreen: React.FC<Props> = ({ navigation }) => {
                   )}
                 </LinearGradient>
               </TouchableOpacity>
-
-              <View style={styles.createAccountContainer}>
-                <Text style={styles.createAccountText}>
-                  Don't have an account? 
-                </Text>
-                <TouchableOpacity 
-                  onPress={navigateToSignup}
-                  disabled={isLoading}
-                >
-                  <Text style={styles.createAccountLink}>
-                    Create new
-                  </Text>
-                </TouchableOpacity>
-              </View>
             </View>
 
             {/* Footer */}
             <View style={styles.footer}>
-              <TouchableOpacity 
-                style={styles.helpButton}
-                onPress={debugNavigation}
-              >
-                <Feather name="help-circle" size={16} color="#8A94A6" style={styles.helpIcon} />
-                <Text style={styles.footerText}>Need help? Contact support</Text>
-              </TouchableOpacity>
               <Text style={styles.version}>Version 2.4.1</Text>
             </View>
           </View>

@@ -10,16 +10,13 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
-  FlatList,
   Modal,
-  TextInput
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
-import { Feather, FontAwesome5, Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import NetInfo from '@react-native-community/netinfo';
 
 import { API_BASE_URL } from '../config/api';
 
@@ -51,75 +48,29 @@ interface ClassData {
   _id: string;
   name: string;
   section?: string;
-  schoolId: string;
   teacherIds: ClassTeacher[];
   studentIds: ClassStudent[];
   classAdmin: ClassAdmin | null;
   teacherCount: number;
   studentCount: number;
   createdAt: string;
-  updatedAt: string;
-}
-
-interface ClassesResponse {
-  classes: ClassData[];
-  totalClasses: number;
-  schoolId: string;
 }
 
 const AdminAllClassesDataScreen: React.FC<Props> = ({ navigation }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [isConnected, setIsConnected] = useState(true);
-  const [classesData, setClassesData] = useState<ClassData[]>([]);
-  const [filteredClasses, setFilteredClasses] = useState<ClassData[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [classes, setClasses] = useState<ClassData[]>([]);
   const [selectedClass, setSelectedClass] = useState<ClassData | null>(null);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [sortBy, setSortBy] = useState<'name' | 'students' | 'teachers' | 'recent'>('name');
+  const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
 
-  // Set header options
   React.useLayoutEffect(() => {
-    navigation.setOptions({
-      headerShown: true,
-      title: 'All Classes',
-      headerStyle: {
-        backgroundColor: '#4E54C8',
-      },
-      headerTintColor: '#FFFFFF',
-      headerTitleStyle: {
-        fontWeight: 'bold',
-      },
-      headerLeft: () => (
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={{ marginLeft: 10 }}
-        >
-          <Feather name="arrow-left" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-      ),
-    });
+    navigation.setOptions({ headerShown: false });
   }, [navigation]);
 
-  // Check network connectivity
-  useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      setIsConnected(state.isConnected ?? false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Load classes data on component mount
   useEffect(() => {
     loadClassesData();
   }, []);
 
-  // Filter classes when search query changes
-  useEffect(() => {
-    filterClasses();
-  }, [searchQuery, classesData, sortBy]);
-
-  // Create axios instance with auth token
   const getAuthenticatedClient = async () => {
     const token = await AsyncStorage.getItem('token');
     return axios.create({
@@ -132,22 +83,15 @@ const AdminAllClassesDataScreen: React.FC<Props> = ({ navigation }) => {
     });
   };
 
-  // Load all classes data
   const loadClassesData = async () => {
     setIsLoading(true);
     try {
-      if (!isConnected) {
-        Alert.alert("No Internet", "Please check your internet connection and try again.");
-        setIsLoading(false);
-        return;
-      }
-
       const apiClient = await getAuthenticatedClient();
       const response = await apiClient.get('/class/all');
-      
-      console.log('Classes loaded:', response.data);
-      setClassesData(response.data.classes);
-      
+      const sortedClasses = response.data.classes.sort((a: ClassData, b: ClassData) => 
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setClasses(sortedClasses);
     } catch (error) {
       console.error('Error loading classes:', error);
       if (axios.isAxiosError(error) && error.response?.status === 401) {
@@ -157,10 +101,7 @@ const AdminAllClassesDataScreen: React.FC<Props> = ({ navigation }) => {
           [{ text: "OK", onPress: () => navigation.replace('RoleSelection') }]
         );
       } else {
-        Alert.alert(
-          "Error",
-          "Failed to load classes data. Please try again."
-        );
+        Alert.alert("Error", "Failed to load classes data. Please try again.");
       }
     } finally {
       setIsLoading(false);
@@ -168,166 +109,169 @@ const AdminAllClassesDataScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  // Handle pull-to-refresh
   const onRefresh = async () => {
     setRefreshing(true);
     await loadClassesData();
   };
 
-  // Filter and sort classes
-  const filterClasses = () => {
-    let filtered = classesData.filter(classItem =>
-      classItem.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (classItem.section && classItem.section.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (classItem.classAdmin && classItem.classAdmin.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
-
-    // Sort classes
-    switch (sortBy) {
-      case 'name':
-        filtered.sort((a, b) => {
-          const nameA = `${a.name} ${a.section || ''}`.trim();
-          const nameB = `${b.name} ${b.section || ''}`.trim();
-          return nameA.localeCompare(nameB);
-        });
-        break;
-      case 'students':
-        filtered.sort((a, b) => b.studentCount - a.studentCount);
-        break;
-      case 'teachers':
-        filtered.sort((a, b) => b.teacherCount - a.teacherCount);
-        break;
-      case 'recent':
-        filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        break;
-    }
-
-    setFilteredClasses(filtered);
-  };
-
-  // Show class details modal
-  const showClassDetails = (classItem: ClassData) => {
+  const handleClassPress = (classItem: ClassData) => {
     setSelectedClass(classItem);
-    setModalVisible(true);
+    setIsDetailModalVisible(true);
   };
 
-  // Navigate to class management
-  const navigateToClassManagement = (classItem: ClassData) => {
-    // You can create a detailed class management screen later
-    Alert.alert(
-      "Class Management",
-      `Manage ${classItem.name} ${classItem.section || ''}`,
-      [
-        { text: "View Details", onPress: () => showClassDetails(classItem) },
-        { text: "Cancel", style: "cancel" }
-      ]
-    );
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return 'Not provided';
+    try {
+      return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch (error) {
+      return 'Invalid date';
+    }
   };
 
-  // Format date
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
+  const getClassInitial = (name?: string) => {
+    return name && name.length > 0 ? name.charAt(0).toUpperCase() : '?';
   };
 
-  // Render class card
-  const renderClassCard = ({ item }: { item: ClassData }) => (
-    <TouchableOpacity
-      style={styles.classCard}
-      onPress={() => navigateToClassManagement(item)}
-    >
-      <View style={styles.classHeader}>
-        <View style={styles.classNameContainer}>
-          <Text style={styles.className}>{item.name}</Text>
-          {item.section && <Text style={styles.classSection}>Section {item.section}</Text>}
-        </View>
-        <TouchableOpacity
-          onPress={() => showClassDetails(item)}
-          style={styles.infoButton}
-        >
-          <Feather name="info" size={20} color="#4E54C8" />
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <View style={styles.headerTop}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Feather name="arrow-left" size={24} color="#3A4276" />
         </TouchableOpacity>
-      </View>
-
-      <View style={styles.classStats}>
-        <View style={styles.statItem}>
-          <FontAwesome5 name="user-graduate" size={16} color="#2ED573" />
-          <Text style={styles.statText}>{item.studentCount} Students</Text>
-        </View>
-        <View style={styles.statItem}>
-          <FontAwesome5 name="chalkboard-teacher" size={16} color="#4E54C8" />
-          <Text style={styles.statText}>{item.teacherCount} Teachers</Text>
+        
+        <View style={styles.titleContainer}>
+          <Text style={styles.headerTitle}>Classes Directory</Text>
+          <Text style={styles.headerSubtitle}>All Classes Detailed Directory</Text>
         </View>
       </View>
 
-      {item.classAdmin && (
-        <View style={styles.classAdminContainer}>
-          <FontAwesome5 name="user-tie" size={14} color="#FFA502" />
-          <Text style={styles.classAdminText}>
-            Class Admin: {item.classAdmin.name}
+      <View style={styles.statsRow}>
+        <View style={styles.statsItem}>
+          <Text style={styles.statsNumber}>{classes.length}</Text>
+          <Text style={styles.statsLabel}>Total Classes</Text>
+        </View>
+        <View style={styles.statsItem}>
+          <Text style={[styles.statsNumber, { color: '#2ED573' }]}>
+            {classes.reduce((sum, cls) => sum + cls.studentCount, 0)}
+          </Text>
+          <Text style={styles.statsLabel}>Students</Text>
+        </View>
+        <View style={styles.statsItem}>
+          <Text style={[styles.statsNumber, { color: '#4E54C8' }]}>
+            {classes.reduce((sum, cls) => sum + cls.teacherCount, 0)}
+          </Text>
+          <Text style={styles.statsLabel}>Teachers</Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderClassCard = (classItem: ClassData) => (
+    <TouchableOpacity
+      key={classItem._id}
+      style={styles.classCard}
+      onPress={() => handleClassPress(classItem)}
+    >
+      <View style={styles.classCardHeader}>
+        <View style={styles.classAvatar}>
+          <Text style={styles.avatarText}>{getClassInitial(classItem.name)}</Text>
+        </View>
+        
+        <View style={styles.classBasicInfo}>
+          <Text style={styles.className} numberOfLines={1}>
+            {classItem.name} {classItem.section ? `(${classItem.section})` : ''}
+          </Text>
+          {classItem.classAdmin && (
+            <Text style={styles.classAdmin} numberOfLines={1}>
+              Admin: {classItem.classAdmin.name}
+            </Text>
+          )}
+          <Text style={styles.classDate} numberOfLines={1}>
+            Created: {formatDate(classItem.createdAt)}
           </Text>
         </View>
-      )}
-
-      <View style={styles.classFooter}>
-        <Text style={styles.createdDate}>Created: {formatDate(item.createdAt)}</Text>
+        
         <Feather name="chevron-right" size={20} color="#8A94A6" />
+      </View>
+      
+      <View style={styles.classCardFooter}>
+        <View style={styles.metaItem}>
+          <FontAwesome5 name="user-graduate" size={12} color="#2ED573" />
+          <Text style={styles.metaText}>{classItem.studentCount} Students</Text>
+        </View>
+        <View style={styles.metaItem}>
+          <FontAwesome5 name="chalkboard-teacher" size={12} color="#4E54C8" />
+          <Text style={styles.metaText}>{classItem.teacherCount} Teachers</Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
 
-  // Render class details modal
-  const renderClassDetailsModal = () => (
+  const renderClassDetailModal = () => (
     <Modal
+      visible={isDetailModalVisible}
       animationType="slide"
-      transparent={true}
-      visible={modalVisible}
-      onRequestClose={() => setModalVisible(false)}
+      presentationStyle="pageSheet"
     >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>
-              {selectedClass?.name} {selectedClass?.section ? `- Section ${selectedClass.section}` : ''}
-            </Text>
-            <TouchableOpacity
-              onPress={() => setModalVisible(false)}
-              style={styles.closeButton}
-            >
-              <Feather name="x" size={24} color="#666" />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.modalContent}>
-            {/* Class Admin */}
-            <View style={styles.modalSection}>
-              <Text style={styles.modalSectionTitle}>Class Administrator</Text>
-              {selectedClass?.classAdmin ? (
+      <SafeAreaView style={styles.modalContainer}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Class Details</Text>
+          <TouchableOpacity
+            onPress={() => setIsDetailModalVisible(false)}
+            style={styles.closeButton}
+          >
+            <Feather name="x" size={24} color="#3A4276" />
+          </TouchableOpacity>
+        </View>
+        
+        {selectedClass && (
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.detailCard}>
+              <View style={styles.detailAvatarContainer}>
+                <Text style={styles.detailAvatarText}>
+                  {getClassInitial(selectedClass.name)}
+                </Text>
+              </View>
+              
+              <Text style={styles.detailName}>
+                {selectedClass.name} {selectedClass.section ? `- Section ${selectedClass.section}` : ''}
+              </Text>
+              
+              <View style={styles.detailStats}>
+                <View style={styles.detailStatItem}>
+                  <Text style={styles.detailStatNumber}>{selectedClass.studentCount}</Text>
+                  <Text style={styles.detailStatLabel}>Students</Text>
+                </View>
+                <View style={styles.detailStatItem}>
+                  <Text style={styles.detailStatNumber}>{selectedClass.teacherCount}</Text>
+                  <Text style={styles.detailStatLabel}>Teachers</Text>
+                </View>
+              </View>
+            </View>
+            
+            {selectedClass.classAdmin && (
+              <View style={styles.detailSection}>
+                <Text style={styles.sectionTitle}>Class Administrator</Text>
                 <View style={styles.adminInfo}>
-                  <FontAwesome5 name="user-tie" size={18} color="#FFA502" />
+                  <FontAwesome5 name="user-tie" size={16} color="#FFA502" />
                   <View style={styles.adminDetails}>
                     <Text style={styles.adminName}>{selectedClass.classAdmin.name}</Text>
                     <Text style={styles.adminEmail}>{selectedClass.classAdmin.email}</Text>
                   </View>
                 </View>
-              ) : (
-                <Text style={styles.noDataText}>No class admin assigned</Text>
-              )}
-            </View>
-
-            {/* Teachers */}
-            <View style={styles.modalSection}>
-              <Text style={styles.modalSectionTitle}>
-                Teachers ({selectedClass?.teacherCount || 0})
-              </Text>
-              {selectedClass?.teacherIds && selectedClass.teacherIds.length > 0 ? (
+              </View>
+            )}
+            
+            <View style={styles.detailSection}>
+              <Text style={styles.sectionTitle}>Teachers ({selectedClass.teacherCount})</Text>
+              {selectedClass.teacherIds && selectedClass.teacherIds.length > 0 ? (
                 selectedClass.teacherIds.map((teacher) => (
                   <View key={teacher._id} style={styles.listItem}>
-                    <FontAwesome5 name="chalkboard-teacher" size={16} color="#4E54C8" />
+                    <FontAwesome5 name="chalkboard-teacher" size={14} color="#4E54C8" />
                     <View style={styles.listItemText}>
                       <Text style={styles.listItemName}>{teacher.name}</Text>
                       <Text style={styles.listItemEmail}>{teacher.email}</Text>
@@ -338,17 +282,14 @@ const AdminAllClassesDataScreen: React.FC<Props> = ({ navigation }) => {
                 <Text style={styles.noDataText}>No teachers assigned</Text>
               )}
             </View>
-
-            {/* Students */}
-            <View style={styles.modalSection}>
-              <Text style={styles.modalSectionTitle}>
-                Students ({selectedClass?.studentCount || 0})
-              </Text>
-              {selectedClass?.studentIds && selectedClass.studentIds.length > 0 ? (
-                <ScrollView style={styles.studentsList} nestedScrollEnabled>
+            
+            <View style={styles.detailSection}>
+              <Text style={styles.sectionTitle}>Students ({selectedClass.studentCount})</Text>
+              {selectedClass.studentIds && selectedClass.studentIds.length > 0 ? (
+                <>
                   {selectedClass.studentIds.slice(0, 10).map((student) => (
                     <View key={student._id} style={styles.listItem}>
-                      <FontAwesome5 name="user-graduate" size={16} color="#2ED573" />
+                      <FontAwesome5 name="user-graduate" size={14} color="#2ED573" />
                       <View style={styles.listItemText}>
                         <Text style={styles.listItemName}>{student.name}</Text>
                         <Text style={styles.listItemEmail}>
@@ -362,140 +303,59 @@ const AdminAllClassesDataScreen: React.FC<Props> = ({ navigation }) => {
                       And {selectedClass.studentIds.length - 10} more students...
                     </Text>
                   )}
-                </ScrollView>
+                </>
               ) : (
                 <Text style={styles.noDataText}>No students enrolled</Text>
               )}
             </View>
           </ScrollView>
-        </View>
-      </View>
+        )}
+      </SafeAreaView>
     </Modal>
   );
 
-  // Show loading screen
   if (isLoading && !refreshing) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <StatusBar barStyle="light-content" backgroundColor="#4E54C8" />
-        <ActivityIndicator size="large" color="#4E54C8" />
-        <Text style={styles.loadingText}>Loading classes...</Text>
+        <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
+        <ActivityIndicator size="large" color="#2ED573" />
+        <Text style={styles.loadingText}>Loading classes data...</Text>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#4E54C8" />
+      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
       
-      {/* Search and Filter Section */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputContainer}>
-          <Feather name="search" size={20} color="#8A94A6" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search classes, sections, or admin..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor="#8A94A6"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Feather name="x" size={20} color="#8A94A6" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterContainer}
-        >
-          {[
-            { key: 'name', label: 'Name', icon: 'type' },
-            { key: 'students', label: 'Students', icon: 'users' },
-            { key: 'teachers', label: 'Teachers', icon: 'user' },
-            { key: 'recent', label: 'Recent', icon: 'clock' }
-          ].map((filter) => (
-            <TouchableOpacity
-              key={filter.key}
-              style={[
-                styles.filterButton,
-                sortBy === filter.key && styles.filterButtonActive
-              ]}
-              onPress={() => setSortBy(filter.key as any)}
-            >
-              <Feather 
-                name={filter.icon as any} 
-                size={16} 
-                color={sortBy === filter.key ? '#FFFFFF' : '#4E54C8'} 
-              />
-              <Text style={[
-                styles.filterText,
-                sortBy === filter.key && styles.filterTextActive
-              ]}>
-                {filter.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* Stats Header */}
-      <View style={styles.statsHeader}>
-        <View style={styles.statHeaderItem}>
-          <Text style={styles.statHeaderNumber}>{filteredClasses.length}</Text>
-          <Text style={styles.statHeaderLabel}>
-            {filteredClasses.length === 1 ? 'Class' : 'Classes'}
-            {searchQuery ? ' Found' : ' Total'}
-          </Text>
-        </View>
-        <View style={styles.statHeaderItem}>
-          <Text style={styles.statHeaderNumber}>
-            {filteredClasses.reduce((sum, cls) => sum + cls.studentCount, 0)}
-          </Text>
-          <Text style={styles.statHeaderLabel}>Total Students</Text>
-        </View>
-        <View style={styles.statHeaderItem}>
-          <Text style={styles.statHeaderNumber}>
-            {filteredClasses.reduce((sum, cls) => sum + cls.teacherCount, 0)}
-          </Text>
-          <Text style={styles.statHeaderLabel}>Total Teachers</Text>
-        </View>
-      </View>
-
-      {/* Classes List */}
-      <FlatList
-        data={filteredClasses}
-        renderItem={renderClassCard}
-        keyExtractor={(item) => item._id}
+      {renderHeader()}
+      
+      <ScrollView
+        style={styles.scrollContainer}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={["#4E54C8"]}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#2ED573"]} />
         }
-        contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
+      >
+        {classes.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <FontAwesome5 name="school" size={64} color="#E0E0E0" />
-            <Text style={styles.emptyTitle}>
-              {searchQuery ? 'No classes found' : 'No classes created yet'}
-            </Text>
-            <Text style={styles.emptySubtitle}>
-              {searchQuery 
-                ? 'Try adjusting your search terms'
-                : 'Create your first class to get started'
-              }
+            <View style={styles.emptyIconContainer}>
+              <FontAwesome5 name="school" size={60} color="#8A94A6" />
+            </View>
+            <Text style={styles.emptyText}>No classes found</Text>
+            <Text style={styles.emptySubtext}>
+              No classes are created in your school yet.
             </Text>
           </View>
-        }
-      />
-
-      {/* Class Details Modal */}
-      {renderClassDetailsModal()}
+        ) : (
+          <View style={styles.classesContainer}>
+            {classes.map((classItem) => renderClassCard(classItem))}
+          </View>
+        )}
+      </ScrollView>
+      
+      {renderClassDetailModal()}
     </SafeAreaView>
   );
 };
@@ -512,81 +372,75 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F9FC',
   },
   loadingText: {
-    marginTop: 16,
+    marginTop: 12,
     fontSize: 16,
-    color: '#666',
+    color: '#3A4276',
   },
-  searchContainer: {
+  header: {
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
+    paddingTop: 16,
+    paddingBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
   },
-  searchInputContainer: {
+  headerTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 12,
+    marginBottom: 20,
   },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 16,
-    color: '#333',
-  },
-  filterContainer: {
-    flexDirection: 'row',
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
+  backButton: {
+    width: 40,
+    height: 40,
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#4E54C8',
-  },
-  filterButtonActive: {
-    backgroundColor: '#4E54C8',
-  },
-  filterText: {
-    marginLeft: 4,
-    fontSize: 14,
-    color: '#4E54C8',
-  },
-  filterTextActive: {
-    color: '#FFFFFF',
-  },
-  statsHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
-  },
-  statHeaderItem: {
-    flex: 1,
+    backgroundColor: '#F0F2F8',
+    justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 16,
   },
-  statHeaderNumber: {
-    fontSize: 24,
+  titleContainer: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#4E54C8',
+    color: '#3A4276',
+    marginBottom: 4,
   },
-  statHeaderLabel: {
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#8A94A6',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statsItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statsNumber: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#3A4276',
+    marginBottom: 4,
+  },
+  statsLabel: {
     fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-    textAlign: 'center',
+    color: '#8A94A6',
   },
-  listContainer: {
-    padding: 16,
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 30,
+  },
+  classesContainer: {
+    paddingTop: 16,
   },
   classCard: {
     backgroundColor: '#FFFFFF',
@@ -594,137 +448,189 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
   },
-  classHeader: {
+  classCardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 12,
   },
-  classNameContainer: {
-    flex: 1,
+  classAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#4E54C8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  className: {
+  avatarText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
+    color: '#FFFFFF',
   },
-  classSection: {
-    fontSize: 14,
-    color: '#666',
+  classBasicInfo: {
+    flex: 1,
+    marginRight: 12,
   },
-  infoButton: {
-    padding: 4,
+  className: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3A4276',
+    marginBottom: 2,
   },
-  classStats: {
-    flexDirection: 'row',
-    marginBottom: 12,
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 20,
-  },
-  statText: {
-    marginLeft: 6,
-    fontSize: 14,
-    color: '#666',
-  },
-  classAdminContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#FFF9E6',
-    borderRadius: 8,
-  },
-  classAdminText: {
-    marginLeft: 8,
-    fontSize: 14,
-    color: '#B8860B',
-    fontWeight: '500',
-  },
-  classFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-    paddingTop: 12,
-  },
-  createdDate: {
+  classAdmin: {
     fontSize: 12,
-    color: '#999',
+    color: '#FFA502',
+    marginBottom: 2,
+  },
+  classDate: {
+    fontSize: 12,
+    color: '#8A94A6',
+  },
+  classCardFooter: {
+    flexDirection: 'row',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F2F8',
+    gap: 16,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  metaText: {
+    fontSize: 12,
+    color: '#8A94A6',
+    marginLeft: 6,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 60,
+    paddingHorizontal: 40,
   },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#666',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#999',
-    textAlign: 'center',
-    paddingHorizontal: 32,
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  emptyIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(138, 148, 166, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 24,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#3A4276',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#8A94A6',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   modalContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    width: '90%',
-    maxHeight: '80%',
-    overflow: 'hidden',
+    flex: 1,
+    backgroundColor: '#F8F9FC',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    padding: 16,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
+    borderBottomColor: '#E8EAED',
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
-    flex: 1,
+    color: '#3A4276',
   },
   closeButton: {
-    padding: 4,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F8F9FC',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalContent: {
+    flex: 1,
+    padding: 16,
+  },
+  detailCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
     padding: 20,
+    alignItems: 'center',
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
   },
-  modalSection: {
-    marginBottom: 24,
+  detailAvatarContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#4E54C8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
   },
-  modalSectionTitle: {
-    fontSize: 16,
+  detailAvatarText: {
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#FFFFFF',
+  },
+  detailName: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#3A4276',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  detailStats: {
+    flexDirection: 'row',
+    gap: 40,
+  },
+  detailStatItem: {
+    alignItems: 'center',
+  },
+  detailStatNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2ED573',
+    marginBottom: 4,
+  },
+  detailStatLabel: {
+    fontSize: 12,
+    color: '#8A94A6',
+  },
+  detailSection: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3A4276',
     marginBottom: 12,
   },
   adminInfo: {
@@ -739,52 +645,49 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   adminName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#333',
+    color: '#3A4276',
+    marginBottom: 2,
   },
   adminEmail: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 2,
+    fontSize: 13,
+    color: '#8A94A6',
   },
   listItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: '#F0F2F8',
   },
   listItemText: {
     marginLeft: 12,
     flex: 1,
   },
   listItemName: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '500',
-    color: '#333',
+    color: '#3A4276',
+    marginBottom: 2,
   },
   listItemEmail: {
-    fontSize: 13,
-    color: '#666',
-    marginTop: 2,
-  },
-  studentsList: {
-    maxHeight: 200,
+    fontSize: 12,
+    color: '#8A94A6',
   },
   moreText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#4E54C8',
     fontStyle: 'italic',
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 12,
   },
   noDataText: {
     fontSize: 14,
-    color: '#999',
+    color: '#8A94A6',
     fontStyle: 'italic',
     textAlign: 'center',
-    paddingVertical: 16,
+    paddingVertical: 12,
   },
 });
 

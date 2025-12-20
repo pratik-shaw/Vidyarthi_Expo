@@ -274,16 +274,6 @@ const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  // Clear AsyncStorage for debugging if needed
-  const clearStorageAndRetry = async () => {
-    try {
-      await AsyncStorage.multiRemove(['studentToken', 'studentData']);
-      console.log('AsyncStorage cleared');
-      Alert.alert('Storage Cleared', 'Please try logging in again');
-    } catch (error) {
-      console.error('Error clearing storage:', error);
-    }
-  };
 
   // Login function
    const handleLogin = async () => {
@@ -435,22 +425,6 @@ const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  // Debug function to check app state
-  const debugAppState = () => {
-    const navState = navigation.getState();
-    console.log('Navigation state:', JSON.stringify(navState, null, 2));
-    Alert.alert(
-      "Debug Options",
-      "Choose an action:",
-      [
-        { text: "Clear Auth Data", onPress: clearStorageAndRetry },
-        { text: "Check Navigation", onPress: () => Alert.alert("Nav Routes", `Routes: ${navState.routes.map(r => r.name).join(', ')}`) },
-        { text: "Check Network", onPress: () => Alert.alert("Network Status", `Connected: ${isConnected}`) },
-        { text: "Cancel", style: "cancel" }
-      ]
-    );
-  };
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar hidden={true} />
@@ -598,27 +572,10 @@ const StudentLoginScreen: React.FC<Props> = ({ navigation }) => {
                   )}
                 </LinearGradient>
               </TouchableOpacity>
-
-              <View style={styles.createAccountContainer}>
-                <Text style={styles.createAccountText}>Don't have an account? </Text>
-                <TouchableOpacity 
-                  onPress={() => navigation.navigate('StudentSignup')}
-                  disabled={isLoading}
-                >
-                  <Text style={styles.createAccountLink}>Create new</Text>
-                </TouchableOpacity>
-              </View>
             </View>
 
             {/* Footer */}
             <View style={styles.footer}>
-              <TouchableOpacity 
-                style={styles.helpButton}
-                onPress={debugAppState}
-              >
-                <Feather name="help-circle" size={16} color="#8A94A6" style={styles.helpIcon} />
-                <Text style={styles.footerText}>Need help? Contact support</Text>
-              </TouchableOpacity>
               <Text style={styles.version}>Version 2.4.1</Text>
             </View>
           </View>
