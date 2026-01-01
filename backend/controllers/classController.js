@@ -9,7 +9,7 @@ const Admin = require('../models/Admin');
 // Create a new class (admin only)
 exports.createClass = async (req, res) => {
   try {
-    const { name, section } = req.body;
+    let { name, section } = req.body;
 
     // Verify user is an admin
     if (req.user.role !== 'admin') {
@@ -21,7 +21,29 @@ exports.createClass = async (req, res) => {
       return res.status(404).json({ msg: 'Admin not found' });
     }
 
-    // Create new class
+    // Trim the inputs but preserve original case for display
+    name = name.trim();
+    section = section.trim();
+
+    // Validate that name is not empty after trimming
+    if (!name) {
+      return res.status(400).json({ msg: 'Class name cannot be empty' });
+    }
+
+    // Check for duplicate using case-insensitive comparison
+    const existingClass = await Class.findOne({
+      schoolId: admin.schoolId,
+      name: { $regex: new RegExp(`^${name}$`, 'i') }, // Case-insensitive match
+      section: { $regex: new RegExp(`^${section}$`, 'i') }
+    });
+
+    if (existingClass) {
+      return res.status(400).json({ 
+        msg: `Class "${name}" with section "${section}" already exists in your school` 
+      });
+    }
+
+    // Create new class with original case preserved
     const newClass = new Class({
       name,
       section,
@@ -35,17 +57,19 @@ exports.createClass = async (req, res) => {
     school.classIds.push(newClass._id);
     await school.save();
 
+    console.log('Class created successfully:', { name, section, classId: newClass._id });
+
     res.status(201).json(newClass);
   } catch (err) {
-    console.error(err.message);
+    console.error('Error in createClass:', err.message);
     res.status(500).send('Server error');
   }
 };
 
-// Update a class (admin only)
+// Update a class (admin only) - IMPROVED VERSION
 exports.updateClass = async (req, res) => {
   try {
-    const { name, section } = req.body;
+    let { name, section } = req.body;
     const { id } = req.params;
 
     // Verify user is an admin
@@ -64,14 +88,69 @@ exports.updateClass = async (req, res) => {
       return res.status(404).json({ msg: 'Class not found or not authorized' });
     }
 
+    // Trim inputs but preserve case
+    if (name) {
+      name = name.trim();
+      if (!name) {
+        return res.status(400).json({ msg: 'Class name cannot be empty' });
+      }
+    }
+    
+    if (section !== undefined) {
+      section = section.trim();
+    }
+
+    // Prepare the updated values
+    const updatedName = name || classObj.name;
+    const updatedSection = section !== undefined ? section : classObj.section;
+
+    // Check if another class with the same name and section exists (case-insensitive)
+    const existingClass = await Class.findOne({
+      _id: { $ne: id }, // Exclude current class
+      schoolId: admin.schoolId,
+      name: { $regex: new RegExp(`^${updatedName}$`, 'i') },
+      section: { $regex: new RegExp(`^${updatedSection}$`, 'i') }
+    });
+
+    if (existingClass) {
+      return res.status(400).json({ 
+        msg: `Another class "${updatedName}" with section "${updatedSection}" already exists in your school` 
+      });
+    }
+
+    // Store old values for student update
+    const oldName = classObj.name;
+    const oldSection = classObj.section;
+
     // Update class fields
-    if (name) classObj.name = name;
-    if (section) classObj.section = section;
+    if (name) classObj.name = updatedName;
+    if (section !== undefined) classObj.section = updatedSection;
 
     await classObj.save();
+    
+    // Update all students in this class with new name/section
+    // This ensures consistency across the app
+    if (name || section !== undefined) {
+      await Student.updateMany(
+        { classId: id },
+        { 
+          className: classObj.name,
+          section: classObj.section
+        }
+      );
+      console.log('Updated student records with new class name/section');
+    }
+    
+    console.log('Class updated successfully:', { 
+      classId: classObj._id, 
+      name: classObj.name, 
+      section: classObj.section,
+      studentsUpdated: true
+    });
+
     res.json(classObj);
   } catch (err) {
-    console.error(err.message);
+    console.error('Error in updateClass:', err.message);
     res.status(500).send('Server error');
   }
 };

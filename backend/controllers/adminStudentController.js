@@ -5,21 +5,30 @@ const School = require('../models/School');
 const Class = require('../models/Class');
 const Admin = require('../models/Admin');
 
-// Helper function to find or create class
+// Helper function to find or create class with case-insensitive matching
 const findOrCreateClass = async (className, section, schoolId) => {
   try {
-    // Try to find existing class
+    // Trim and normalize inputs
+    const normalizedName = className.trim();
+    const normalizedSection = section.trim();
+
+    // Validate that name is not empty after trimming
+    if (!normalizedName) {
+      throw new Error('Class name cannot be empty');
+    }
+
+    // Try to find existing class using case-insensitive search
     let classObj = await Class.findOne({ 
-      name: className, 
-      section: section, 
-      schoolId: schoolId 
+      schoolId: schoolId,
+      name: { $regex: new RegExp(`^${normalizedName}$`, 'i') }, // Case-insensitive match
+      section: { $regex: new RegExp(`^${normalizedSection}$`, 'i') }
     });
 
-    // If class doesn't exist, create it
+    // If class doesn't exist, create it with normalized values
     if (!classObj) {
       classObj = new Class({
-        name: className,
-        section: section,
+        name: normalizedName,
+        section: normalizedSection,
         schoolId: schoolId,
         teacherIds: [],
         studentIds: []
@@ -32,7 +41,17 @@ const findOrCreateClass = async (className, section, schoolId) => {
         { $push: { classIds: classObj._id } }
       );
 
-      console.log('Created new class:', { className, section, classId: classObj._id });
+      console.log('Created new class:', { 
+        className: normalizedName, 
+        section: normalizedSection, 
+        classId: classObj._id 
+      });
+    } else {
+      console.log('Found existing class:', {
+        className: classObj.name,
+        section: classObj.section,
+        classId: classObj._id
+      });
     }
 
     return classObj;
@@ -64,11 +83,25 @@ exports.createStudentManual = async (req, res) => {
       return res.status(404).json({ message: 'Admin not found' });
     }
 
-    const { name, class: className, section, email, phoneNo, schoolCode, password } = req.body;
+    let { name, class: className, section, email, phoneNo, schoolCode, password } = req.body;
 
-    // Validate required fields
+    // Trim and normalize all inputs
+    name = name?.trim();
+    className = className?.trim();
+    section = section?.trim();
+    email = email?.trim().toLowerCase(); // Email should also be lowercase
+    phoneNo = phoneNo?.trim();
+    schoolCode = schoolCode?.trim();
+    password = password?.trim();
+
+    // Validate required fields after trimming
     if (!name || !className || !section || !email || !phoneNo || !schoolCode || !password) {
-      return res.status(400).json({ message: 'All fields are required' });
+      return res.status(400).json({ message: 'All fields are required and cannot be empty' });
+    }
+
+    // Validate class name is not empty after trimming
+    if (!className) {
+      return res.status(400).json({ message: 'Class name cannot be empty' });
     }
 
     // Verify school code matches admin's school
@@ -82,13 +115,15 @@ exports.createStudentManual = async (req, res) => {
       return res.status(404).json({ message: 'School not found' });
     }
 
-    // Check if student email already exists
-    const existingStudent = await Student.findOne({ email });
+    // Check if student email already exists (case-insensitive)
+    const existingStudent = await Student.findOne({ 
+      email: { $regex: new RegExp(`^${email}$`, 'i') }
+    });
     if (existingStudent) {
       return res.status(400).json({ message: 'Student with this email already exists' });
     }
 
-    // Find or create class
+    // Find or create class (this will handle case-insensitive matching)
     const classObj = await findOrCreateClass(className, section, school._id);
 
     // Generate unique student ID
@@ -99,30 +134,35 @@ exports.createStudentManual = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create student
+    // Create student with normalized values
     const student = new Student({
       name,
-      email,
+      email: email.toLowerCase(), // Store email in lowercase
       phone: phoneNo,
       studentId,
       uniqueId,
       schoolId: school._id,
       classId: classObj._id,
-      className: className,
-      section: section,
+      className: classObj.name, // Use the class name from the found/created class
+      section: classObj.section, // Use the section from the found/created class
       password: hashedPassword,
       isActive: true
     });
 
     await student.save();
 
-    // Add student to class
-    if (!classObj.studentIds.includes(student._id)) {
+    // Add student to class if not already present
+    if (!classObj.studentIds.some(id => id.toString() === student._id.toString())) {
       classObj.studentIds.push(student._id);
       await classObj.save();
     }
 
-    console.log('Student created successfully:', { studentId: student._id, classId: classObj._id });
+    console.log('Student created successfully:', { 
+      studentId: student._id, 
+      classId: classObj._id,
+      className: classObj.name,
+      section: classObj.section
+    });
 
     res.status(201).json({
       message: 'Student account created successfully',
@@ -197,14 +237,35 @@ exports.createStudentsBulk = async (req, res) => {
       results.totalProcessed++;
 
       try {
-        // Validate required fields for this student
-        const { name, class: className, section, email, phoneNo, schoolCode, password } = studentData;
+        // Extract and normalize data
+        let { name, class: className, section, email, phoneNo, schoolCode, password } = studentData;
 
+        // Trim and normalize all inputs
+        name = name?.trim();
+        className = className?.trim();
+        section = section?.trim();
+        email = email?.trim().toLowerCase();
+        phoneNo = phoneNo?.trim();
+        schoolCode = schoolCode?.trim();
+        password = password?.trim();
+
+        // Validate required fields after trimming
         if (!name || !className || !section || !email || !phoneNo || !schoolCode || !password) {
           results.failed.push({
-            row: i + 1,
+            row: i + 2, // Excel rows start from 2 (1 is header)
             data: studentData,
-            error: 'Missing required fields'
+            error: 'Missing required fields or empty values after trimming'
+          });
+          results.failCount++;
+          continue;
+        }
+
+        // Validate class name is not empty
+        if (!className) {
+          results.failed.push({
+            row: i + 2,
+            data: studentData,
+            error: 'Class name cannot be empty'
           });
           results.failCount++;
           continue;
@@ -213,7 +274,7 @@ exports.createStudentsBulk = async (req, res) => {
         // Verify school code
         if (schoolCode !== admin.schoolCode) {
           results.failed.push({
-            row: i + 1,
+            row: i + 2,
             data: studentData,
             error: 'School code does not match'
           });
@@ -221,11 +282,13 @@ exports.createStudentsBulk = async (req, res) => {
           continue;
         }
 
-        // Check if student email already exists
-        const existingStudent = await Student.findOne({ email });
+        // Check if student email already exists (case-insensitive)
+        const existingStudent = await Student.findOne({ 
+          email: { $regex: new RegExp(`^${email}$`, 'i') }
+        });
         if (existingStudent) {
           results.failed.push({
-            row: i + 1,
+            row: i + 2,
             data: studentData,
             error: 'Email already exists'
           });
@@ -233,7 +296,7 @@ exports.createStudentsBulk = async (req, res) => {
           continue;
         }
 
-        // Find or create class
+        // Find or create class (handles case-insensitive matching)
         const classObj = await findOrCreateClass(className, section, school._id);
 
         // Generate unique student ID
@@ -244,31 +307,31 @@ exports.createStudentsBulk = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Create student
+        // Create student with normalized values
         const student = new Student({
           name,
-          email,
+          email: email.toLowerCase(),
           phone: phoneNo,
           studentId,
           uniqueId,
           schoolId: school._id,
           classId: classObj._id,
-          className: className,
-          section: section,
+          className: classObj.name, // Use the class name from found/created class
+          section: classObj.section, // Use the section from found/created class
           password: hashedPassword,
           isActive: true
         });
 
         await student.save();
 
-        // Add student to class
-        if (!classObj.studentIds.includes(student._id)) {
+        // Add student to class if not already present
+        if (!classObj.studentIds.some(id => id.toString() === student._id.toString())) {
           classObj.studentIds.push(student._id);
           await classObj.save();
         }
 
         results.successful.push({
-          row: i + 1,
+          row: i + 2,
           studentId: student.studentId,
           name: student.name,
           email: student.email,
@@ -277,19 +340,26 @@ exports.createStudentsBulk = async (req, res) => {
         });
         results.successCount++;
 
-        console.log(`Student ${i + 1} created:`, { studentId: student._id, name: student.name });
+        console.log(`Student ${i + 2} created:`, { 
+          studentId: student._id, 
+          name: student.name,
+          className: student.className,
+          section: student.section
+        });
 
       } catch (studentError) {
-        console.error(`Error processing student ${i + 1}:`, studentError);
+        console.error(`Error processing student ${i + 2}:`, studentError);
         
         let errorMessage = 'Failed to create student';
         if (studentError.code === 11000) {
           const field = Object.keys(studentError.keyPattern)[0];
           errorMessage = `Duplicate ${field}`;
+        } else if (studentError.message) {
+          errorMessage = studentError.message;
         }
 
         results.failed.push({
-          row: i + 1,
+          row: i + 2,
           data: studentData,
           error: errorMessage
         });
@@ -332,11 +402,19 @@ exports.createTeacherManual = async (req, res) => {
       return res.status(404).json({ message: 'Admin not found' });
     }
 
-    const { name, email, schoolCode, uniqueCode, password, phoneNo } = req.body;
+    let { name, email, schoolCode, uniqueCode, password, phoneNo } = req.body;
 
-    // Validate required fields
+    // Trim and normalize inputs
+    name = name?.trim();
+    email = email?.trim().toLowerCase();
+    schoolCode = schoolCode?.trim();
+    uniqueCode = uniqueCode?.trim();
+    password = password?.trim();
+    phoneNo = phoneNo?.trim();
+
+    // Validate required fields after trimming
     if (!name || !email || !schoolCode || !uniqueCode || !password || !phoneNo) {
-      return res.status(400).json({ message: 'All fields are required' });
+      return res.status(400).json({ message: 'All fields are required and cannot be empty' });
     }
 
     // Verify school code matches admin's school
@@ -350,9 +428,11 @@ exports.createTeacherManual = async (req, res) => {
       return res.status(404).json({ message: 'School not found' });
     }
 
-    // Check if teacher email already exists
+    // Check if teacher email already exists (case-insensitive)
     const Teacher = require('../models/Teacher');
-    const existingTeacher = await Teacher.findOne({ email });
+    const existingTeacher = await Teacher.findOne({ 
+      email: { $regex: new RegExp(`^${email}$`, 'i') }
+    });
     if (existingTeacher) {
       return res.status(400).json({ message: 'Teacher with this email already exists' });
     }
@@ -370,7 +450,7 @@ exports.createTeacherManual = async (req, res) => {
     // Create teacher
     const teacher = new Teacher({
       name,
-      email,
+      email: email.toLowerCase(),
       phone: phoneNo,
       uniqueCode,
       schoolCode,
@@ -382,7 +462,7 @@ exports.createTeacherManual = async (req, res) => {
     await teacher.save();
 
     // Add teacher to school
-    if (!school.teacherIds.includes(teacher._id)) {
+    if (!school.teacherIds.some(id => id.toString() === teacher._id.toString())) {
       school.teacherIds.push(teacher._id);
       await school.save();
     }
@@ -461,14 +541,23 @@ exports.createTeachersBulk = async (req, res) => {
       results.totalProcessed++;
 
       try {
-        // Validate required fields
-        const { name, email, schoolCode, uniqueCode, password, phoneNo } = teacherData;
+        // Extract and normalize data
+        let { name, email, schoolCode, uniqueCode, password, phoneNo } = teacherData;
 
+        // Trim and normalize inputs
+        name = name?.trim();
+        email = email?.trim().toLowerCase();
+        schoolCode = schoolCode?.trim();
+        uniqueCode = uniqueCode?.trim();
+        password = password?.trim();
+        phoneNo = phoneNo?.trim();
+
+        // Validate required fields after trimming
         if (!name || !email || !schoolCode || !uniqueCode || !password || !phoneNo) {
           results.failed.push({
-            row: i + 1,
+            row: i + 2,
             data: teacherData,
-            error: 'Missing required fields'
+            error: 'Missing required fields or empty values after trimming'
           });
           results.failCount++;
           continue;
@@ -477,7 +566,7 @@ exports.createTeachersBulk = async (req, res) => {
         // Verify school code
         if (schoolCode !== admin.schoolCode) {
           results.failed.push({
-            row: i + 1,
+            row: i + 2,
             data: teacherData,
             error: 'School code does not match'
           });
@@ -485,11 +574,13 @@ exports.createTeachersBulk = async (req, res) => {
           continue;
         }
 
-        // Check if teacher email already exists
-        const existingTeacher = await Teacher.findOne({ email });
+        // Check if teacher email already exists (case-insensitive)
+        const existingTeacher = await Teacher.findOne({ 
+          email: { $regex: new RegExp(`^${email}$`, 'i') }
+        });
         if (existingTeacher) {
           results.failed.push({
-            row: i + 1,
+            row: i + 2,
             data: teacherData,
             error: 'Email already exists'
           });
@@ -501,7 +592,7 @@ exports.createTeachersBulk = async (req, res) => {
         const existingUniqueCode = await Teacher.findOne({ uniqueCode });
         if (existingUniqueCode) {
           results.failed.push({
-            row: i + 1,
+            row: i + 2,
             data: teacherData,
             error: 'Unique code already in use'
           });
@@ -516,7 +607,7 @@ exports.createTeachersBulk = async (req, res) => {
         // Create teacher
         const teacher = new Teacher({
           name,
-          email,
+          email: email.toLowerCase(),
           phone: phoneNo,
           uniqueCode,
           schoolCode,
@@ -528,32 +619,34 @@ exports.createTeachersBulk = async (req, res) => {
         await teacher.save();
 
         // Add teacher to school
-        if (!school.teacherIds.includes(teacher._id)) {
+        if (!school.teacherIds.some(id => id.toString() === teacher._id.toString())) {
           school.teacherIds.push(teacher._id);
           await school.save();
         }
 
         results.successful.push({
-          row: i + 1,
+          row: i + 2,
           name: teacher.name,
           email: teacher.email,
           uniqueCode: teacher.uniqueCode
         });
         results.successCount++;
 
-        console.log(`Teacher ${i + 1} created:`, { teacherId: teacher._id, name: teacher.name });
+        console.log(`Teacher ${i + 2} created:`, { teacherId: teacher._id, name: teacher.name });
 
       } catch (teacherError) {
-        console.error(`Error processing teacher ${i + 1}:`, teacherError);
+        console.error(`Error processing teacher ${i + 2}:`, teacherError);
         
         let errorMessage = 'Failed to create teacher';
         if (teacherError.code === 11000) {
           const field = Object.keys(teacherError.keyPattern)[0];
           errorMessage = `Duplicate ${field}`;
+        } else if (teacherError.message) {
+          errorMessage = teacherError.message;
         }
 
         results.failed.push({
-          row: i + 1,
+          row: i + 2,
           data: teacherData,
           error: errorMessage
         });

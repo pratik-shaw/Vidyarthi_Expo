@@ -259,6 +259,9 @@ exports.getStudentsForScoring = async (req, res) => {
 };
 
 // Submit marks for a student's subject
+// Modified submitMarks function in controllers/markController.js
+// Replace the existing submitMarks function with this updated version
+
 exports.submitMarks = async (req, res) => {
   try {
     const { classId, studentId, examId, subjectId } = req.params;
@@ -291,17 +294,141 @@ exports.submitMarks = async (req, res) => {
       }
     }
 
-    // Find student's mark record
-    const markRecord = await Mark.findOne({
+    // Verify student exists and belongs to this class
+    const student = await Student.findById(studentId);
+    if (!student) {
+      return res.status(404).json({ msg: 'Student not found' });
+    }
+    
+    if (student.classId.toString() !== classId) {
+      return res.status(400).json({ msg: 'Student does not belong to this class' });
+    }
+
+    // Verify exam exists and belongs to this class
+    const exam = await Exam.findById(examId);
+    if (!exam) {
+      return res.status(404).json({ msg: 'Exam not found' });
+    }
+    
+    if (exam.classId.toString() !== classId) {
+      return res.status(400).json({ msg: 'Exam does not belong to this class' });
+    }
+
+    // Verify the subject exists in the exam and get full marks
+    const examSubject = exam.subjects.find(sub => sub.subjectId.toString() === subjectId);
+    if (!examSubject) {
+      return res.status(404).json({ msg: 'Subject not found in this exam' });
+    }
+
+    // Validate marks don't exceed full marks
+    if (marksScored > examSubject.fullMarks) {
+      return res.status(400).json({ 
+        msg: `Marks cannot exceed full marks of ${examSubject.fullMarks}` 
+      });
+    }
+
+    // Find or create student's mark record
+    let markRecord = await Mark.findOne({
       studentId: studentId,
       classId: classId
     });
 
+    // 🔥 FIX: If mark record doesn't exist, create it with all existing exams
     if (!markRecord) {
-      return res.status(404).json({ msg: 'Mark record not found for this student' });
+      console.log(`Mark record not found for student ${studentId}. Creating new record...`);
+      
+      // Get class details to find the class admin
+      const classObj = await Class.findById(classId);
+      if (!classObj) {
+        return res.status(404).json({ msg: 'Class not found' });
+      }
+      
+      console.log('Class object:', classObj);
+      
+      // Find class admin - check multiple possible field names
+      let classAdminId = classObj.classAdminId || classObj.classTeacherId || classObj.adminId;
+      
+      // If still not found, try to find a teacher who is admin of this class
+      if (!classAdminId) {
+        const adminTeacher = await Teacher.findOne({ adminClassId: classId });
+        if (adminTeacher) {
+          classAdminId = adminTeacher._id;
+          console.log('Found class admin via Teacher model:', classAdminId);
+        }
+      }
+      
+      // If still not found, use the exam's class admin
+      if (!classAdminId && exam.classAdminId) {
+        classAdminId = exam.classAdminId;
+        console.log('Using exam classAdminId:', classAdminId);
+      }
+      
+      if (!classAdminId) {
+        console.error('Could not find classAdminId. Class fields:', Object.keys(classObj.toObject()));
+        return res.status(500).json({ 
+          msg: 'Could not determine class admin. Please contact administrator.' 
+        });
+      }
+      
+      console.log('Using classAdminId:', classAdminId);
+      
+      // Get all exams for this class
+      const allExams = await Exam.find({ classId: classId });
+      
+      // Create mark record with all exams
+      markRecord = new Mark({
+        studentId: studentId,
+        classId: classId,
+        schoolId: exam.schoolId,
+        classAdminId: classAdminId, // Required field
+        exams: allExams.map(examDoc => ({
+          examId: examDoc._id,
+          examName: examDoc.examName,
+          examCode: examDoc.examCode,
+          examDate: examDoc.examDate,
+          subjects: examDoc.subjects.map(subject => ({
+            subjectId: subject.subjectId,
+            subjectName: subject.subjectName,
+            teacherId: subject.teacherId,
+            fullMarks: subject.fullMarks,
+            marksScored: null,
+            scoredBy: null,
+            scoredAt: null
+          }))
+        }))
+      });
+      
+      await markRecord.save();
+      console.log(`Mark record created successfully for student ${studentId}`);
+    } else {
+      // 🔥 FIX: If mark record exists but doesn't have this exam, add it
+      const examExists = markRecord.exams.find(e => e.examId.toString() === examId);
+      
+      if (!examExists) {
+        console.log(`Exam ${examId} not found in student's mark record. Adding it...`);
+        
+        markRecord.exams.push({
+          examId: exam._id,
+          examName: exam.examName,
+          examCode: exam.examCode,
+          examDate: exam.examDate,
+          subjects: exam.subjects.map(subject => ({
+            subjectId: subject.subjectId,
+            subjectName: subject.subjectName,
+            teacherId: subject.teacherId,
+            fullMarks: subject.fullMarks,
+            marksScored: null,
+            scoredBy: null,
+            scoredAt: null
+          }))
+        });
+        
+        await markRecord.save();
+        console.log(`Exam ${examId} added to student's mark record`);
+      }
     }
 
-    // Update marks
+    // Now update the marks
     await markRecord.updateSubjectMarks(examId, subjectId, marksScored, teacherId);
 
     // Get updated record with populated data

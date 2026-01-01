@@ -207,33 +207,81 @@ const AdminClassesScreen: React.FC<Props> = ({ navigation }) => {
     setEditingClass(classData);
     setClassModalVisible(true);
   };
+const createOrUpdateClass = async () => {
+  // Trim the inputs
+  const trimmedName = classForm.name.trim();
+  const trimmedSection = classForm.section.trim();
 
-  const createOrUpdateClass = async () => {
-    if (!classForm.name.trim()) {
-      Alert.alert('Error', 'Class name is required');
-      return;
+  if (!trimmedName) {
+    Alert.alert('Error', 'Class name is required');
+    return;
+  }
+
+  try {
+    setIsLoading(true);
+    const apiClient = await getAuthenticatedClient();
+    
+    // Send trimmed data
+    const classData = {
+      name: trimmedName,
+      section: trimmedSection
+    };
+    
+    if (editingClass) {
+      await apiClient.put(`/admin/classes/${editingClass._id}`, classData);
+    } else {
+      await apiClient.post('/admin/classes', classData);
     }
-
-    try {
-      setIsLoading(true);
-      const apiClient = await getAuthenticatedClient();
-      
-      if (editingClass) {
-        await apiClient.put(`/admin/classes/${editingClass._id}`, classForm);
+    
+    Alert.alert('Success', `Class ${editingClass ? 'updated' : 'created'} successfully`);
+    setClassModalVisible(false);
+    await loadAllData();
+  } catch (error) {
+    // Handle the error silently if it's a known/expected error
+    if (axios.isAxiosError(error)) {
+      if (error.response?.status === 400) {
+        // Handle 400 Bad Request - could be duplicate or validation error
+        const errorMessage = error.response.data?.msg 
+          || error.response.data?.message 
+          || error.response.data?.error
+          || 'Invalid class data. Please check your inputs.';
+        
+        // Only log to console if it's not a duplicate error
+        if (!errorMessage.toLowerCase().includes('already exists')) {
+          console.error('Error with class operation:', error);
+        }
+        
+        Alert.alert('Error', errorMessage);
+      } else if (error.response?.status === 409) {
+        // Handle 409 Conflict - typically for duplicates
+        Alert.alert('Duplicate Class', 'A class with this name and section already exists');
+      } else if (error.response) {
+        // Other server errors
+        console.error('Error with class operation:', error);
+        const errorMessage = error.response.data?.msg 
+          || error.response.data?.message 
+          || error.response.data?.error
+          || 'An error occurred while processing your request';
+        
+        Alert.alert('Error', errorMessage);
+      } else if (error.request) {
+        // Network error - request was made but no response
+        console.error('Network error:', error);
+        Alert.alert('Network Error', 'Unable to connect to the server. Please check your internet connection.');
       } else {
-        await apiClient.post('/admin/classes', classForm);
+        // Something else happened
+        console.error('Unexpected error:', error);
+        Alert.alert('Error', 'An unexpected error occurred. Please try again.');
       }
-      
-      Alert.alert('Success', `Class ${editingClass ? 'updated' : 'created'} successfully`);
-      setClassModalVisible(false);
-      await loadAllData();
-    } catch (error) {
-      console.error('Error with class operation:', error);
-      handleApiError(error);
-    } finally {
-      setIsLoading(false);
+    } else {
+      // Non-Axios error
+      console.error('Unexpected error:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     }
-  };
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const deleteClass = (classId: string) => {
     Alert.alert(
