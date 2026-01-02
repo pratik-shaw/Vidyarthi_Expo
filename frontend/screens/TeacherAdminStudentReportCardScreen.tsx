@@ -21,7 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
 
@@ -118,6 +118,8 @@ const TeacherAdminStudentReportCardScreen: React.FC<Props> = ({ route, navigatio
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [downloadingPDF, setDownloadingPDF] = useState(false);
   const [downloadingCSV, setDownloadingCSV] = useState(false);
+  const [downloadingSinglePDF, setDownloadingSinglePDF] = useState(false);
+const [downloadingSingleCSV, setDownloadingSingleCSV] = useState(false);
 
   // Set header
   React.useLayoutEffect(() => {
@@ -394,6 +396,37 @@ const fetchReportData = async (authToken = token) => {
     fetchReportData();
   };
 
+  const generateSingleStudentCSV = (studentData: StudentReportData): string => {
+  let csvContent = `Student Report Card\n\n`;
+  
+  csvContent += `Student Name: ${studentData.student.name}\n`;
+  csvContent += `Student ID: ${studentData.student.studentId}\n`;
+  csvContent += `Email: ${studentData.student.email || 'N/A'}\n`;
+  csvContent += `Parent Contact: ${studentData.student.parentContact || 'N/A'}\n\n`;
+
+  // Overall Statistics
+  if (studentData.overallStats) {
+    csvContent += `Overall Statistics:\n`;
+    csvContent += `Total Exams: ${studentData.overallStats.totalExams}\n`;
+    csvContent += `Average Percentage: ${studentData.overallStats.averagePercentage.toFixed(2)}%\n`;
+    csvContent += `Best Performance: ${studentData.overallStats.bestPerformance.examName} (${studentData.overallStats.bestPerformance.percentage.toFixed(2)}%)\n`;
+    csvContent += `Strongest Subject: ${studentData.overallStats.strongestSubject}\n`;
+    csvContent += `Weakest Subject: ${studentData.overallStats.weakestSubject}\n\n`;
+  }
+
+  // Exam-wise Performance
+  csvContent += `Exam-wise Performance:\n`;
+  csvContent += `Exam Name,Subject,Marks Scored,Full Marks,Percentage,Grade\n`;
+  
+  studentData.exams.forEach(exam => {
+    exam.subjects.forEach(subject => {
+      csvContent += `${exam.examName},${subject.subjectName},${subject.marksScored || 'N/A'},${subject.fullMarks},${subject.percentage?.toFixed(2) || 'N/A'}%,${subject.grade || 'N/A'}\n`;
+    });
+    csvContent += `${exam.examName} - Overall,Total,${exam.totalMarks},${exam.totalFullMarks},${exam.overallPercentage.toFixed(2)}%,${exam.overallGrade}\n\n`;
+  });
+
+  return csvContent;
+};
   // Generate CSV content
   const generateCSVContent = (): string => {
     if (!reportData) return '';
@@ -433,35 +466,78 @@ const fetchReportData = async (authToken = token) => {
   };
 
   // Handle CSV download
-  const handleDownloadCSV = async () => {
-    if (!reportData) {
-      Alert.alert('Error', 'No data available to download');
-      return;
-    }
+  // Handle CSV download
+const handleDownloadCSV = async () => {
+  if (!reportData) {
+    Alert.alert('Error', 'No data available to download');
+    return;
+  }
 
-    setDownloadingCSV(true);
-    try {
-      const csvContent = generateCSVContent();
-      const fileName = `${reportData.classInfo.name}_Report_Cards_${new Date().toISOString().split('T')[0]}.csv`;
-      const fileUri = FileSystem.documentDirectory + fileName;
+  setDownloadingCSV(true);
+  try {
+    const csvContent = generateCSVContent();
+    const fileName = `${reportData.classInfo.name.replace(/[^a-z0-9]/gi, '_')}_Report_Cards_${new Date().toISOString().split('T')[0]}.csv`;
+    
+    const fileUri = FileSystem.documentDirectory + fileName;
 
-      await FileSystem.writeAsStringAsync(fileUri, csvContent, {
-        encoding: FileSystem.EncodingType.UTF8,
-      });
+    // Write file using legacy API
+    await FileSystem.writeAsStringAsync(fileUri, csvContent, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
 
+    // Share the file
+    const isAvailable = await Sharing.isAvailableAsync();
+    if (isAvailable) {
       await Sharing.shareAsync(fileUri, {
         mimeType: 'text/csv',
         dialogTitle: 'Download Report Cards CSV',
       });
-
       Alert.alert('Success', 'CSV file downloaded successfully!');
-    } catch (error) {
-      console.error('Error downloading CSV:', error);
-      Alert.alert('Error', 'Failed to download CSV file');
-    } finally {
-      setDownloadingCSV(false);
+    } else {
+      Alert.alert('Error', 'Sharing is not available on this device');
     }
-  };
+  } catch (error) {
+    console.error('Error downloading CSV:', error);
+    Alert.alert('Error', `Failed to download CSV file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  } finally {
+    setDownloadingCSV(false);
+  }
+};
+
+const handleDownloadSingleStudentCSV = async () => {
+  if (!selectedStudent) {
+    Alert.alert('Error', 'No student selected');
+    return;
+  }
+
+  setDownloadingSingleCSV(true);
+  try {
+    const csvContent = generateSingleStudentCSV(selectedStudent);
+    const fileName = `${selectedStudent.student.name.replace(/[^a-z0-9]/gi, '_')}_Report_Card_${new Date().toISOString().split('T')[0]}.csv`;
+    
+    const fileUri = FileSystem.documentDirectory + fileName;
+
+    await FileSystem.writeAsStringAsync(fileUri, csvContent, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+
+    const isAvailable = await Sharing.isAvailableAsync();
+    if (isAvailable) {
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'text/csv',
+        dialogTitle: 'Download Student Report Card CSV',
+      });
+      Alert.alert('Success', `CSV downloaded for ${selectedStudent.student.name}!`);
+    } else {
+      Alert.alert('Error', 'Sharing is not available on this device');
+    }
+  } catch (error) {
+    console.error('Error downloading single student CSV:', error);
+    Alert.alert('Error', `Failed to download CSV: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  } finally {
+    setDownloadingSingleCSV(false);
+  }
+};
 
   // Generate PDF HTML content
   const generatePDFHTML = (): string => {
@@ -586,6 +662,270 @@ const fetchReportData = async (authToken = token) => {
     return htmlContent;
   };
 
+  const generateSingleStudentPDFHTML = (studentData: StudentReportData): string => {
+  let htmlContent = `
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px;
+            padding: 20px;
+          }
+          .header { 
+            text-align: center; 
+            margin-bottom: 30px;
+            border-bottom: 3px solid #4299E1;
+            padding-bottom: 20px;
+          }
+          .student-info { 
+            background: #f8f9fa; 
+            padding: 20px; 
+            border-radius: 8px; 
+            margin-bottom: 25px;
+            border-left: 5px solid #4299E1;
+          }
+          .info-row {
+            display: flex;
+            margin-bottom: 10px;
+          }
+          .info-label {
+            font-weight: bold;
+            width: 150px;
+            color: #2D3748;
+          }
+          .info-value {
+            color: #4A5568;
+          }
+          .stats-section {
+            background: #EDF2F7;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+          }
+          .stats-grid { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr 1fr; 
+            gap: 15px; 
+            margin-bottom: 20px; 
+          }
+          .stat-card { 
+            background: #fff; 
+            border: 2px solid #CBD5E0; 
+            padding: 15px; 
+            border-radius: 8px;
+            text-align: center;
+          }
+          .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4299E1;
+            margin-bottom: 5px;
+          }
+          .stat-label {
+            font-size: 12px;
+            color: #718096;
+          }
+          .insights {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #CBD5E0;
+          }
+          .insight-item {
+            margin-bottom: 8px;
+            color: #4A5568;
+          }
+          .insight-label {
+            font-weight: bold;
+            color: #2D3748;
+          }
+          .exams-section {
+            margin-top: 25px;
+          }
+          .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2D3748;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #E2E8F0;
+          }
+          table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-bottom: 25px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          }
+          th, td { 
+            border: 1px solid #dee2e6; 
+            padding: 12px 8px; 
+            text-align: left; 
+          }
+          th { 
+            background: #4299E1; 
+            color: white;
+            font-weight: 600;
+          }
+          .exam-header {
+            background: #EDF2F7;
+            font-weight: bold;
+            color: #2D3748;
+          }
+          .grade-A { background: #C6F6D5; }
+          .grade-B { background: #BEE3F8; }
+          .grade-C { background: #FEEBC8; }
+          .grade-D { background: #FED7D7; }
+          .grade-F { background: #FED7D7; }
+          .overall-row { 
+            background: #4299E1; 
+            color: white;
+            font-weight: bold; 
+          }
+          .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #E2E8F0;
+            color: #718096;
+            font-size: 12px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Student Report Card</h1>
+          <h2>${reportData?.classInfo?.name || className}</h2>
+          <p>Generated on: ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
+        </div>
+
+        <div class="student-info">
+          <h3 style="margin-top: 0; color: #2D3748;">Student Information</h3>
+          <div class="info-row">
+            <span class="info-label">Name:</span>
+            <span class="info-value">${studentData.student.name}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Student ID:</span>
+            <span class="info-value">${studentData.student.studentId}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Email:</span>
+            <span class="info-value">${studentData.student.email || 'N/A'}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Parent Contact:</span>
+            <span class="info-value">${studentData.student.parentContact || 'N/A'}</span>
+          </div>
+        </div>
+  `;
+
+  if (studentData.overallStats) {
+    htmlContent += `
+      <div class="stats-section">
+        <h3 style="margin-top: 0; color: #2D3748;">Academic Overview</h3>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-number">${studentData.overallStats.totalExams}</div>
+            <div class="stat-label">Total Exams</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">${studentData.overallStats.averagePercentage.toFixed(1)}%</div>
+            <div class="stat-label">Average Percentage</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">${studentData.overallStats.bestPerformance.percentage.toFixed(1)}%</div>
+            <div class="stat-label">Best Performance</div>
+          </div>
+        </div>
+        <div class="insights">
+          <div class="insight-item">
+            <span class="insight-label">Best Exam:</span> 
+            ${studentData.overallStats.bestPerformance.examName}
+          </div>
+          <div class="insight-item">
+            <span class="insight-label">Strongest Subject:</span> 
+            ${studentData.overallStats.strongestSubject}
+          </div>
+          <div class="insight-item">
+            <span class="insight-label">Weakest Subject:</span> 
+            ${studentData.overallStats.weakestSubject}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  htmlContent += `
+    <div class="exams-section">
+      <h3 class="section-title">Exam-wise Performance</h3>
+  `;
+
+  studentData.exams.forEach((exam, examIndex) => {
+    htmlContent += `
+      <table>
+        <thead>
+          <tr class="exam-header">
+            <th colspan="6">${exam.examName} ${exam.examDate ? `(${new Date(exam.examDate).toLocaleDateString()})` : ''}</th>
+          </tr>
+          <tr>
+            <th>Subject</th>
+            <th>Teacher</th>
+            <th>Marks Scored</th>
+            <th>Full Marks</th>
+            <th>Percentage</th>
+            <th>Grade</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    exam.subjects.forEach(subject => {
+      const gradeClass = subject.grade?.startsWith('A') ? 'grade-A' : 
+                        subject.grade?.startsWith('B') ? 'grade-B' : 
+                        subject.grade?.startsWith('C') ? 'grade-C' : 
+                        subject.grade === 'D' ? 'grade-D' : 'grade-F';
+      
+      htmlContent += `
+        <tr class="${gradeClass}">
+          <td>${subject.subjectName}</td>
+          <td>${subject.teacherName || 'N/A'}</td>
+          <td>${subject.marksScored !== null ? subject.marksScored : 'N/A'}</td>
+          <td>${subject.fullMarks}</td>
+          <td>${subject.percentage ? subject.percentage.toFixed(2) + '%' : 'N/A'}</td>
+          <td><strong>${subject.grade || 'N/A'}</strong></td>
+        </tr>
+      `;
+    });
+
+    htmlContent += `
+          <tr class="overall-row">
+            <td colspan="2"><strong>Overall Performance</strong></td>
+            <td><strong>${exam.totalMarks}</strong></td>
+            <td><strong>${exam.totalFullMarks}</strong></td>
+            <td><strong>${exam.overallPercentage.toFixed(2)}%</strong></td>
+            <td><strong>${exam.overallGrade}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+  });
+
+  htmlContent += `
+      </div>
+      <div class="footer">
+        <p>This is an official report card generated by the Student Management System</p>
+        <p>For any queries, please contact the school administration</p>
+      </div>
+    </body>
+  </html>
+  `;
+
+  return htmlContent;
+};
+
+
   // Handle PDF download
   const handleDownloadPDF = async () => {
     if (!reportData) {
@@ -615,6 +955,35 @@ const fetchReportData = async (authToken = token) => {
       setDownloadingPDF(false);
     }
   };
+
+  const handleDownloadSingleStudentPDF = async () => {
+  if (!selectedStudent) {
+    Alert.alert('Error', 'No student selected');
+    return;
+  }
+
+  setDownloadingSinglePDF(true);
+  try {
+    const htmlContent = generateSingleStudentPDFHTML(selectedStudent);
+    
+    const { uri } = await Print.printToFileAsync({
+      html: htmlContent,
+      base64: false,
+    });
+
+    await Sharing.shareAsync(uri, {
+      mimeType: 'application/pdf',
+      dialogTitle: 'Download Student Report Card PDF',
+    });
+
+    Alert.alert('Success', `PDF generated for ${selectedStudent.student.name}!`);
+  } catch (error) {
+    console.error('Error generating single student PDF:', error);
+    Alert.alert('Error', 'Failed to generate PDF file');
+  } finally {
+    setDownloadingSinglePDF(false);
+  }
+};
 
   // Handle student detail view
   const handleStudentPress = (student: StudentReportData) => {
@@ -664,17 +1033,50 @@ const renderDetailModal = () => (
     onRequestClose={() => setShowDetailModal(false)}
   >
     <SafeAreaView style={styles.modalContainer}>
+      {/* UPDATED HEADER with download buttons */}
       <View style={styles.modalHeader}>
-        <Text style={styles.modalTitle}>
-          {selectedStudent?.student.name} - Report Card
-        </Text>
-        <TouchableOpacity
-          style={styles.closeButton}
-          onPress={() => setShowDetailModal(false)}
-        >
-          <FontAwesome5 name="times" size={20} color="#718096" />
-        </TouchableOpacity>
+        <View style={styles.modalTitleContainer}>
+          <Text style={styles.modalTitle}>
+            {selectedStudent?.student.name}
+          </Text>
+          <Text style={styles.modalSubtitle}>Report Card</Text>
+        </View>
+        
+        {/* Download Actions */}
+        <View style={styles.modalActions}>
+          <TouchableOpacity
+            style={styles.modalActionButton}
+            onPress={handleDownloadSingleStudentCSV}
+            disabled={downloadingSingleCSV}
+          >
+            {downloadingSingleCSV ? (
+              <ActivityIndicator size="small" color="#4299E1" />
+            ) : (
+              <FontAwesome5 name="file-csv" size={20} color="#4299E1" />
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.modalActionButton}
+            onPress={handleDownloadSingleStudentPDF}
+            disabled={downloadingSinglePDF}
+          >
+            {downloadingSinglePDF ? (
+              <ActivityIndicator size="small" color="#E53E3E" />
+            ) : (
+              <FontAwesome5 name="file-pdf" size={20} color="#E53E3E" />
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => setShowDetailModal(false)}
+          >
+            <FontAwesome5 name="times" size={20} color="#718096" />
+          </TouchableOpacity>
+        </View>
       </View>
+
       
       <ScrollView style={styles.modalContent}>
         {selectedStudent && (
@@ -1115,15 +1517,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F7FAFC',
   },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
   modalTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -1285,6 +1678,47 @@ examCard: {
     borderRadius: 4,
     fontFamily: 'System',
   },
+  modalHeader: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: 16,
+  backgroundColor: '#FFFFFF',
+  borderBottomWidth: 1,
+  borderBottomColor: '#E2E8F0',
+  elevation: 2,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.1,
+  shadowRadius: 3,
+},
+
+// Add these new styles:
+modalTitleContainer: {
+  flex: 1,
+  marginRight: 12,
+},
+
+modalSubtitle: {
+  fontSize: 14,
+  color: '#718096',
+  fontFamily: 'System',
+  marginTop: 2,
+},
+
+modalActions: {
+  flexDirection: 'row',
+  alignItems: 'center',
+},
+
+modalActionButton: {
+  padding: 10,
+  marginRight: 8,
+  backgroundColor: '#F7FAFC',
+  borderRadius: 8,
+  borderWidth: 1,
+  borderColor: '#E2E8F0',
+},
 });
 
 export default TeacherAdminStudentReportCardScreen;

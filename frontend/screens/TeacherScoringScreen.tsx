@@ -104,6 +104,13 @@ const TeacherScoringScreen: React.FC<Props> = ({ route, navigation }) => {
   const [selectedMark, setSelectedMark] = useState<MarkSubmission | null>(null);
   const [inputMarks, setInputMarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Bulk update states
+const [bulkModalVisible, setBulkModalVisible] = useState(false);
+const [selectedBulkExam, setSelectedBulkExam] = useState<string>('');
+const [selectedBulkSubject, setSelectedBulkSubject] = useState<string>('');
+const [bulkMarks, setBulkMarks] = useState<{ [studentId: string]: string }>({});
+const [bulkSubmitting, setBulkSubmitting] = useState(false);
   
   // Filter states
   const [selectedExam, setSelectedExam] = useState<string>('all');
@@ -310,6 +317,131 @@ const TeacherScoringScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
+  const openBulkMarkingModal = () => {
+  if (uniqueExams.length === 0) {
+    Alert.alert('No Exams', 'There are no exams available for bulk marking');
+    return;
+  }
+  setBulkModalVisible(true);
+  setSelectedBulkExam('');
+  setSelectedBulkSubject('');
+  setBulkMarks({});
+};
+
+const getBulkStudentsForSubject = () => {
+  if (!scoringData || !selectedBulkExam || !selectedBulkSubject) return [];
+  
+  return scoringData.students
+    .map(student => {
+      const exam = student.exams.find(e => e.examId === selectedBulkExam);
+      if (!exam) return null;
+      
+      const subject = exam.subjects.find(s => s.subjectId === selectedBulkSubject);
+      if (!subject) return null;
+      
+      return {
+        studentId: student.studentId,
+        studentName: student.studentName,
+        studentNumber: student.studentNumber,
+        currentMarks: subject.marksScored,
+        fullMarks: subject.fullMarks,
+        subjectName: subject.subjectName,
+        examName: exam.examName,
+      };
+    })
+    .filter(item => item !== null);
+};
+
+const updateBulkMark = (studentId: string, marks: string) => {
+  setBulkMarks(prev => ({
+    ...prev,
+    [studentId]: marks
+  }));
+};
+
+const submitBulkMarks = async () => {
+  if (!selectedBulkExam || !selectedBulkSubject || !token) return;
+  
+  const studentsToUpdate = Object.entries(bulkMarks).filter(([_, marks]) => marks.trim() !== '');
+  
+  if (studentsToUpdate.length === 0) {
+    Alert.alert('No Marks Entered', 'Please enter marks for at least one student');
+    return;
+  }
+  
+  const bulkStudents = getBulkStudentsForSubject();
+  const fullMarks = bulkStudents[0]?.fullMarks || 100;
+  
+  // Validate all marks
+  for (const [studentId, marksStr] of studentsToUpdate) {
+    const marks = parseFloat(marksStr);
+    
+    if (isNaN(marks)) {
+      const student = bulkStudents.find(s => s.studentId === studentId);
+      Alert.alert('Invalid Input', `Invalid marks for ${student?.studentName}`);
+      return;
+    }
+    
+    if (marks < 0) {
+      const student = bulkStudents.find(s => s.studentId === studentId);
+      Alert.alert('Invalid Input', `Marks cannot be negative for ${student?.studentName}`);
+      return;
+    }
+    
+    if (marks > fullMarks) {
+      const student = bulkStudents.find(s => s.studentId === studentId);
+      Alert.alert('Invalid Input', `Marks cannot exceed ${fullMarks} for ${student?.studentName}`);
+      return;
+    }
+  }
+  
+  setBulkSubmitting(true);
+  
+  try {
+    const apiClient = getAuthenticatedClient();
+    let successCount = 0;
+    let failCount = 0;
+    
+    // Submit marks for each student
+    for (const [studentId, marksStr] of studentsToUpdate) {
+      try {
+        const marks = parseFloat(marksStr);
+        await apiClient.post(
+          `/marks/class/${classId}/student/${studentId}/exam/${selectedBulkExam}/subject/${selectedBulkSubject}`,
+          { marksScored: marks }
+        );
+        successCount++;
+      } catch (error) {
+        console.error(`Error submitting marks for student ${studentId}:`, error);
+        failCount++;
+      }
+    }
+    
+    Alert.alert(
+      'Bulk Update Complete',
+      `Successfully updated: ${successCount}\nFailed: ${failCount}`,
+      [
+        {
+          text: 'OK',
+          onPress: () => {
+            setBulkModalVisible(false);
+            setBulkMarks({});
+            setSelectedBulkExam('');
+            setSelectedBulkSubject('');
+            fetchScoringData(); // Refresh data
+          }
+        }
+      ]
+    );
+    
+  } catch (error) {
+    console.error('Error in bulk update:', error);
+    Alert.alert('Error', 'Failed to complete bulk update');
+  } finally {
+    setBulkSubmitting(false);
+  }
+};
+
   const getFilteredStudents = () => {
     if (!scoringData) return [];
     
@@ -496,6 +628,17 @@ const TeacherScoringScreen: React.FC<Props> = ({ route, navigation }) => {
         </LinearGradient>
       </View>
 
+      {/* Bulk Update Button */}
+<View style={styles.bulkUpdateContainer}>
+  <TouchableOpacity
+    style={styles.bulkUpdateButton}
+    onPress={openBulkMarkingModal}
+  >
+    <FontAwesome5 name="users" size={16} color="#FFFFFF" />
+    <Text style={styles.bulkUpdateButtonText}>Bulk Update Marks</Text>
+  </TouchableOpacity>
+</View>
+
       {/* Filters */}
       <View style={styles.filtersContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -630,6 +773,143 @@ const TeacherScoringScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* Bulk Marking Modal */}
+<Modal
+  animationType="slide"
+  transparent={true}
+  visible={bulkModalVisible}
+  onRequestClose={() => setBulkModalVisible(false)}
+>
+  <View style={styles.modalOverlay}>
+    <View style={[styles.modalContent, styles.bulkModalContent]}>
+      <View style={styles.modalHeader}>
+        <Text style={styles.modalTitle}>Bulk Score Students</Text>
+        <TouchableOpacity onPress={() => setBulkModalVisible(false)}>
+          <Ionicons name="close" size={24} color="#8A94A6" />
+        </TouchableOpacity>
+      </View>
+      
+      {/* Exam Selection */}
+      <View style={styles.selectionContainer}>
+        <Text style={styles.selectionLabel}>Select Exam</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {uniqueExams.map(exam => (
+            <TouchableOpacity
+              key={exam.id}
+              style={[
+                styles.selectionButton,
+                selectedBulkExam === exam.id && styles.activeSelectionButton
+              ]}
+              onPress={() => {
+                setSelectedBulkExam(exam.id);
+                setSelectedBulkSubject('');
+                setBulkMarks({});
+              }}
+            >
+              <Text style={[
+                styles.selectionButtonText,
+                selectedBulkExam === exam.id && styles.activeSelectionButtonText
+              ]}>
+                {exam.code}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+      
+      {/* Subject Selection */}
+      {selectedBulkExam && (
+        <View style={styles.selectionContainer}>
+          <Text style={styles.selectionLabel}>Select Subject</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {uniqueSubjects.map(subject => (
+              <TouchableOpacity
+                key={subject.id}
+                style={[
+                  styles.selectionButton,
+                  selectedBulkSubject === subject.id && styles.activeSelectionButton
+                ]}
+                onPress={() => {
+                  setSelectedBulkSubject(subject.id);
+                  setBulkMarks({});
+                }}
+              >
+                <Text style={[
+                  styles.selectionButtonText,
+                  selectedBulkSubject === subject.id && styles.activeSelectionButtonText
+                ]}>
+                  {subject.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+      
+      {/* Students List for Marking */}
+      {selectedBulkExam && selectedBulkSubject && (
+        <ScrollView style={styles.bulkStudentsList}>
+          <Text style={styles.bulkStudentsTitle}>
+            Enter marks for students ({getBulkStudentsForSubject().length} students)
+          </Text>
+          {getBulkStudentsForSubject().map((student, index) => (
+            <View key={student.studentId} style={styles.bulkStudentItem}>
+              <View style={styles.bulkStudentInfo}>
+                <Text style={styles.bulkStudentName}>
+                  {index + 1}. {student.studentName}
+                </Text>
+                <Text style={styles.bulkStudentNumber}>ID: {student.studentNumber}</Text>
+                {student.currentMarks !== null && (
+                  <Text style={styles.currentMarksText}>
+                    Current: {student.currentMarks}/{student.fullMarks}
+                  </Text>
+                )}
+              </View>
+              <TextInput
+                style={styles.bulkMarksInput}
+                value={bulkMarks[student.studentId] || ''}
+                onChangeText={(text) => updateBulkMark(student.studentId, text)}
+                placeholder={`/${student.fullMarks}`}
+                keyboardType="numeric"
+                maxLength={3}
+              />
+            </View>
+          ))}
+        </ScrollView>
+      )}
+      
+      {/* Action Buttons */}
+      {selectedBulkExam && selectedBulkSubject && (
+        <View style={styles.modalActions}>
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={() => {
+              setBulkModalVisible(false);
+              setBulkMarks({});
+              setSelectedBulkExam('');
+              setSelectedBulkSubject('');
+            }}
+          >
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.submitButton, bulkSubmitting && styles.disabledButton]}
+            onPress={submitBulkMarks}
+            disabled={bulkSubmitting}
+          >
+            {bulkSubmitting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.submitButtonText}>Submit All</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  </View>
+</Modal>
     </SafeAreaView>
   );
 };
@@ -967,6 +1247,112 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
+  bulkUpdateContainer: {
+  paddingHorizontal: 16,
+  marginBottom: 16,
+},
+bulkUpdateButton: {
+  backgroundColor: '#3A4276',
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  paddingVertical: 12,
+  paddingHorizontal: 20,
+  borderRadius: 12,
+  gap: 8,
+  shadowColor: '#3A4276',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.2,
+  shadowRadius: 4,
+  elevation: 3,
+},
+bulkUpdateButtonText: {
+  color: '#FFFFFF',
+  fontSize: 16,
+  fontWeight: '600',
+},
+bulkModalContent: {
+  maxHeight: '90%',
+  height: 'auto',
+},
+selectionContainer: {
+  marginBottom: 16,
+},
+selectionLabel: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#3A4276',
+  marginBottom: 8,
+},
+selectionButton: {
+  backgroundColor: '#F8F9FC',
+  paddingHorizontal: 16,
+  paddingVertical: 10,
+  borderRadius: 8,
+  marginRight: 8,
+  borderWidth: 1,
+  borderColor: '#E2E8F0',
+},
+activeSelectionButton: {
+  backgroundColor: '#1CB5E0',
+  borderColor: '#1CB5E0',
+},
+selectionButtonText: {
+  fontSize: 14,
+  color: '#8A94A6',
+  fontWeight: '500',
+},
+activeSelectionButtonText: {
+  color: '#FFFFFF',
+},
+bulkStudentsList: {
+  maxHeight: 400,
+  marginBottom: 16,
+},
+bulkStudentsTitle: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#3A4276',
+  marginBottom: 12,
+},
+bulkStudentItem: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  paddingVertical: 12,
+  paddingHorizontal: 12,
+  backgroundColor: '#F8F9FC',
+  borderRadius: 8,
+  marginBottom: 8,
+},
+bulkStudentInfo: {
+  flex: 1,
+},
+bulkStudentName: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#3A4276',
+  marginBottom: 2,
+},
+bulkStudentNumber: {
+  fontSize: 12,
+  color: '#8A94A6',
+},
+currentMarksText: {
+  fontSize: 11,
+  color: '#1CB5E0',
+  marginTop: 2,
+},
+bulkMarksInput: {
+  borderWidth: 1,
+  borderColor: '#E2E8F0',
+  borderRadius: 6,
+  padding: 8,
+  fontSize: 14,
+  backgroundColor: '#FFFFFF',
+  textAlign: 'center',
+  minWidth: 60,
+},
 });
 
 export default TeacherScoringScreen;

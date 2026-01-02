@@ -94,6 +94,7 @@ const AdminAddClassTeacherScreen: React.FC<Props> = ({ navigation }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'assignments' | 'assign'>('assignments');
   const [isAssigning, setIsAssigning] = useState(false);
+  const [teacherSearchQuery, setTeacherSearchQuery] = useState('');
 
   // Set header
   React.useLayoutEffect(() => {
@@ -161,6 +162,27 @@ const AdminAddClassTeacherScreen: React.FC<Props> = ({ navigation }) => {
       }
     });
   };
+
+  // Get available teachers (teachers who are not class admins)
+// Get available teachers (teachers who are not class admins) with search filter
+const getAvailableTeachers = () => {
+  // Get all teacher IDs that are already class admins
+  const assignedTeacherIds = new Set(classAdmins.map(admin => admin.teacherId));
+  
+  // Filter out teachers who are already assigned as class admins
+  let availableTeachers = teachers.filter(teacher => !assignedTeacherIds.has(teacher._id));
+  
+  // Apply search filter if search query exists
+  if (teacherSearchQuery.trim()) {
+    const query = teacherSearchQuery.toLowerCase();
+    availableTeachers = availableTeachers.filter(teacher => 
+      teacher.name.toLowerCase().includes(query) || 
+      teacher.email.toLowerCase().includes(query)
+    );
+  }
+  
+  return availableTeachers;
+};
 
   // Load admin data from API
   const loadAdminData = async () => {
@@ -376,12 +398,21 @@ const AdminAddClassTeacherScreen: React.FC<Props> = ({ navigation }) => {
     await loadClassAdmins();
   }, []);
 
-  // Open assign class admin modal
-  const openAssignModal = () => {
-    setSelectedClassId(null);
-    setSelectedTeacherId(null);
-    setModalVisible(true);
-  };
+// Open assign class admin modal
+const openAssignModal = () => {
+  setSelectedClassId(null);
+  setSelectedTeacherId(null);
+  setTeacherSearchQuery(''); // Reset teacher search when opening modal
+  setModalVisible(true);
+};
+
+// Add this new function for opening modal from class card
+const openAssignModalForClass = (classId: string) => {
+  setSelectedClassId(classId);
+  setSelectedTeacherId(null);
+  setTeacherSearchQuery('');
+  setModalVisible(true);
+};
 
   // Assign class admin
   const assignClassAdmin = async () => {
@@ -754,12 +785,9 @@ const AdminAddClassTeacherScreen: React.FC<Props> = ({ navigation }) => {
                 }
                 renderItem={({ item }) => (
                   <TouchableOpacity
-                    style={styles.availableClassCard}
-                    onPress={() => {
-                      setSelectedClassId(item._id);
-                      setModalVisible(true);
-                    }}
-                  >
+  style={styles.availableClassCard}
+  onPress={() => openAssignModalForClass(item._id)}  // Changed this line
+>
                     <View style={styles.classCardContent}>
                       <View style={styles.classIconContainer}>
                         <Ionicons name="book-outline" size={24} color="#8A94A6" />
@@ -817,7 +845,7 @@ const AdminAddClassTeacherScreen: React.FC<Props> = ({ navigation }) => {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Select Class *</Text>
               <ScrollView style={styles.selectionList} showsVerticalScrollIndicator={false}>
-                {(selectedClassId ? classes : availableClasses).map((classItem) => (
+                {availableClasses.map((classItem) => (  // Changed from conditional to always use availableClasses
                   <TouchableOpacity
                     key={classItem._id}
                     style={[
@@ -841,29 +869,95 @@ const AdminAddClassTeacherScreen: React.FC<Props> = ({ navigation }) => {
             {/* Teacher Selection */}
             <View style={styles.formGroup}>
               <Text style={styles.label}>Select Teacher *</Text>
-              <ScrollView style={styles.selectionList} showsVerticalScrollIndicator={false}>
-                {teachers.map((teacher) => (
-                  <TouchableOpacity
-                    key={teacher._id}
-                    style={[
-                      styles.selectionItem,
-                      selectedTeacherId === teacher._id && styles.selectedItem
-                    ]}
-                    onPress={() => setSelectedTeacherId(teacher._id)}
-                  >
-                    <View style={styles.teacherAvatar}>
-                      <FontAwesome5 name="user" size={16} color="#4E54C8" />
-                    </View>
-                    <View style={styles.selectionItemContent}>
-                      <Text style={styles.selectionItemTitle}>{teacher.name}</Text>
-                      <Text style={styles.selectionItemSubtitle}>{teacher.email}</Text>
-                    </View>
-                    {selectedTeacherId === teacher._id && (
-                      <Ionicons name="checkmark-circle" size={24} color="#4E54C8" />
-                    )}
+              
+              {/* Teacher Search Bar */}
+              <View style={styles.modalSearchContainer}>
+                <Feather name="search" size={18} color="#8A94A6" style={styles.searchIcon} />
+                <TextInput
+                  style={styles.modalSearchInput}
+                  placeholder="Search teachers by name or email..."
+                  value={teacherSearchQuery}
+                  onChangeText={setTeacherSearchQuery}
+                  placeholderTextColor="#8A94A6"
+                />
+                {teacherSearchQuery ? (
+                  <TouchableOpacity onPress={() => setTeacherSearchQuery('')}>
+                    <Feather name="x" size={18} color="#8A94A6" />
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
+                ) : null}
+              </View>
+              
+              {(() => {
+                const availableTeachers = getAvailableTeachers();
+                
+                if (teachers.length === 0) {
+                  return (
+                    <View style={styles.noTeachersContainer}>
+                      <FontAwesome5 name="exclamation-circle" size={24} color="#FFA502" />
+                      <Text style={styles.noTeachersText}>
+                        No teachers found
+                      </Text>
+                      <Text style={styles.noTeachersSubtext}>
+                        Please add teachers to your school first
+                      </Text>
+                    </View>
+                  );
+                }
+                
+                if (availableTeachers.length === 0 && !teacherSearchQuery) {
+                  return (
+                    <View style={styles.noTeachersContainer}>
+                      <FontAwesome5 name="exclamation-circle" size={24} color="#FFA502" />
+                      <Text style={styles.noTeachersText}>
+                        No available teachers
+                      </Text>
+                      <Text style={styles.noTeachersSubtext}>
+                        All teachers are already assigned as class administrators
+                      </Text>
+                    </View>
+                  );
+                }
+                
+                if (availableTeachers.length === 0 && teacherSearchQuery) {
+                  return (
+                    <View style={styles.noTeachersContainer}>
+                      <FontAwesome5 name="search" size={24} color="#8A94A6" />
+                      <Text style={styles.noTeachersText}>
+                        No teachers found
+                      </Text>
+                      <Text style={styles.noTeachersSubtext}>
+                        No teachers match "{teacherSearchQuery}"
+                      </Text>
+                    </View>
+                  );
+                }
+                
+                return (
+                  <ScrollView style={styles.selectionList} showsVerticalScrollIndicator={false}>
+                    {availableTeachers.map((teacher) => (
+                      <TouchableOpacity
+                        key={teacher._id}
+                        style={[
+                          styles.selectionItem,
+                          selectedTeacherId === teacher._id && styles.selectedItem
+                        ]}
+                        onPress={() => setSelectedTeacherId(teacher._id)}
+                      >
+                        <View style={styles.teacherAvatar}>
+                          <FontAwesome5 name="user" size={16} color="#4E54C8" />
+                        </View>
+                        <View style={styles.selectionItemContent}>
+                          <Text style={styles.selectionItemTitle}>{teacher.name}</Text>
+                          <Text style={styles.selectionItemSubtitle}>{teacher.email}</Text>
+                        </View>
+                        {selectedTeacherId === teacher._id && (
+                          <Ionicons name="checkmark-circle" size={24} color="#4E54C8" />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                );
+              })()}
             </View>
             
             <View style={styles.modalActions}>
@@ -1356,6 +1450,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  noTeachersContainer: {
+  padding: 24,
+  alignItems: 'center',
+  backgroundColor: '#FFF9E6',
+  borderRadius: 8,
+  borderWidth: 1,
+  borderColor: '#FFE4A3',
+},
+noTeachersText: {
+  fontSize: 15,
+  fontWeight: '600',
+  color: '#3A4276',
+  marginTop: 12,
+  textAlign: 'center',
+},
+noTeachersSubtext: {
+  fontSize: 13,
+  color: '#8A94A6',
+  marginTop: 4,
+  textAlign: 'center',
+},
+modalSearchContainer: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#F9FAFB',
+  borderRadius: 8,
+  paddingHorizontal: 12,
+  marginBottom: 12,
+  height: 44,
+  borderWidth: 1,
+  borderColor: '#E5E7EB',
+},
+modalSearchInput: {
+  flex: 1,
+  fontSize: 14,
+  color: '#3A4276',
+  height: '100%',
+},
 });
 
 export default AdminAddClassTeacherScreen;
