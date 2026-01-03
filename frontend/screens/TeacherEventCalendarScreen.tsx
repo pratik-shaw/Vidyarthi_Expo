@@ -78,14 +78,14 @@ interface MarkedDates {
 }
 
 const categoryColors: { [key: string]: string } = {
-  exam: '#E74C3C',
-  assignment: '#3498DB',
+  exam: '#F7685B',
+  assignment: '#1CB5E0',
   project: '#9B59B6',
-  meeting: '#F39C12',
-  holiday: '#E67E22',
-  sports: '#1ABC9C',
-  cultural: '#2ECC71',
-  other: '#95A5A6',
+  meeting: '#FF9F43',
+  holiday: '#FFA502',
+  sports: '#2ED573',
+  cultural: '#38EF7D',
+  other: '#8A94A6',
 };
 
 const TeacherEventCalendarScreen: React.FC<Props> = ({ route, navigation }) => {
@@ -129,28 +129,30 @@ const TeacherEventCalendarScreen: React.FC<Props> = ({ route, navigation }) => {
   });
 
   // Set navigation header
-  React.useLayoutEffect(() => {
-    navigation.setOptions({
-      title: `${className} - Events`,
-      headerShown: true,
-      headerStyle: {
-        backgroundColor: '#FFFFFF',
-      },
-      headerTintColor: '#2C3E50',
-      headerTitleStyle: {
-        fontWeight: '600',
-        fontSize: 18,
-      },
-      headerRight: () => (
-        <TouchableOpacity
-          onPress={() => setShowCreateModal(true)}
-          style={styles.headerButton}
-        >
-          <Feather name="plus" size={24} color="#3498DB" />
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation, className]);
+React.useLayoutEffect(() => {
+  navigation.setOptions({
+    title: `${className} - Events`,
+    headerShown: true,
+    headerStyle: {
+      backgroundColor: '#FFFFFF',
+    },
+    headerTintColor: '#3A4276',
+    headerTitleStyle: {
+      fontWeight: '600',
+      fontSize: 18,
+    },
+    headerShadowVisible: false,
+    headerBackTitle: 'Back',
+    headerRight: () => (
+      <TouchableOpacity
+        onPress={() => setShowCreateModal(true)}
+        style={styles.addButton}
+      >
+          <FontAwesome5 name="plus" size={18} color="#1CB5E0" />
+      </TouchableOpacity>
+    ),
+  });
+}, [navigation, className]);
 
   // Network connectivity monitoring
   useEffect(() => {
@@ -534,53 +536,69 @@ const TeacherEventCalendarScreen: React.FC<Props> = ({ route, navigation }) => {
 
   // Render event item
   const renderEventItem = ({ item }: { item: Event }) => {
-    const categoryColor = categoryColors[item.category] || categoryColors.other;
-    const isMultiDay = new Date(item.startDate).toDateString() !== new Date(item.endDate).toDateString();
-    
-    return (
-      <TouchableOpacity
-        style={styles.eventCard}
-        onPress={() => {
-          setSelectedEvent(item);
-          setShowEventDetailsModal(true);
-        }}
-        activeOpacity={0.7}
-      >
-        <View style={[styles.eventIndicator, { backgroundColor: categoryColor }]} />
-        <View style={styles.eventContent}>
-          <View style={styles.eventHeader}>
-            <Text style={styles.eventTitle} numberOfLines={1}>
-              {item.title}
-            </Text>
-            <View style={[styles.categoryBadge, { backgroundColor: categoryColor }]}>
-              <Feather name={getCategoryIcon(item.category)} size={12} color="#FFFFFF" />
-              <Text style={styles.categoryText}>
-                {categories.find(c => c.value === item.category)?.label || item.category}
-              </Text>
+  const categoryColor = categoryColors[item.category] || categoryColors.other;
+  const isMultiDay = new Date(item.startDate).toDateString() !== new Date(item.endDate).toDateString();
+  
+  return (
+    <TouchableOpacity
+      style={styles.eventCard}
+      onPress={() => {
+        setSelectedEvent(item);
+        setShowEventDetailsModal(true);
+      }}
+      activeOpacity={0.7}
+    >
+      <View style={styles.eventCardContent}>
+        <View style={styles.eventCardHeader}>
+          <View style={styles.eventIconContainer}>
+            <View style={[styles.eventIconWrapper, { backgroundColor: `${categoryColor}20` }]}>
+              <Feather name={getCategoryIcon(item.category)} size={20} color={categoryColor} />
             </View>
-          </View>
-          
-          <View style={styles.eventDetails}>
-            <View style={styles.dateContainer}>
-              <Feather name="calendar" size={14} color="#7F8C8D" />
-              <Text style={styles.dateText}>
-                {isMultiDay 
-                  ? `${formatDate(item.startDate)} - ${formatDate(item.endDate)}`
-                  : formatDate(item.startDate)
-                }
+            <View style={styles.eventTextContainer}>
+              <Text style={styles.eventTitle} numberOfLines={2}>
+                {item.title}
               </Text>
+              <View style={[styles.categoryBadge, { backgroundColor: categoryColor }]}>
+                <Text style={styles.categoryText}>
+                  {categories.find(c => c.value === item.category)?.label || item.category}
+                </Text>
+              </View>
             </View>
-            
-            {item.description && (
-              <Text style={styles.eventDescription} numberOfLines={2}>
-                {item.description}
-              </Text>
-            )}
           </View>
         </View>
-      </TouchableOpacity>
-    );
-  };
+        
+        <View style={styles.eventDetailsSection}>
+          <View style={styles.eventDetailRow}>
+            <Feather name="calendar" size={14} color="#8A94A6" />
+            <Text style={styles.eventDetailText}>
+              {isMultiDay 
+                ? `${formatDate(item.startDate)} - ${formatDate(item.endDate)}`
+                : formatDate(item.startDate)
+              }
+            </Text>
+          </View>
+          
+          {item.description && (
+            <View style={styles.eventDetailRow}>
+              <Feather name="file-text" size={14} color="#8A94A6" />
+              <Text style={styles.eventDetailText} numberOfLines={2}>
+                {item.description}
+              </Text>
+            </View>
+          )}
+          
+          <View style={styles.eventDetailRow}>
+            <Feather name="user" size={14} color="#8A94A6" />
+            <Text style={styles.eventDetailText}>
+              {item.createdBy.name}
+            </Text>
+          </View>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
 
   // Render create event modal
   const renderCreateEventModal = () => (
@@ -984,23 +1002,30 @@ const TeacherEventCalendarScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
 
           {events.length > 0 ? (
-            <FlatList
-              data={events}
-              renderItem={renderEventItem}
-              keyExtractor={(item) => item.eventId}
-              showsVerticalScrollIndicator={false}
-              scrollEnabled={false}
-              contentContainerStyle={styles.eventsList}
-            />
-          ) : (
-            <View style={styles.emptyEventsContainer}>
-              <Feather name="calendar" size={48} color="#BDC3C7" />
-              <Text style={styles.emptyEventsTitle}>No Events This Month</Text>
-              <Text style={styles.emptyEventsMessage}>
-                There are no events scheduled for this month. Tap the + button to create your first event.
-              </Text>
-            </View>
-          )}
+  <FlatList
+    data={events}
+    renderItem={renderEventItem}
+    keyExtractor={(item) => item.eventId}
+    showsVerticalScrollIndicator={false}
+    scrollEnabled={false}
+    contentContainerStyle={styles.eventsList}
+  />
+) : (
+  <View style={styles.emptyState}>
+    <FontAwesome5 name="calendar-alt" size={64} color="#B0B7C3" />
+    <Text style={styles.emptyTitle}>No Events This Month</Text>
+    <Text style={styles.emptyDescription}>
+      There are no events scheduled for this month.
+    </Text>
+    <TouchableOpacity
+      style={styles.emptyButton}
+      onPress={() => setShowCreateModal(true)}
+    >
+      <FontAwesome5 name="plus" size={16} color="#FFFFFF" />
+      <Text style={styles.emptyButtonText}>Create Event</Text>
+    </TouchableOpacity>
+  </View>
+)}
         </View>
       </ScrollView>
 
@@ -1020,6 +1045,7 @@ const TeacherEventCalendarScreen: React.FC<Props> = ({ route, navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  // Date Picker Styles
   datePickerOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -1056,7 +1082,7 @@ const styles = StyleSheet.create({
   datePickerTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#2C3E50',
+    color: '#3A4276',
   },
   datePickerButton: {
     paddingHorizontal: 8,
@@ -1064,17 +1090,19 @@ const styles = StyleSheet.create({
   },
   datePickerButtonText: {
     fontSize: 16,
-    color: '#7F8C8D',
+    color: '#8A94A6',
     fontWeight: '500',
   },
   datePickerConfirmText: {
-    color: '#3498DB',
+    color: '#1CB5E0',
     fontWeight: '600',
   },
   datePickerStyle: {
     backgroundColor: '#FFFFFF',
     marginVertical: 20,
   },
+  
+  // Container Styles
   container: {
     flex: 1,
     backgroundColor: '#F8F9FC',
@@ -1082,10 +1110,19 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  
+  // Header Styles
   headerButton: {
     padding: 8,
     marginRight: 8,
   },
+  headerIconWrapper: {
+    padding: 8,
+    borderRadius: 16,
+    backgroundColor: 'rgba(28, 181, 224, 0.1)',
+  },
+  
+  // Loading & Error States
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1095,7 +1132,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: '#7F8C8D',
+    color: '#8A94A6',
     fontWeight: '500',
   },
   errorContainer: {
@@ -1107,29 +1144,36 @@ const styles = StyleSheet.create({
   errorTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#2C3E50',
+    color: '#3A4276',
     marginTop: 16,
     marginBottom: 8,
     textAlign: 'center',
   },
   errorMessage: {
     fontSize: 16,
-    color: '#7F8C8D',
+    color: '#8A94A6',
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 22,
   },
   retryButton: {
-    backgroundColor: '#3498DB',
+    backgroundColor: '#1CB5E0',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
+    shadowColor: '#1CB5E0',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   retryButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
+  
+  // Calendar Styles
   calendarContainer: {
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
@@ -1144,6 +1188,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
+  
+  // Events Section
   eventsSection: {
     marginHorizontal: 16,
     marginTop: 16,
@@ -1158,56 +1204,58 @@ const styles = StyleSheet.create({
   eventsSectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#2C3E50',
+    color: '#3A4276',
   },
   eventsCount: {
     fontSize: 14,
-    color: '#7F8C8D',
+    color: '#8A94A6',
     fontWeight: '500',
   },
   eventsList: {
     paddingBottom: 20,
   },
+  
+  // Event Card Styles (New Design)
   eventCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
     elevation: 2,
-    shadowColor: '#000000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    flexDirection: 'row',
-    overflow: 'hidden',
   },
-  eventIndicator: {
-    width: 4,
-    height: '100%',
-  },
-  eventContent: {
-    flex: 1,
+  eventCardContent: {
     padding: 16,
   },
-  eventHeader: {
+  eventCardHeader: {
+    marginBottom: 12,
+  },
+  eventIconContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 8,
+  },
+  eventIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  eventTextContainer: {
+    flex: 1,
   },
   eventTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2C3E50',
-    flex: 1,
-    marginRight: 12,
+    color: '#3A4276',
+    marginBottom: 6,
   },
   categoryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
   },
@@ -1215,54 +1263,66 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#FFFFFF',
     fontWeight: '500',
-    marginLeft: 4,
     textTransform: 'capitalize',
   },
-  eventDetails: {
-    gap: 8,
-  },
-  dateContainer: {
+  eventDetailRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
-  dateText: {
+  eventDetailText: {
     fontSize: 14,
-    color: '#7F8C8D',
-    marginLeft: 6,
-    fontWeight: '500',
+    color: '#8A94A6',
+    marginLeft: 8,
+    flex: 1,
   },
-  eventDescription: {
-    fontSize: 14,
-    color: '#7F8C8D',
-    lineHeight: 20,
-  },
-  emptyEventsContainer: {
+  
+  // Empty State
+  emptyState: {
     alignItems: 'center',
     padding: 40,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
     elevation: 2,
-    shadowColor: '#000000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
   },
-  emptyEventsTitle: {
-    fontSize: 18,
+  emptyTitle: {
+    fontSize: 20,
     fontWeight: '600',
-    color: '#2C3E50',
+    color: '#3A4276',
     marginTop: 16,
     marginBottom: 8,
   },
-  emptyEventsMessage: {
+  emptyDescription: {
     fontSize: 16,
-    color: '#7F8C8D',
+    color: '#8A94A6',
     textAlign: 'center',
     lineHeight: 22,
+    marginBottom: 24,
   },
+  emptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1CB5E0',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+    shadowColor: '#1CB5E0',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  emptyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  
+  // Modal Styles
   modalContainer: {
     flex: 1,
     backgroundColor: '#F8F9FC',
@@ -1283,10 +1343,10 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#2C3E50',
+    color: '#3A4276',
   },
   modalSaveButton: {
-    backgroundColor: '#3498DB',
+    backgroundColor: '#1CB5E0',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
@@ -1305,13 +1365,15 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
+  
+  // Form Styles
   formGroup: {
     marginBottom: 20,
   },
   formLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2C3E50',
+    color: '#3A4276',
     marginBottom: 8,
   },
   formInput: {
@@ -1320,7 +1382,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#2C3E50',
+    color: '#3A4276',
     borderWidth: 1,
     borderColor: '#E8E8E8',
   },
@@ -1328,6 +1390,8 @@ const styles = StyleSheet.create({
     height: 100,
     textAlignVertical: 'top',
   },
+  
+  // Category Selection
   categoryContainer: {
     flexDirection: 'row',
     gap: 8,
@@ -1347,6 +1411,8 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     textTransform: 'capitalize',
   },
+  
+  // Date Selection
   dateRow: {
     flexDirection: 'row',
     marginBottom: 20,
@@ -1364,8 +1430,10 @@ const styles = StyleSheet.create({
   },
   dateInputText: {
     fontSize: 16,
-    color: '#2C3E50',
+    color: '#3A4276',
   },
+  
+  // Event Details Modal
   eventDetailsContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -1398,12 +1466,12 @@ const styles = StyleSheet.create({
   eventDetailsTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#2C3E50',
+    color: '#3A4276',
     marginBottom: 4,
   },
   eventDetailsCategory: {
     fontSize: 16,
-    color: '#7F8C8D',
+    color: '#8A94A6',
     textTransform: 'capitalize',
   },
   eventDetailsSection: {
@@ -1412,7 +1480,7 @@ const styles = StyleSheet.create({
   eventDetailsSectionTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#7F8C8D',
+    color: '#8A94A6',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,
@@ -1424,21 +1492,23 @@ const styles = StyleSheet.create({
   },
   eventDetailsText: {
     fontSize: 16,
-    color: '#2C3E50',
+    color: '#3A4276',
     marginLeft: 12,
     flex: 1,
   },
   eventDetailsDescription: {
     fontSize: 16,
-    color: '#2C3E50',
+    color: '#3A4276',
     lineHeight: 22,
   },
+  
+  // Network Status
   networkStatusBar: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#E74C3C',
+    backgroundColor: '#F7685B',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1449,6 +1519,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     marginLeft: 8,
+  },
+  addButton: {
+    padding: 8,
+    borderRadius: 16,
+    backgroundColor: 'rgba(28, 181, 224, 0.1)',
   },
 });
 

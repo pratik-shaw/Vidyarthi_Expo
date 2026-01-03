@@ -615,6 +615,28 @@ const renderMoreOptionsTab = () => (
         </View>
         <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
       </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={styles.optionItem}
+        onPress={() => {
+          // Navigate to Student Report Cards
+          navigation.navigate('TeacherSubjectReport', {
+          subjectId: classDetails?._id || classId, // Using classId as subjectId if not available
+          subjectName: classDetails?.name || className,
+          classId: classId,
+          className: className,
+        });
+        }}
+      >
+        <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(103, 161, 161, 0.1)' }]}>
+          <FontAwesome5 name="file-alt" size={20} color="#71c5f6ff" />
+        </View>
+        <View style={styles.optionContent}>
+          <Text style={styles.optionTitle}>Your Subject-wise Report </Text>
+          <Text style={styles.optionDescription}>Report of your teaching subject in class</Text>
+        </View>
+        <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
+      </TouchableOpacity>
       
       <TouchableOpacity 
         style={styles.optionItem}

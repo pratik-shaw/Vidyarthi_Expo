@@ -107,6 +107,13 @@ interface TeacherInfo {
 interface GradeDistributionItem {
   count?: number;
   marksRange?: string;
+  students?: Array<{
+    studentId: string;
+    studentName: string;
+    studentNumber: string;
+    marksScored: number;
+    percentage: string;
+  }>;
 }
 
 interface ExamPerformanceData {
@@ -185,21 +192,23 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
   const [examPerformanceData, setExamPerformanceData] = useState<ExamPerformanceData | null>(null);
   const [examPerformanceModalVisible, setExamPerformanceModalVisible] = useState<boolean>(false);
   const [loadingExamPerformance, setLoadingExamPerformance] = useState<boolean>(false);
+  // Add these state variables near the top where other useState hooks are declared
+const [selectedGrade, setSelectedGrade] = useState<string | null>(null);
+const [selectedGradeStudents, setSelectedGradeStudents] = useState<any[]>([]);
 
 
-  // Set header
-  React.useLayoutEffect(() => {
-    navigation.setOptions({
-      title: `Subject Reports - ${className}`,
-      headerShown: true,
-      headerStyle: {
-        backgroundColor: '#FFFFFF',
-      },
-      headerTintColor: '#2D3748',
-      headerShadowVisible: false,
-      headerBackTitle: 'Back',
-    });
-  }, [navigation, className]);
+React.useLayoutEffect(() => {
+  navigation.setOptions({
+    title: `Subject Reports - ${className}${classInfo?.section ? ` (${classInfo.section})` : ''}`,
+    headerShown: true,
+    headerStyle: {
+      backgroundColor: '#FFFFFF',
+    },
+    headerTintColor: '#2D3748',
+    headerShadowVisible: false,
+    headerBackTitle: 'Back',
+  });
+}, [navigation, className, classInfo?.section]);
 
   // Load data on component mount
   useEffect(() => {
@@ -240,7 +249,7 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
     });
   };
 
-  const fetchExamPerformanceDetails = async (examId: string, subjectId: string, subjectName: string) => {
+const fetchExamPerformanceDetails = async (examId: string, subjectId: string, subjectName: string) => {
   setLoadingExamPerformance(true);
   try {
     if (!token) {
@@ -254,6 +263,9 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
     const apiClient = getAuthenticatedClient();
     const response = await apiClient.get(`/marks/class/${classId}/exam/${examId}/subject/${subjectId}/performance`);
     
+    // Log the full response to debug
+    console.log('Exam performance response:', JSON.stringify(response.data, null, 2));
+    
     setExamPerformanceData(response.data);
     setExamPerformanceModalVisible(true);
     
@@ -265,7 +277,7 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
       if (error.response?.status === 401) {
         handleSessionExpired();
       } else if (error.response?.status === 403) {
-        Alert.alert('Error', 'Not authorized to view exam performance details');
+        Alert.alert('Error', 'You are not currently assigned to this subject');
       } else {
         Alert.alert('Error', `Failed to fetch exam performance details: ${error.response?.data?.msg || 'Unknown error'}`);
       }
@@ -274,6 +286,31 @@ const TeacherSubjectReportScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   } finally {
     setLoadingExamPerformance(false);
+  }
+};
+
+// Add this function after the fetchExamPerformanceDetails function
+const handleGradeClick = (grade: string, gradeData: number | GradeDistributionItem) => {
+  if (selectedGrade === grade) {
+    // If already selected, deselect
+    setSelectedGrade(null);
+    setSelectedGradeStudents([]);
+  } else {
+    // Select this grade
+    setSelectedGrade(grade);
+    
+    // Extract students from grade data
+    if (typeof gradeData === 'object' && gradeData.students) {
+      setSelectedGradeStudents(gradeData.students);
+    } else {
+      // If no students array, filter from main students list
+      if (examPerformanceData?.students && examPerformanceData?.statistics) {
+        const filteredStudents = examPerformanceData.students.filter(student => 
+          student.grade === grade
+        );
+        setSelectedGradeStudents(filteredStudents);
+      }
+    }
   }
 };
 
@@ -484,7 +521,7 @@ const getGradeMarksRange = (gradeData: number | GradeDistributionItem): string |
           <View style={styles.tableHeader}>
             <Text style={[styles.headerCell, styles.studentHeaderCell]}>Student</Text>
             <Text style={[styles.headerCell, styles.examHeaderCell]}>Exams</Text>
-            <Text style={[styles.headerCell, styles.performanceHeaderCell]}>Performance</Text>
+            <Text style={[styles.headerCell, styles.performanceHeaderCell]}>Avg Score</Text>
             <Text style={[styles.headerCell, styles.actionHeaderCell]}>Action</Text>
           </View>
           
@@ -570,18 +607,21 @@ const getGradeMarksRange = (gradeData: number | GradeDistributionItem): string |
             <>
               {/* Exam Info Card */}
               <View style={styles.examInfoCard}>
-                <View style={styles.examInfoHeader}>
-                  <FontAwesome5 name="file-alt" size={20} color="#4299E1" />
-                  <Text style={styles.examInfoTitle}>{examPerformanceData.examInfo.examName}</Text>
-                </View>
-                <Text style={styles.examInfoCode}>Code: {examPerformanceData.examInfo.examCode}</Text>
-                <Text style={styles.examInfoDate}>
-                  Date: {new Date(examPerformanceData.examInfo.examDate).toLocaleDateString()}
-                </Text>
-                <Text style={styles.examInfoSubject}>
-                  Subject: {examPerformanceData.subjectInfo.subjectName}
-                </Text>
-              </View>
+  <View style={styles.examInfoHeader}>
+    <FontAwesome5 name="file-alt" size={20} color="#4299E1" />
+    <Text style={styles.examInfoTitle}>{examPerformanceData.examInfo.examName}</Text>
+  </View>
+  <Text style={styles.examInfoCode}>Code: {examPerformanceData.examInfo.examCode}</Text>
+  <Text style={styles.examInfoDate}>
+    Date: {new Date(examPerformanceData.examInfo.examDate).toLocaleDateString()}
+  </Text>
+  <Text style={styles.examInfoSubject}>
+    Subject: {examPerformanceData.subjectInfo.subjectName}
+  </Text>
+  <Text style={styles.examInfoClass}>
+    Class: {examPerformanceData.classInfo.name} {examPerformanceData.classInfo.section ? `- ${examPerformanceData.classInfo.section}` : ''}
+  </Text>
+</View>
 
               {/* Statistics Overview */}
               <View style={styles.statsOverviewCard}>
@@ -680,28 +720,85 @@ const getGradeMarksRange = (gradeData: number | GradeDistributionItem): string |
                 </View>
               </View>
 
-                {/* Grade Distribution */}
-                  <View style={styles.gradeDistributionCard}>
-                    <Text style={styles.cardTitle}>Grade Distribution</Text>
-                    <View style={styles.gradeGrid}>
-                      {Object.entries(examPerformanceData.statistics.gradeDistribution).map(([grade, data]) => {
-                        const count = getGradeCount(data);
-                        const marksRange = getGradeMarksRange(data);
-                        
-                        return (
-                          <View key={grade} style={styles.gradeItem}>
-                            <View style={[styles.gradeBadgeDistribution, { backgroundColor: getGradeColor(getGradePercentage(grade)) }]}>
-                              <Text style={styles.gradeTextDistribution}>{grade}</Text>
-                            </View>
-                            <Text style={styles.gradeCount}>{count}</Text>
-                            {marksRange && (
-                              <Text style={styles.gradeMarksRange}>({marksRange})</Text>
-                            )}
-                          </View>
-                        );
-                      })}
-                    </View>
-                  </View>
+              {/* Grade Distribution */}
+{examPerformanceData && examPerformanceData.statistics && examPerformanceData.statistics.gradeDistribution && (
+  <View style={styles.gradeDistributionCard}>
+    <Text style={styles.cardTitle}>Grade Distribution</Text>
+    <View style={styles.gradeGrid}>
+      {Object.entries(examPerformanceData.statistics.gradeDistribution).map(([grade, data]) => {
+        const count = getGradeCount(data);
+        const marksRange = getGradeMarksRange(data);
+        const isSelected = selectedGrade === grade;
+        
+        return (
+          <TouchableOpacity 
+            key={grade} 
+            style={[styles.gradeItem, isSelected && styles.gradeItemSelected]}
+            onPress={() => handleGradeClick(grade, data)}
+            activeOpacity={0.7}
+          >
+            <View style={[
+              styles.gradeBadgeDistribution, 
+              { backgroundColor: getGradeColor(getGradePercentage(grade)) }
+            ]}>
+              <Text style={styles.gradeTextDistribution}>{grade}</Text>
+            </View>
+            <Text style={styles.gradeCount}>{count}</Text>
+            {marksRange && (
+              <Text style={styles.gradeMarksRange}>({marksRange})</Text>
+            )}
+            {isSelected && (
+              <FontAwesome5 name="chevron-down" size={10} color="#4299E1" style={{ marginTop: 4 }} />
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+    
+    {/* Selected Grade Students List */}
+    {selectedGrade && selectedGradeStudents.length > 0 && (
+      <View style={styles.selectedGradeStudentsContainer}>
+        <View style={styles.selectedGradeHeader}>
+          <Text style={styles.selectedGradeTitle}>
+            Students with Grade {selectedGrade} ({selectedGradeStudents.length})
+          </Text>
+          <TouchableOpacity onPress={() => {
+            setSelectedGrade(null);
+            setSelectedGradeStudents([]);
+          }}>
+            <FontAwesome5 name="times" size={14} color="#718096" />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.gradeStudentsList}>
+          {selectedGradeStudents.map((student, index) => (
+            <View key={student.studentId || index} style={styles.gradeStudentItem}>
+              <View style={styles.gradeStudentAvatar}>
+                <Text style={styles.gradeStudentAvatarText}>
+                  {student.studentName?.charAt(0).toUpperCase() || '?'}
+                </Text>
+              </View>
+              <View style={styles.gradeStudentInfo}>
+                <Text style={styles.gradeStudentName}>{student.studentName}</Text>
+                <Text style={styles.gradeStudentID}>ID: {student.studentNumber}</Text>
+              </View>
+              <View style={styles.gradeStudentScore}>
+                <Text style={styles.gradeStudentMarks}>
+                  {student.marksScored}/{examPerformanceData.statistics?.fullMarks ?? 0}
+                </Text>
+                <Text style={[
+                  styles.gradeStudentPercentage,
+                  { color: getGradeColor(parseFloat(student.percentage || '0')) }
+                ]}>
+                  {student.percentage}%
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      </View>
+    )}
+  </View>
+)}
 
               {/* Pass/Fail Summary */}
               <View style={styles.passFailCard}>
@@ -924,20 +1021,21 @@ const getGradeMarksRange = (gradeData: number | GradeDistributionItem): string |
         }
       >
         {/* Header Card */}
-        <View style={styles.headerCard}>
-          <LinearGradient
-            colors={['#667EEA', '#764BA2']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.headerGradient}
-          >
-            <FontAwesome5 name="chart-bar" size={24} color="#FFFFFF" />
-            <Text style={styles.headerTitle}>Subject Performance Reports</Text>
-            <Text style={styles.headerSubtitle}>
-              {subjects.length} subjects
-            </Text>
-          </LinearGradient>
-        </View>
+        {/* Header Card - Updated to show section */}
+<View style={styles.headerCard}>
+  <LinearGradient
+    colors={['#667EEA', '#764BA2']}
+    start={{ x: 0, y: 0 }}
+    end={{ x: 1, y: 1 }}
+    style={styles.headerGradient}
+  >
+    <FontAwesome5 name="chart-bar" size={24} color="#FFFFFF" />
+    <Text style={styles.headerTitle}>Subject Performance Reports</Text>
+    <Text style={styles.headerSubtitle}>
+      {classInfo?.name || className} {classInfo?.section ? `- ${classInfo.section}` : ''}
+    </Text>
+  </LinearGradient>
+</View>
 
         {subjects.length > 0 ? (
           subjects.map((subject) => renderSubjectCard(subject))
@@ -1112,7 +1210,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   examHeaderCell: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#2D3748',
   },
@@ -1787,6 +1885,93 @@ gradeMarksRange: {
     marginTop: 2,
     fontWeight: '500',
   },
+  gradeItemSelected: {
+  backgroundColor: '#EBF8FF',
+  borderWidth: 2,
+  borderColor: '#4299E1',
+  borderRadius: 8,
+  padding: 4,
+},
+selectedGradeStudentsContainer: {
+  marginTop: 16,
+  backgroundColor: '#F7FAFC',
+  borderRadius: 8,
+  padding: 12,
+  borderWidth: 1,
+  borderColor: '#E2E8F0',
+},
+selectedGradeHeader: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  marginBottom: 12,
+  paddingBottom: 8,
+  borderBottomWidth: 1,
+  borderBottomColor: '#E2E8F0',
+},
+selectedGradeTitle: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#2D3748',
+},
+gradeStudentsList: {
+  gap: 8,
+},
+gradeStudentItem: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#FFFFFF',
+  borderRadius: 8,
+  padding: 12,
+  borderWidth: 1,
+  borderColor: '#E2E8F0',
+},
+gradeStudentAvatar: {
+  width: 36,
+  height: 36,
+  borderRadius: 18,
+  backgroundColor: '#667EEA',
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginRight: 12,
+},
+gradeStudentAvatarText: {
+  color: '#FFFFFF',
+  fontSize: 14,
+  fontWeight: '700',
+},
+gradeStudentInfo: {
+  flex: 1,
+},
+gradeStudentName: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#2D3748',
+  marginBottom: 2,
+},
+gradeStudentID: {
+  fontSize: 12,
+  color: '#718096',
+},
+gradeStudentScore: {
+  alignItems: 'flex-end',
+},
+gradeStudentMarks: {
+  fontSize: 13,
+  fontWeight: '600',
+  color: '#2D3748',
+  marginBottom: 2,
+},
+gradeStudentPercentage: {
+  fontSize: 12,
+  fontWeight: '700',
+},
+examInfoClass: {
+  fontSize: 14,
+  color: '#718096',
+  marginTop: 4,
+  fontWeight: '500',
+},
 });
 
 export default TeacherSubjectReportScreen;

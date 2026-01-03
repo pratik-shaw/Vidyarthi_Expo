@@ -620,6 +620,7 @@ exports.getClassMarksSummary = async (req, res) => {
 // Add this new method to your markController.js
 
 // Get subject-wise marks report for a teacher
+// Get subject-wise marks report for a teacher
 exports.getTeacherSubjectReport = async (req, res) => {
   try {
     const { classId } = req.params;
@@ -631,6 +632,12 @@ exports.getTeacherSubjectReport = async (req, res) => {
     const authCheck = await verifyTeacherAccess(teacherId, classId);
     if (!authCheck.authorized) {
       return res.status(403).json({ msg: authCheck.error });
+    }
+
+    // Get class details with section
+    const classObj = await Class.findById(classId);
+    if (!classObj) {
+      return res.status(404).json({ msg: 'Class not found' });
     }
 
     // Get current subject assignments to validate teacher's subjects
@@ -647,9 +654,9 @@ exports.getTeacherSubjectReport = async (req, res) => {
     if (teacherSubjects.length === 0) {
       return res.json({
         classInfo: {
-          id: authCheck.classObj._id,
-          name: authCheck.classObj.name,
-          section: authCheck.classObj.section
+          id: classObj._id,
+          name: classObj.name,
+          section: classObj.section || ''
         },
         teacherInfo: {
           id: authCheck.teacher._id,
@@ -669,7 +676,7 @@ exports.getTeacherSubjectReport = async (req, res) => {
     const subjectReports = teacherSubjects.map(subject => {
       const subjectData = {
         subjectId: subject._id,
-        subjectName: subject.subjectName,
+        subjectName: subject.name || subject.subjectName || 'Unknown Subject',
         students: [],
         exams: [],
         summary: {
@@ -814,9 +821,9 @@ exports.getTeacherSubjectReport = async (req, res) => {
 
     res.json({
       classInfo: {
-        id: authCheck.classObj._id,
-        name: authCheck.classObj.name,
-        section: authCheck.classObj.section
+        id: classObj._id,
+        name: classObj.name,
+        section: classObj.section || ''
       },
       teacherInfo: {
         id: authCheck.teacher._id,
@@ -1046,6 +1053,7 @@ exports.getStudentAcademicReport = async (req, res) => {
 // Get exam performance details for a specific exam and subject
 // Replace the existing getExamPerformanceDetails function with this updated version:
 
+// Get exam performance details for a specific exam and subject
 exports.getExamPerformanceDetails = async (req, res) => {
   try {
     const { classId, examId, subjectId } = req.params;
@@ -1059,6 +1067,12 @@ exports.getExamPerformanceDetails = async (req, res) => {
       return res.status(403).json({ msg: authCheck.error });
     }
 
+    // Get class details with section
+    const classObj = await Class.findById(classId);
+    if (!classObj) {
+      return res.status(404).json({ msg: 'Class not found' });
+    }
+
     // Get subject document and find the specific subject
     const subjectDoc = await Subject.findOne({ classId });
     let subjectName = 'Unknown';
@@ -1066,7 +1080,7 @@ exports.getExamPerformanceDetails = async (req, res) => {
     if (subjectDoc) {
       const subject = subjectDoc.subjects.find(sub => sub._id.toString() === subjectId);
       if (subject) {
-        subjectName = subject.subjectName;
+        subjectName = subject.name || subject.subjectName || 'Unknown Subject';
         // VALIDATION: Check if teacher is currently assigned to this subject
         if (!subject.teacherId || subject.teacherId.toString() !== teacherId) {
           return res.status(403).json({ msg: 'You are not currently assigned to this subject' });
@@ -1097,14 +1111,17 @@ exports.getExamPerformanceDetails = async (req, res) => {
       if (examData) {
         const subjectData = examData.subjects.find(s => s.subjectId.toString() === subjectId);
         if (subjectData && subjectData.marksScored !== null) {
+          const percentage = (subjectData.marksScored / subjectData.fullMarks) * 100;
+          const grade = calculateGrade(percentage);
+          
           studentPerformances.push({
             studentId: record.studentId._id,
             studentName: record.studentId.name,
             studentNumber: record.studentId.studentId,
             marksScored: subjectData.marksScored,
             fullMarks: subjectData.fullMarks,
-            percentage: (subjectData.marksScored / subjectData.fullMarks) * 100,
-            grade: calculateGrade((subjectData.marksScored / subjectData.fullMarks) * 100),
+            percentage: percentage,
+            grade: grade,
             scoredAt: subjectData.scoredAt,
             scoredBy: subjectData.scoredBy
           });
@@ -1125,9 +1142,9 @@ exports.getExamPerformanceDetails = async (req, res) => {
           subjectName: subjectName
         },
         classInfo: {
-          id: authCheck.classObj._id,
-          name: authCheck.classObj.name,
-          section: authCheck.classObj.section
+          id: classObj._id,
+          name: classObj.name,
+          section: classObj.section || ''
         },
         statistics: null,
         students: [],
@@ -1161,6 +1178,65 @@ exports.getExamPerformanceDetails = async (req, res) => {
       return `${minMarks}-${maxMarks}`;
     };
 
+    // Build grade distribution with student lists
+    const gradeDistribution = {
+      'A+': {
+        count: 0,
+        marksRange: getMarksRange(90, 100),
+        students: []
+      },
+      'A': {
+        count: 0,
+        marksRange: getMarksRange(80, 89),
+        students: []
+      },
+      'B+': {
+        count: 0,
+        marksRange: getMarksRange(70, 79),
+        students: []
+      },
+      'B': {
+        count: 0,
+        marksRange: getMarksRange(60, 69),
+        students: []
+      },
+      'C+': {
+        count: 0,
+        marksRange: getMarksRange(50, 59),
+        students: []
+      },
+      'C': {
+        count: 0,
+        marksRange: getMarksRange(40, 49),
+        students: []
+      },
+      'D': {
+        count: 0,
+        marksRange: getMarksRange(33, 39),
+        students: []
+      },
+      'F': {
+        count: 0,
+        marksRange: getMarksRange(0, 32),
+        students: []
+      }
+    };
+
+    // Populate grade distribution with students
+    studentPerformances.forEach(student => {
+      const gradeKey = student.grade;
+      if (gradeDistribution[gradeKey]) {
+        gradeDistribution[gradeKey].count++;
+        gradeDistribution[gradeKey].students.push({
+          studentId: student.studentId,
+          studentName: student.studentName,
+          studentNumber: student.studentNumber,
+          marksScored: student.marksScored,
+          percentage: student.percentage.toFixed(2)
+        });
+      }
+    });
+
     const statistics = {
       totalStudents: studentPerformances.length,
       averageMarks: (marks.reduce((sum, mark) => sum + mark, 0) / marks.length).toFixed(2),
@@ -1190,40 +1266,7 @@ exports.getExamPerformanceDetails = async (req, res) => {
       },
       passCount: studentPerformances.filter(p => p.percentage >= 40).length,
       failCount: studentPerformances.filter(p => p.percentage < 40).length,
-      gradeDistribution: {
-        'A+': {
-          count: studentPerformances.filter(p => p.percentage >= 90).length,
-          marksRange: getMarksRange(90, 100)
-        },
-        'A': {
-          count: studentPerformances.filter(p => p.percentage >= 80 && p.percentage < 90).length,
-          marksRange: getMarksRange(80, 89)
-        },
-        'B+': {
-          count: studentPerformances.filter(p => p.percentage >= 70 && p.percentage < 80).length,
-          marksRange: getMarksRange(70, 79)
-        },
-        'B': {
-          count: studentPerformances.filter(p => p.percentage >= 60 && p.percentage < 70).length,
-          marksRange: getMarksRange(60, 69)
-        },
-        'C+': {
-          count: studentPerformances.filter(p => p.percentage >= 50 && p.percentage < 60).length,
-          marksRange: getMarksRange(50, 59)
-        },
-        'C': {
-          count: studentPerformances.filter(p => p.percentage >= 40 && p.percentage < 50).length,
-          marksRange: getMarksRange(40, 49)
-        },
-        'D': {
-          count: studentPerformances.filter(p => p.percentage >= 33 && p.percentage < 40).length,
-          marksRange: getMarksRange(33, 39)
-        },
-        'F': {
-          count: studentPerformances.filter(p => p.percentage < 33).length,
-          marksRange: getMarksRange(0, 32)
-        }
-      }
+      gradeDistribution: gradeDistribution
     };
 
     console.log('Exam performance details retrieved:', studentPerformances.length, 'students');
@@ -1240,12 +1283,12 @@ exports.getExamPerformanceDetails = async (req, res) => {
         subjectName: subjectName
       },
       classInfo: {
-        id: authCheck.classObj._id,
-        name: authCheck.classObj.name,
-        section: authCheck.classObj.section
+        id: classObj._id,
+        name: classObj.name,
+        section: classObj.section || ''
       },
       statistics,
-      students: studentPerformances.sort((a, b) => b.marksScored - a.marksScored), // Sort by marks descending
+      students: studentPerformances.sort((a, b) => b.marksScored - a.marksScored),
       totalStudents: studentPerformances.length
     });
 

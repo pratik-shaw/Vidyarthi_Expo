@@ -12,6 +12,7 @@ import {
   Alert,
   ScrollView,
   Dimensions,
+  TextInput,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
@@ -81,23 +82,28 @@ const TeacherClassDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
   });
   const [error, setError] = useState<string | null>(null);
   const [studentsLoading, setStudentsLoading] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+const [filteredStudents, setFilteredStudents] = useState<Student[]>([]);
 
   // Set navigation header
-  React.useLayoutEffect(() => {
-    navigation.setOptions({
-      title: className || 'Class Details',
-      headerShown: true,
-      headerStyle: {
-        backgroundColor: '#FFFFFF',
-      },
-      headerTintColor: '#2C3E50',
-      headerTitleStyle: {
-        fontWeight: '600',
-        fontSize: 18,
-      },
-      headerBackTitle: 'Back',
-    });
-  }, [navigation, className]);
+  // In TeacherClassDetailsScreen component, replace the React.useLayoutEffect section with:
+
+React.useLayoutEffect(() => {
+  navigation.setOptions({
+    title: `Class Details`,
+    headerShown: true,
+    headerStyle: {
+      backgroundColor: '#FFFFFF',
+    },
+    headerTintColor: '#3A4276',
+    headerShadowVisible: false,
+    headerBackTitle: 'Back',
+    headerTitleStyle: {
+      fontWeight: '600',
+      fontSize: 18,
+    },
+  });
+}, [navigation, className]);
 
   // Network connectivity monitoring
   useEffect(() => {
@@ -110,6 +116,31 @@ const TeacherClassDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
 
     return () => unsubscribe();
   }, []);
+
+  // Filter students based on search query
+useEffect(() => {
+  if (!classDetails?.studentIds) {
+    setFilteredStudents([]);
+    return;
+  }
+
+  if (!searchQuery.trim()) {
+    setFilteredStudents(classDetails.studentIds);
+    return;
+  }
+
+  const query = searchQuery.toLowerCase().trim();
+  const filtered = classDetails.studentIds.filter((student) => {
+    const nameMatch = student.name?.toLowerCase().includes(query);
+    const idMatch = student.studentId?.toLowerCase().includes(query);
+    const emailMatch = student.email?.toLowerCase().includes(query);
+    const uniqueIdMatch = student.uniqueId?.toLowerCase().includes(query);
+    
+    return nameMatch || idMatch || emailMatch || uniqueIdMatch;
+  });
+
+  setFilteredStudents(filtered);
+}, [searchQuery, classDetails?.studentIds]);
 
   // Initialize component
   useEffect(() => {
@@ -200,6 +231,11 @@ const TeacherClassDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
       setError('An unexpected error occurred. Please try again.');
     }
   };
+
+  // Clear search
+const handleClearSearch = () => {
+  setSearchQuery('');
+};
 
   // Handle session expiration
   const handleSessionExpired = () => {
@@ -444,32 +480,6 @@ const handlePostMaterials = () => {
 
         </View>
 
-        {/* Students Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Students</Text>
-          {classDetails?.studentIds && classDetails.studentIds.length > 0 ? (
-            <View style={styles.studentsContainer}>
-              <FlatList
-                data={classDetails.studentIds}
-                renderItem={renderStudentItem}
-                keyExtractor={(item, index) => `student-${item._id}-${index}`}
-                scrollEnabled={false}
-                showsVerticalScrollIndicator={false}
-                ItemSeparatorComponent={() => <View style={styles.separator} />}
-              />
-            </View>
-          ) : (
-            <View style={styles.emptyState}>
-              <FontAwesome5 name="user-graduate" size={32} color="#BDC3C7" />
-              <Text style={styles.emptyStateText}>No students enrolled</Text>
-              <Text style={styles.emptyStateSubtext}>
-                Students will appear here once they enroll in the class
-              </Text>
-            </View>
-          )}
-        
-        </View> 
-
         {/* Communication Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Communication</Text>
@@ -499,6 +509,72 @@ const handlePostMaterials = () => {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Search Bar - Add this RIGHT BEFORE the Students Section */}
+{classDetails?.studentIds && classDetails.studentIds.length > 0 && (
+  <View style={styles.searchContainer}>
+    <View style={styles.searchBar}>
+      <Feather name="search" size={20} color="#7F8C8D" style={styles.searchIcon} />
+      <TextInput
+        style={styles.searchInput}
+        placeholder="Search students by name, ID, or email..."
+        placeholderTextColor="#BDC3C7"
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="search"
+      />
+      {searchQuery.length > 0 && (
+        <TouchableOpacity
+          onPress={handleClearSearch}
+          style={styles.clearButton}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="close-circle" size={20} color="#7F8C8D" />
+        </TouchableOpacity>
+      )}
+    </View>
+    {searchQuery.length > 0 && (
+      <Text style={styles.searchResultText}>
+        Found {filteredStudents.length} student{filteredStudents.length !== 1 ? 's' : ''}
+      </Text>
+    )}
+  </View>
+)}
+
+        {/* Students Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Students</Text>
+          {classDetails?.studentIds && classDetails.studentIds.length > 0 ? (
+            <View style={styles.studentsContainer}>
+              <FlatList
+                data={filteredStudents}  // NEW LINE - use filteredStudents instead
+                renderItem={renderStudentItem}
+                keyExtractor={(item, index) => `student-${item._id}-${index}`}
+                scrollEnabled={false}
+                showsVerticalScrollIndicator={false}
+                ItemSeparatorComponent={() => <View style={styles.separator} />}
+              />
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <FontAwesome5 name="user-graduate" size={32} color="#BDC3C7" />
+              <Text style={styles.emptyStateText}>
+                {searchQuery ? 'No students found' : 'No students enrolled'}
+              </Text>
+              <Text style={styles.emptyStateSubtext}>
+                {searchQuery 
+                  ? 'Try adjusting your search terms'
+                  : 'Students will appear here once they enroll in the class'
+                }
+              </Text>
+            </View>
+          )}
+        
+        </View> 
+
+        
       </ScrollView>
     </SafeAreaView>
   );
@@ -785,6 +861,42 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  searchContainer: {
+  marginHorizontal: 16,
+  marginBottom: 16,
+},
+searchBar: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#FFFFFF',
+  borderRadius: 12,
+  paddingHorizontal: 12,
+  paddingVertical: 4,
+  elevation: 2,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.1,
+  shadowRadius: 4,
+},
+searchIcon: {
+  marginRight: 8,
+},
+searchInput: {
+  flex: 1,
+  fontSize: 16,
+  color: '#2C3E50',
+  paddingVertical: 12,
+},
+clearButton: {
+  padding: 4,
+  marginLeft: 8,
+},
+searchResultText: {
+  fontSize: 14,
+  color: '#7F8C8D',
+  marginTop: 8,
+  marginLeft: 4,
+},
 });
 
 export default TeacherClassDetailsScreen;

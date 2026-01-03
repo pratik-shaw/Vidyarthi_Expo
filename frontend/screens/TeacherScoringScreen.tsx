@@ -117,17 +117,17 @@ const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
 
   React.useLayoutEffect(() => {
-    navigation.setOptions({
-      title: `Scoring - ${className}`,
-      headerShown: true,
-      headerStyle: {
-        backgroundColor: '#FFFFFF',
-      },
-      headerTintColor: '#3A4276',
-      headerShadowVisible: false,
-      headerBackTitle: 'Back',
-    });
-  }, [navigation, className]);
+  navigation.setOptions({
+    title: `Scoring - ${className}${scoringData?.classInfo?.section ? ` (${scoringData.classInfo.section})` : ''}`,
+    headerShown: true,
+    headerStyle: {
+      backgroundColor: '#FFFFFF',
+    },
+    headerTintColor: '#3A4276',
+    headerShadowVisible: false,
+    headerBackTitle: 'Back',
+  });
+}, [navigation, className, scoringData?.classInfo?.section]);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {

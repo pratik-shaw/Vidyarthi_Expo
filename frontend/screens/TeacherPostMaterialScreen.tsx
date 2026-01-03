@@ -22,7 +22,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { API_BASE_URL } from '../config/api';
 
@@ -38,6 +38,12 @@ interface Material {
   createdAt: string;
   fileUrl?: string;
   mimeType?: string;
+}
+
+interface ClassInfo {
+  id: string;
+  name: string;
+  section: string;
 }
 
 const CATEGORIES = [
@@ -58,21 +64,32 @@ const TeacherPostMaterialScreen: React.FC<Props> = ({ route, navigation }) => {
   const [uploading, setUploading] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [classInfo, setClassInfo] = useState<ClassInfo | null>(null);
   
   // Form states
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('');
 
-  useEffect(() => {
+  React.useLayoutEffect(() => {
     navigation.setOptions({
-      title: `Materials - ${className}`,
+      title: `Materials - ${className}${classInfo?.section ? ` (${classInfo.section})` : ''}`,
+      headerShown: true,
+      headerStyle: {
+        backgroundColor: '#FFFFFF',
+      },
+      headerTintColor: '#3A4276',
+      headerShadowVisible: false,
+      headerBackTitle: 'Back',
       headerRight: () => (
         <TouchableOpacity onPress={() => setModalVisible(true)} style={styles.addButton}>
-          <FontAwesome5 name="plus" size={18} color="#007AFF" />
+          <FontAwesome5 name="plus" size={18} color="#1CB5E0" />
         </TouchableOpacity>
       ),
     });
+  }, [navigation, className, classInfo?.section]);
+
+  useEffect(() => {
     fetchMaterials();
   }, []);
 
@@ -97,6 +114,11 @@ const TeacherPostMaterialScreen: React.FC<Props> = ({ route, navigation }) => {
         params: { classId, subjectId },
       });
       setMaterials(response.data.materials || []);
+      
+      // Extract class info from response if available
+      if (response.data.classInfo) {
+        setClassInfo(response.data.classInfo);
+      }
     } catch (error) {
       console.error('Fetch materials error:', error);
       Alert.alert('Error', 'Failed to load materials');
@@ -467,11 +489,11 @@ const TeacherPostMaterialScreen: React.FC<Props> = ({ route, navigation }) => {
           <FontAwesome5 
             name={getFileIcon(item.originalFileName, item.mimeType)} 
             size={24} 
-            color="#007AFF" 
+            color="#1CB5E0" 
           />
           {downloading === item._id && (
             <View style={styles.downloadingOverlay}>
-              <ActivityIndicator size="small" color="#007AFF" />
+              <ActivityIndicator size="small" color="#1CB5E0" />
             </View>
           )}
         </View>
@@ -496,7 +518,7 @@ const TeacherPostMaterialScreen: React.FC<Props> = ({ route, navigation }) => {
           }}
           style={styles.deleteButton}
         >
-          <FontAwesome5 name="trash" size={16} color="#FF3B30" />
+          <FontAwesome5 name="trash" size={16} color="#F7685B" />
         </TouchableOpacity>
       </View>
       <View style={styles.tapHint}>
@@ -512,7 +534,7 @@ const TeacherPostMaterialScreen: React.FC<Props> = ({ route, navigation }) => {
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Upload Material</Text>
             <TouchableOpacity onPress={() => { setModalVisible(false); resetForm(); }}>
-              <FontAwesome5 name="times" size={20} color="#666" />
+              <FontAwesome5 name="times" size={20} color="#8A94A6" />
             </TouchableOpacity>
           </View>
 
@@ -522,17 +544,17 @@ const TeacherPostMaterialScreen: React.FC<Props> = ({ route, navigation }) => {
               <Text style={styles.label}>Select File *</Text>
               <View style={styles.fileButtons}>
                 <TouchableOpacity style={styles.fileButton} onPress={pickFile}>
-                  <FontAwesome5 name="file" size={20} color="#007AFF" />
+                  <FontAwesome5 name="file" size={20} color="#1CB5E0" />
                   <Text style={styles.fileButtonText}>Document</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.fileButton} onPress={pickImage}>
-                  <FontAwesome5 name="image" size={20} color="#007AFF" />
+                  <FontAwesome5 name="image" size={20} color="#1CB5E0" />
                   <Text style={styles.fileButtonText}>Image</Text>
                 </TouchableOpacity>
               </View>
               {selectedFile && (
                 <View style={styles.selectedFile}>
-                  <FontAwesome5 name="check-circle" size={16} color="#34C759" />
+                  <FontAwesome5 name="check-circle" size={16} color="#38EF7D" />
                   <Text style={styles.selectedFileName}>{selectedFile.name}</Text>
                 </View>
               )}
@@ -547,6 +569,7 @@ const TeacherPostMaterialScreen: React.FC<Props> = ({ route, navigation }) => {
                 onChangeText={setTitle}
                 placeholder="Enter material title"
                 maxLength={100}
+                placeholderTextColor="#B0B7C3"
               />
             </View>
 
@@ -588,7 +611,7 @@ const TeacherPostMaterialScreen: React.FC<Props> = ({ route, navigation }) => {
               disabled={uploading}
             >
               {uploading ? (
-                <ActivityIndicator size="small" color="#FFF" />
+                <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <Text style={styles.uploadButtonText}>Upload</Text>
               )}
@@ -603,7 +626,7 @@ const TeacherPostMaterialScreen: React.FC<Props> = ({ route, navigation }) => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color="#1CB5E0" />
           <Text style={styles.loadingText}>Loading materials...</Text>
         </View>
       </SafeAreaView>
@@ -612,11 +635,11 @@ const TeacherPostMaterialScreen: React.FC<Props> = ({ route, navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar hidden={true} />
       
       {materials.length === 0 ? (
         <View style={styles.emptyState}>
-          <FontAwesome5 name="folder-open" size={64} color="#C7C7CC" />
+          <FontAwesome5 name="folder-open" size={64} color="#B0B7C3" />
           <Text style={styles.emptyTitle}>No Materials</Text>
           <Text style={styles.emptyDescription}>
             Upload your first material for {className}
@@ -625,7 +648,7 @@ const TeacherPostMaterialScreen: React.FC<Props> = ({ route, navigation }) => {
             style={styles.emptyButton}
             onPress={() => setModalVisible(true)}
           >
-            <FontAwesome5 name="plus" size={16} color="#FFF" />
+            <FontAwesome5 name="plus" size={16} color="#FFFFFF" />
             <Text style={styles.emptyButtonText}>Upload Material</Text>
           </TouchableOpacity>
         </View>
@@ -641,7 +664,7 @@ const TeacherPostMaterialScreen: React.FC<Props> = ({ route, navigation }) => {
                 setRefreshing(true);
                 fetchMaterials();
               }}
-              tintColor="#007AFF"
+              colors={['#1CB5E0', '#38EF7D']}
             />
           }
           contentContainerStyle={styles.listContent}
@@ -657,12 +680,12 @@ const TeacherPostMaterialScreen: React.FC<Props> = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: '#F8F9FC',
   },
   addButton: {
     padding: 8,
     borderRadius: 16,
-    backgroundColor: '#E3F2FD',
+    backgroundColor: 'rgba(28, 181, 224, 0.1)',
   },
   centered: {
     flex: 1,
@@ -672,20 +695,20 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#8E8E93',
+    color: '#8A94A6',
   },
   listContent: {
     padding: 16,
   },
   materialCard: {
-    backgroundColor: '#FFF',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
     elevation: 2,
   },
   materialHeader: {
@@ -693,10 +716,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   materialIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: '#F2F2F7',
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: 'rgba(28, 181, 224, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -708,8 +731,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -720,39 +743,39 @@ const styles = StyleSheet.create({
   materialTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
+    color: '#3A4276',
     marginBottom: 4,
   },
   materialCategory: {
     fontSize: 14,
-    color: '#007AFF',
+    color: '#1CB5E0',
     fontWeight: '500',
     marginBottom: 4,
   },
   materialDetails: {
     fontSize: 12,
-    color: '#8E8E93',
+    color: '#8A94A6',
     marginBottom: 2,
   },
   materialDate: {
     fontSize: 12,
-    color: '#8E8E93',
+    color: '#8A94A6',
   },
   deleteButton: {
     padding: 8,
     borderRadius: 8,
-    backgroundColor: '#FFEBEE',
+    backgroundColor: 'rgba(247, 104, 91, 0.1)',
   },
   tapHint: {
-    marginTop: 8,
-    paddingTop: 8,
+    marginTop: 12,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#F2F2F7',
+    borderTopColor: '#E2E8F0',
     alignItems: 'center',
   },
   tapHintText: {
     fontSize: 12,
-    color: '#8E8E93',
+    color: '#8A94A6',
     fontStyle: 'italic',
   },
   emptyState: {
@@ -764,26 +787,31 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#000',
+    color: '#3A4276',
     marginTop: 16,
     marginBottom: 8,
   },
   emptyDescription: {
     fontSize: 16,
-    color: '#8E8E93',
+    color: '#8A94A6',
     textAlign: 'center',
     marginBottom: 24,
   },
   emptyButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#007AFF',
+    backgroundColor: '#1CB5E0',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 24,
+    shadowColor: '#1CB5E0',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   emptyButtonText: {
-    color: '#FFF',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
@@ -795,8 +823,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContainer: {
-    backgroundColor: '#FFF',
-    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     width: '90%',
     maxHeight: '80%',
   },
@@ -806,12 +834,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: '#E2E8F0',
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#000',
+    color: '#3A4276',
   },
   modalContent: {
     padding: 20,
@@ -822,7 +850,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
+    color: '#3A4276',
     marginBottom: 8,
   },
   fileButtons: {
@@ -834,12 +862,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F2F2F7',
+    backgroundColor: '#F8F9FC',
     paddingVertical: 12,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   fileButtonText: {
-    color: '#007AFF',
+    color: '#1CB5E0',
     fontSize: 14,
     fontWeight: '500',
     marginLeft: 8,
@@ -847,25 +877,28 @@ const styles = StyleSheet.create({
   selectedFile: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E8F5E8',
+    backgroundColor: 'rgba(56, 239, 125, 0.1)',
     padding: 12,
     borderRadius: 8,
     marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#38EF7D',
   },
   selectedFileName: {
     fontSize: 14,
-    color: '#000',
+    color: '#3A4276',
     marginLeft: 8,
     flex: 1,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#E5E5EA',
+    borderColor: '#E2E8F0',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#000',
+    color: '#3A4276',
+    backgroundColor: '#F8F9FC',
   },
   categoryGrid: {
     flexDirection: 'row',
@@ -875,25 +908,28 @@ const styles = StyleSheet.create({
   categoryChip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: '#F8F9FC',
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   categoryChipSelected: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#1CB5E0',
+    borderColor: '#1CB5E0',
   },
   categoryChipText: {
     fontSize: 14,
-    color: '#8E8E93',
+    color: '#8A94A6',
     fontWeight: '500',
   },
   categoryChipTextSelected: {
-    color: '#FFF',
+    color: '#FFFFFF',
   },
   modalActions: {
     flexDirection: 'row',
     padding: 20,
     borderTopWidth: 1,
-    borderTopColor: '#E5E5EA',
+    borderTopColor: '#E2E8F0',
     gap: 12,
   },
   cancelButton: {
