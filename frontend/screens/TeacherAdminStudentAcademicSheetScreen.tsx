@@ -11,6 +11,7 @@ import {
   Modal,
   RefreshControl,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -19,7 +20,6 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { API_BASE_URL } from '../config/api';
 import * as Print from 'expo-print';
-
 
 interface RouteParams {
   classId: string;
@@ -92,6 +92,20 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
   const [currentExamName, setCurrentExamName] = useState<string>('');
   const [availableExams, setAvailableExams] = useState<string[]>([]);
 
+  // Set header
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      title: `Academic Sheets - ${className}`,
+      headerShown: true,
+      headerStyle: {
+        backgroundColor: '#FFFFFF',
+      },
+      headerTintColor: '#2D3748',
+      headerShadowVisible: false,
+      headerBackTitle: 'Back',
+    });
+  }, [navigation, className]);
+
   useEffect(() => {
     fetchStudentsData();
   }, []);
@@ -159,105 +173,96 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
     return 'F';
   };
 
-  // Handle file download from WebView
   const handleWebViewMessage = async (event: any) => {
-  try {
-    const message = JSON.parse(event.nativeEvent.data);
-    
-    if (message.type === 'download') {
-      const { format, data, filename } = message;
+    try {
+      const message = JSON.parse(event.nativeEvent.data);
       
-      if (format === 'pdf') {
-        // Handle PDF creation
-        try {
-          const htmlContent = atob(data); // Decode base64
-          const { uri } = await Print.printToFileAsync({ html: htmlContent });
+      if (message.type === 'download') {
+        const { format, data, filename } = message;
+        
+        if (format === 'pdf') {
+          try {
+            const htmlContent = atob(data);
+            const { uri } = await Print.printToFileAsync({ html: htmlContent });
+            
+            if (await Sharing.isAvailableAsync()) {
+              await Sharing.shareAsync(uri, {
+                mimeType: 'application/pdf',
+                dialogTitle: 'Share PDF File',
+              });
+            } else {
+              Alert.alert('Success', `PDF saved to: ${uri}`);
+            }
+          } catch (error) {
+            console.error('PDF creation error:', error);
+            Alert.alert('Error', 'Failed to create PDF file');
+          }
+        } else {
+          const fileUri = FileSystem.documentDirectory + filename;
           
-          // Share the PDF file
+          await FileSystem.writeAsStringAsync(fileUri, data, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          
           if (await Sharing.isAvailableAsync()) {
-            await Sharing.shareAsync(uri, {
-              mimeType: 'application/pdf',
-              dialogTitle: 'Share PDF File',
+            await Sharing.shareAsync(fileUri, {
+              mimeType: format === 'excel' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv',
+              dialogTitle: `Share ${format.toUpperCase()} File`,
             });
           } else {
-            Alert.alert('Success', `PDF saved to: ${uri}`);
+            Alert.alert('Success', `File saved to: ${fileUri}`);
           }
-        } catch (error) {
-          console.error('PDF creation error:', error);
-          Alert.alert('Error', 'Failed to create PDF file');
-        }
-      } else {
-        // Handle Excel and CSV files
-        const fileUri = FileSystem.documentDirectory + filename;
-        
-        // Write base64 data to file
-        await FileSystem.writeAsStringAsync(fileUri, data, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        
-        // Share the file
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(fileUri, {
-            mimeType: format === 'excel' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv',
-            dialogTitle: `Share ${format.toUpperCase()} File`,
-          });
-        } else {
-          Alert.alert('Success', `File saved to: ${fileUri}`);
         }
       }
+    } catch (error) {
+      console.error('File download error:', error);
+      Alert.alert('Error', 'Failed to download file');
     }
-  } catch (error) {
-    console.error('File download error:', error);
-    Alert.alert('Error', 'Failed to download file');
-  }
-};
+  };
 
   const generateExcelHTML = (examId: string, examName: string, examCode: string): string => {
-  // Filter students data for the specific exam
-  const examData = studentsData.map(student => {
-    const exam = student.exams.find(e => e.examId === examId);
-    return {
-      ...student,
-      exam: exam || null
-    };
-  }).filter(student => student.exam !== null);
+    const examData = studentsData.map(student => {
+      const exam = student.exams.find(e => e.examId === examId);
+      return {
+        ...student,
+        exam: exam || null
+      };
+    }).filter(student => student.exam !== null);
 
-  if (examData.length === 0) {
-    return '<html><body><h2>No data available for this exam</h2></body></html>';
-  }
-
-  // Get all unique subjects for this exam
-  const allSubjects = new Map<string, { subjectId: string; subjectName: string }>();
-  
-  examData.forEach(student => {
-    if (student.exam) {
-      student.exam.subjects.forEach(subject => {
-        if (subject.subjectId && subject.subjectName && subject.subjectName !== 'Unknown Subject') {
-          if (!allSubjects.has(subject.subjectId)) {
-            allSubjects.set(subject.subjectId, {
-              subjectId: subject.subjectId,
-              subjectName: subject.subjectName
-            });
-          }
-        }
-      });
+    if (examData.length === 0) {
+      return '<html><body><h2>No data available for this exam</h2></body></html>';
     }
-  });
 
-  const subjects = Array.from(allSubjects.values());
+    const allSubjects = new Map<string, { subjectId: string; subjectName: string }>();
+    
+    examData.forEach(student => {
+      if (student.exam) {
+        student.exam.subjects.forEach(subject => {
+          if (subject.subjectId && subject.subjectName && subject.subjectName !== 'Unknown Subject') {
+            if (!allSubjects.has(subject.subjectId)) {
+              allSubjects.set(subject.subjectId, {
+                subjectId: subject.subjectId,
+                subjectName: subject.subjectName
+              });
+            }
+          }
+        });
+      }
+    });
 
-  if (subjects.length === 0) {
-    return '<html><body><h2>No valid subjects found for this exam</h2></body></html>';
-  }
+    const subjects = Array.from(allSubjects.values());
 
-  // Calculate statistics
-  const totalStudents = examData.length;
-  const completedStudents = examData.filter(student => student.exam?.isCompleted).length;
-  const averagePercentage = examData.reduce((sum, student) => {
-    return sum + (student.exam ? parseFloat(student.exam.percentage) : 0);
-  }, 0) / totalStudents;
+    if (subjects.length === 0) {
+      return '<html><body><h2>No valid subjects found for this exam</h2></body></html>';
+    }
 
-  const html = `
+    const totalStudents = examData.length;
+    const completedStudents = examData.filter(student => student.exam?.isCompleted).length;
+    const averagePercentage = examData.reduce((sum, student) => {
+      return sum + (student.exam ? parseFloat(student.exam.percentage) : 0);
+    }, 0) / totalStudents;
+
+    const html = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -523,19 +528,15 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
             }
 
             try {
-                // Get table data manually
                 const table = document.getElementById('academicTable');
                 const rows = table.querySelectorAll('tr');
                 const data = [];
                 
-                // Extract all table data
                 rows.forEach(row => {
                     const cells = row.querySelectorAll('th, td');
                     const rowData = [];
                     cells.forEach(cell => {
-                        // Get text content and clean it
                         let cellText = cell.textContent.trim();
-                        // Remove any HTML tags if present
                         cellText = cellText.replace(/<[^>]*>/g, '');
                         rowData.push(cellText);
                     });
@@ -549,21 +550,13 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
                     return;
                 }
                 
-                // Create worksheet from array
                 const ws = XLSX.utils.aoa_to_sheet(data);
-                
-                // Create workbook
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, "Academic Report");
-                
-                // Generate Excel file
                 const wbout = XLSX.write(wb, {bookType: 'xlsx', type: 'array'});
-                
-                // Convert to base64
                 const base64 = btoa(String.fromCharCode.apply(null, wbout));
                 const filename = '${examName.replace(/[^a-zA-Z0-9]/g, '_')}_${examCode}_Academic_Report.xlsx';
                 
-                // Send data to React Native
                 if (window.ReactNativeWebView) {
                     window.ReactNativeWebView.postMessage(JSON.stringify({
                         type: 'download',
@@ -572,7 +565,6 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
                         filename: filename
                     }));
                 } else {
-                    // Fallback for web testing
                     const blob = new Blob([wbout], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -602,12 +594,9 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
                 
                 const wb = XLSX.utils.table_to_book(table, {sheet: "Academic Report"});
                 const csvOutput = XLSX.utils.sheet_to_csv(wb.Sheets["Academic Report"]);
-                
-                // Convert to base64
                 const base64 = btoa(unescape(encodeURIComponent(csvOutput)));
                 const filename = '${examName.replace(/[^a-zA-Z0-9]/g, '_')}_${examCode}_Academic_Report.csv';
                 
-                // Send data to React Native
                 if (window.ReactNativeWebView) {
                     window.ReactNativeWebView.postMessage(JSON.stringify({
                         type: 'download',
@@ -616,7 +605,6 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
                         filename: filename
                     }));
                 } else {
-                    // Fallback for web testing
                     const blob = new Blob([csvOutput], {type: 'text/csv'});
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -634,12 +622,9 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
         function downloadAsPDF() {
             try {
                 const filename = '${examName.replace(/[^a-zA-Z0-9]/g, '_')}_${examCode}_Academic_Report.pdf';
-                
-                // Get current HTML content
                 const htmlContent = document.documentElement.outerHTML;
                 const base64 = btoa(unescape(encodeURIComponent(htmlContent)));
                 
-                // Send to React Native for PDF conversion
                 if (window.ReactNativeWebView) {
                     window.ReactNativeWebView.postMessage(JSON.stringify({
                         type: 'download',
@@ -648,7 +633,6 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
                         filename: filename
                     }));
                 } else {
-                    // Fallback - just print
                     window.print();
                 }
             } catch (error) {
@@ -657,7 +641,6 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
             }
         }
 
-        // Check if library is loaded
         function checkLibrary() {
             let attempts = 0;
             const maxAttempts = 20;
@@ -681,13 +664,11 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
             check();
         }
 
-        // Initialize when DOM is loaded
         document.addEventListener('DOMContentLoaded', function() {
             updateButtonStates(false);
             checkLibrary();
         });
 
-        // Also check immediately in case DOMContentLoaded already fired
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', function() {
                 updateButtonStates(false);
@@ -701,8 +682,8 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
 </body>
 </html>`;
 
-  return html;
-};
+    return html;
+  };
 
   const generateAndOpenExcel = async (examId: string, examName: string, examCode: string) => {
     try {
@@ -728,31 +709,45 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
     ).length;
 
     return (
-      <View key={index} style={styles.examCard}>
-        <View style={styles.examInfo}>
-          <Text style={styles.examName}>{examName}</Text>
-          <Text style={styles.examCode}>Code: {examCode}</Text>
-          <Text style={styles.studentsCount}>{studentsCount} students</Text>
+      <TouchableOpacity
+        key={index}
+        style={styles.examCard}
+        onPress={() => generateAndOpenExcel(examId, examName, examCode)}
+        disabled={generating}
+        activeOpacity={0.7}
+      >
+        <View style={styles.examCardContent}>
+          <View style={styles.examIconContainer}>
+            <FontAwesome5 name="file-alt" size={24} color="#4299E1" />
+          </View>
+          
+          <View style={styles.examInfo}>
+            <Text style={styles.examName}>{examName}</Text>
+            <Text style={styles.examCode}>Code: {examCode}</Text>
+            <Text style={styles.studentsCount}>
+              <FontAwesome5 name="users" size={12} color="#718096" /> {studentsCount} students
+            </Text>
+          </View>
+          
+          <View style={styles.examActionContainer}>
+            {generating ? (
+              <ActivityIndicator size="small" color="#4299E1" />
+            ) : (
+              <FontAwesome5 name="chevron-right" size={18} color="#CBD5E0" />
+            )}
+          </View>
         </View>
-        
-        <TouchableOpacity
-          style={styles.generateButton}
-          onPress={() => generateAndOpenExcel(examId, examName, examCode)}
-          disabled={generating}
-        >
-          <FontAwesome5 name="file-excel" size={16} color="white" />
-          <Text style={styles.generateButtonText}>Generate Excel</Text>
-        </TouchableOpacity>
-      </View>
+      </TouchableOpacity>
     );
   };
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#3182ce" />
-          <Text style={styles.loadingText}>Loading students data...</Text>
+        <StatusBar hidden={true} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4299E1" />
+          <Text style={styles.loadingText}>Loading academic data...</Text>
         </View>
       </SafeAreaView>
     );
@@ -760,63 +755,65 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <FontAwesome5 name="arrow-left" size={20} color="#3182ce" />
-        </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Academic Sheets</Text>
-          <Text style={styles.headerSubtitle}>{className}</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.refreshButton}
-          onPress={onRefresh}
-          disabled={refreshing}
-        >
-          <FontAwesome5 
-            name="sync-alt" 
-            size={18} 
-            color="#3182ce" 
-            style={refreshing ? { opacity: 0.5 } : {}}
-          />
-        </TouchableOpacity>
-      </View>
-
+      <StatusBar hidden={true} />
+      
       <ScrollView
-        style={styles.content}
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#4299E1']}
+            tintColor="#4299E1"
+          />
         }
       >
         {studentsData.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <FontAwesome5 name="clipboard-list" size={48} color="#a0aec0" />
+            <FontAwesome5 name="clipboard-list" size={64} color="#CBD5E0" />
             <Text style={styles.emptyTitle}>No Data Available</Text>
-            <Text style={styles.emptyText}>
+            <Text style={styles.emptySubtitle}>
               No student academic data found for this class
             </Text>
+            <TouchableOpacity 
+              style={styles.refreshButton}
+              onPress={onRefresh}
+            >
+              <Text style={styles.refreshButtonText}>Refresh</Text>
+            </TouchableOpacity>
           </View>
         ) : availableExams.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <FontAwesome5 name="file-alt" size={48} color="#a0aec0" />
+            <FontAwesome5 name="file-alt" size={64} color="#CBD5E0" />
             <Text style={styles.emptyTitle}>No Exams Found</Text>
-            <Text style={styles.emptyText}>
+            <Text style={styles.emptySubtitle}>
               No exams have been created for this class yet
             </Text>
+            <TouchableOpacity 
+              style={styles.refreshButton}
+              onPress={onRefresh}
+            >
+              <Text style={styles.refreshButtonText}>Refresh</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <>
+            {/* Summary Card */}
             <View style={styles.summaryCard}>
-              <Text style={styles.summaryTitle}>Class Summary</Text>
+              <Text style={styles.summaryTitle}>Class Overview</Text>
               <View style={styles.summaryRow}>
                 <View style={styles.summaryItem}>
+                  <View style={[styles.summaryIconContainer, { backgroundColor: '#EBF8FF' }]}>
+                    <FontAwesome5 name="users" size={20} color="#4299E1" />
+                  </View>
                   <Text style={styles.summaryNumber}>{studentsData.length}</Text>
                   <Text style={styles.summaryLabel}>Total Students</Text>
                 </View>
                 <View style={styles.summaryItem}>
+                  <View style={[styles.summaryIconContainer, { backgroundColor: '#F0FFF4' }]}>
+                    <FontAwesome5 name="clipboard-list" size={20} color="#38A169" />
+                  </View>
                   <Text style={styles.summaryNumber}>{availableExams.length}</Text>
                   <Text style={styles.summaryLabel}>Available Exams</Text>
                 </View>
@@ -825,18 +822,22 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
 
             {generating && (
               <View style={styles.generatingCard}>
-                <ActivityIndicator size="small" color="#3182ce" />
-                <Text style={styles.generatingText}>Generating Excel file...</Text>
+                <ActivityIndicator size="small" color="#4299E1" />
+                <Text style={styles.generatingText}>Generating report...</Text>
               </View>
             )}
 
+            {/* Exams List */}
             <View style={styles.examsSection}>
-              <Text style={styles.sectionTitle}>Available Exams</Text>
+              <Text style={styles.sectionTitle}>Available Exam Reports</Text>
+              <Text style={styles.sectionSubtitle}>
+                Tap on any exam to generate and download the academic report
+              </Text>
               {availableExams.map((examInfo, index) => renderExamCard(examInfo, index))}
             </View>
           </>
         )}
-      </ScrollView>
+        </ScrollView>
 
       <Modal
         visible={webViewVisible}
@@ -849,9 +850,10 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
               style={styles.modalCloseButton}
               onPress={() => setWebViewVisible(false)}
             >
-              <FontAwesome5 name="times" size={20} color="#3182ce" />
+              <FontAwesome5 name="times" size={20} color="#2D3748" />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>{currentExamName}</Text>
+            <View style={{ width: 36 }} />
           </View>
           
           <WebView
@@ -863,8 +865,8 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
             onMessage={handleWebViewMessage}
             renderLoading={() => (
               <View style={styles.webViewLoading}>
-                <ActivityIndicator size="large" color="#3182ce" />
-                <Text>Loading report...</Text>
+                <ActivityIndicator size="large" color="#4299E1" />
+                <Text style={styles.loadingText}>Loading report...</Text>
               </View>
             )}
           />
@@ -877,205 +879,223 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f7fafc',
+    backgroundColor: '#F7FAFC',
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  backButton: {
-    padding: 8,
-  },
-  headerContent: {
+  scrollView: {
     flex: 1,
-    alignItems: 'center',
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2d3748',
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#718096',
-    marginTop: 2,
-  },
-  refreshButton: {
-    padding: 8,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  centerContainer: {
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F7FAFC',
   },
   loadingText: {
-    marginTop: 10,
+    marginTop: 16,
     fontSize: 16,
     color: '#718096',
+    fontWeight: '500',
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingTop: 100,
+    paddingHorizontal: 40,
   },
   emptyTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#4a5568',
-    marginTop: 16,
+    color: '#2D3748',
+    marginTop: 24,
+    marginBottom: 8,
   },
-  emptyText: {
+  emptySubtitle: {
     fontSize: 16,
     color: '#718096',
     textAlign: 'center',
-    marginTop: 8,
-    paddingHorizontal: 40,
+    lineHeight: 24,
+  },
+  refreshButton: {
+    marginTop: 24,
+    backgroundColor: '#4299E1',
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 8,
+  },
+  refreshButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   summaryCard: {
-    backgroundColor: 'white',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 16,
     borderRadius: 12,
     padding: 20,
-    marginVertical: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
     elevation: 3,
   },
   summaryTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2d3748',
-    marginBottom: 15,
-    textAlign: 'center',
+    color: '#2D3748',
+    marginBottom: 16,
   },
   summaryRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
   },
   summaryItem: {
+    flex: 1,
     alignItems: 'center',
   },
+  summaryIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   summaryNumber: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#3182ce',
+    color: '#2D3748',
+    marginTop: 4,
   },
   summaryLabel: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#718096',
     marginTop: 4,
+    textAlign: 'center',
   },
   generatingCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ebf8ff',
+    backgroundColor: '#EBF8FF',
+    marginHorizontal: 20,
+    marginBottom: 16,
     borderRadius: 8,
-    padding: 15,
-    marginBottom: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#BEE3F8',
   },
   generatingText: {
-    marginLeft: 10,
-    fontSize: 16,
-    color: '#3182ce',
+    marginLeft: 12,
+    fontSize: 15,
+    color: '#2C5282',
+    fontWeight: '500',
   },
   examsSection: {
-    marginBottom: 30,
+    paddingHorizontal: 20,
+    paddingBottom: 30,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2d3748',
-    marginBottom: 15,
+    color: '#2D3748',
+    marginBottom: 8,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#718096',
+    marginBottom: 16,
+    lineHeight: 20,
   },
   examCard: {
-    backgroundColor: 'white',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 20,
-    marginBottom: 15,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  examCardContent: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    padding: 16,
+  },
+  examIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#EBF8FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
   },
   examInfo: {
     flex: 1,
   },
   examName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2d3748',
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2D3748',
     marginBottom: 4,
   },
   examCode: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#718096',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   studentsCount: {
-    fontSize: 14,
-    color: '#4a5568',
+    fontSize: 13,
+    color: '#4A5568',
   },
-  generateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#38a169',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  generateButtonText: {
-    color: 'white',
-    fontWeight: '600',
-    marginLeft: 8,
-    fontSize: 16,
+  examActionContainer: {
+    paddingLeft: 12,
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: '#FFFFFF',
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: 'white',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    borderBottomColor: '#E2E8F0',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   modalCloseButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: '#f7fafc',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F7FAFC',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalTitle: {
     flex: 1,
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2d3748',
+    fontWeight: '600',
+    color: '#2D3748',
     textAlign: 'center',
-    marginLeft: 15,
+    paddingHorizontal: 8,
   },
   webViewLoading: {
     position: 'absolute',
@@ -1085,7 +1105,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'white',
+    backgroundColor: '#FFFFFF',
   },
 });
 

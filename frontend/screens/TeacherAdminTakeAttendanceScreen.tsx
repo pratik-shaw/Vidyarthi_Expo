@@ -5,7 +5,6 @@ import {
   StyleSheet,
   StatusBar,
   SafeAreaView,
-  FlatList,
   ActivityIndicator,
   RefreshControl,
   Alert,
@@ -26,11 +25,9 @@ import NetInfo from '@react-native-community/netinfo';
 
 import { API_BASE_URL } from '../config/api';
 
-// API URL with configurable timeout
 const API_URL = API_BASE_URL;
-const API_TIMEOUT = 15000; // 15 seconds timeout
+const API_TIMEOUT = 15000;
 
-// Route params type
 type TeacherAdminTakeAttendanceParams = {
   classId: string;
   className: string;
@@ -38,7 +35,6 @@ type TeacherAdminTakeAttendanceParams = {
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherAdminTakeAttendance'>;
 
-// Define types
 interface Student {
   id: string;
   name: string;
@@ -61,10 +57,8 @@ interface AttendanceData {
 }
 
 const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }) => {
-  // Get params from route
   const { classId, className } = route.params as unknown as TeacherAdminTakeAttendanceParams;
   
-  // States
   const [students, setStudents] = useState<Student[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -74,7 +68,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
   const [token, setToken] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
   const [showRemarksModal, setShowRemarksModal] = useState<boolean>(false);
   const [currentStudentIndex, setCurrentStudentIndex] = useState<number>(-1);
   const [tempRemarks, setTempRemarks] = useState<string>('');
@@ -83,68 +76,55 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
   const [existingAttendance, setExistingAttendance] = useState<AttendanceData | null>(null);
   const [showSuccessAnimation, setShowSuccessAnimation] = useState<boolean>(false);
-  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState<boolean>(false);
   
-  // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const headerAnim = useRef(new Animated.Value(0)).current;
+  const scrollViewRef = useRef<ScrollView>(null);
 
-  // Custom hook to handle unsaved changes - replaces usePreventRemove
-  const handleBackPress = useCallback(() => {
-    if (hasUnsavedChanges) {
+  useFocusEffect(
+  useCallback(() => {
+    const subscription = navigation.addListener('beforeRemove', (e) => {
+      // If no unsaved changes, allow navigation freely
+      if (!hasUnsavedChanges) {
+        return;
+      }
+
+      // Prevent the default back navigation
+      e.preventDefault();
+
+      // Show confirmation dialog
       Alert.alert(
         'Unsaved Changes',
-        'You have unsaved changes. Are you sure you want to go back?',
+        'The changes made were not saved. Discrad the current changes and retry.',
         [
-          { text: 'Stay', style: 'cancel', onPress: () => {} },
           {
             text: 'Discard',
             style: 'destructive',
             onPress: () => {
+              // First update the ref to bypass the check
               setHasUnsavedChanges(false);
-              navigation.goBack();
+              
+              // Small delay to ensure state updates, then navigate
+              requestAnimationFrame(() => {
+                navigation.dispatch(e.data.action);
+              });
             },
           },
-        ]
-      );
-      return true; // Prevent default back action
-    }
-    return false; // Allow default back action
-  }, [hasUnsavedChanges, navigation]);
-
-  // Use focus effect to handle back button
-  useFocusEffect(
-    useCallback(() => {
-      const subscription = navigation.addListener('beforeRemove', (e) => {
-        if (!hasUnsavedChanges) {
-          return; // Allow default behavior
+        ],
+        { 
+          cancelable: false,
+          onDismiss: () => {
+            // This ensures if alert is dismissed any other way, user stays
+            console.log('Alert dismissed - staying on screen');
+          }
         }
+      );
+    });
 
-        e.preventDefault(); // Prevent default behavior
+    return subscription;
+  }, [navigation, hasUnsavedChanges])
+);
 
-        Alert.alert(
-          'Unsaved Changes',
-          'You have unsaved changes. Are you sure you want to go back?',
-          [
-            { text: 'Stay', style: 'cancel', onPress: () => {} },
-            {
-              text: 'Discard',
-              style: 'destructive',
-              onPress: () => {
-                setHasUnsavedChanges(false);
-                navigation.dispatch(e.data.action);
-              },
-            },
-          ]
-        );
-      });
-
-      return subscription;
-    }, [navigation, hasUnsavedChanges])
-  );
-
-  // Set header
   React.useLayoutEffect(() => {
     navigation.setOptions({
       title: existingAttendance ? 'Update Attendance' : 'Take Attendance',
@@ -152,10 +132,13 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
       headerStyle: {
         backgroundColor: '#FFFFFF',
       },
-      headerTintColor: '#2D3748',
+      headerTintColor: '#2C3E50',
       headerShadowVisible: false,
       headerBackTitle: 'Back',
-      headerBackButtonMenuEnabled: false, // Disable native back button menu
+      headerTitleStyle: {
+        fontWeight: '600',
+        fontSize: 18,
+      },
       headerRight: () => (
         <TouchableOpacity
           style={styles.headerButton}
@@ -165,7 +148,10 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
           {submitting ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
-            <Text style={styles.headerButtonText}>
+            <Text style={[
+              styles.headerButtonText,
+              !hasUnsavedChanges && styles.headerButtonTextDisabled
+            ]}>
               {existingAttendance ? 'Update' : 'Submit'}
             </Text>
           )}
@@ -174,7 +160,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
     });
   }, [navigation, submitting, attendanceRecords, hasUnsavedChanges, existingAttendance]);
 
-  // Check network connectivity
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
       setIsConnected(state.isConnected ?? false);
@@ -185,7 +170,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
     };
   }, []);
 
-  // Load data on component mount
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -214,7 +198,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
     loadData();
   }, [classId, selectedDate]);
 
-  // Get authenticated API client
   const getAuthenticatedClient = (authToken = token) => {
     return axios.create({
       baseURL: API_URL,
@@ -227,7 +210,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
     });
   };
 
-  // Check if attendance already exists for selected date
   const checkExistingAttendance = async (authToken = token) => {
     try {
       if (!authToken) return;
@@ -251,7 +233,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
     }
   };
 
-  // Fetch students from API
   const fetchStudents = async (authToken = token) => {
     setLoading(true);
     setError(null);
@@ -283,12 +264,9 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
       
       setStudents(studentsData);
       
-      // Check for existing attendance
       const existingData = await checkExistingAttendance(authToken);
       
-      // Initialize attendance records
       const initialRecords = studentsData.map((student: Student) => {
-        // If attendance exists, use existing data, otherwise default to absent
         const existingRecord = existingData?.records?.find((r: any) => r.studentId === student.id);
         
         return {
@@ -325,13 +303,11 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
     }
   };
 
-  // Handle refresh
   const onRefresh = () => {
     setRefreshing(true);
     fetchStudents();
   };
 
-  // Handle session expired
   const handleSessionExpired = () => {
     Alert.alert(
       "Session Expired",
@@ -351,7 +327,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
     );
   };
 
-  // Update attendance status with animation
   const updateAttendanceStatus = (studentId: string, status: 'present' | 'absent' | 'late') => {
     setAttendanceRecords(prev => 
       prev.map(record => 
@@ -363,10 +338,9 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
     
     setHasUnsavedChanges(true);
 
-    // Animate the change
     Animated.sequence([
       Animated.timing(scaleAnim, {
-        toValue: 1.05,
+        toValue: 1.02,
         duration: 100,
         useNativeDriver: true,
       }),
@@ -378,7 +352,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
     ]).start();
   };
 
-  // Handle remarks modal
   const openRemarksModal = (studentId: string) => {
     const index = attendanceRecords.findIndex(r => r.studentId === studentId);
     setCurrentStudentIndex(index);
@@ -402,7 +375,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
     setTempRemarks('');
   };
 
-  // Submit attendance with enhanced feedback
   const handleSubmitAttendance = async () => {
     try {
       setSubmitting(true);
@@ -417,7 +389,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
         return;
       }
 
-      // Validate attendance data
       if (attendanceRecords.length === 0) {
         Alert.alert('No Data', 'No attendance records to submit.');
         return;
@@ -432,14 +403,11 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
 
       let response;
       if (existingAttendance) {
-        // Update existing attendance
         response = await apiClient.put(`/attendance/class/${classId}/attendance/${existingAttendance.id}`, attendanceData);
       } else {
-        // Create new attendance
         response = await apiClient.post(`/attendance/class/${classId}/take`, attendanceData);
       }
 
-      // Show success animation
       setShowSuccessAnimation(true);
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -447,7 +415,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
         useNativeDriver: true,
       }).start();
 
-      // Hide animation after delay
       setTimeout(() => {
         Animated.timing(fadeAnim, {
           toValue: 0,
@@ -458,10 +425,8 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
         });
       }, 2000);
 
-      // Reset unsaved changes flag
       setHasUnsavedChanges(false);
 
-      // Refresh data to show updated state
       await checkExistingAttendance(token);
 
       Alert.alert(
@@ -501,7 +466,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
     }
   };
 
-  // Quick actions for bulk operations with confirmation
   const markAllPresent = () => {
     Alert.alert(
       'Mark All Present',
@@ -540,11 +504,9 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
     );
   };
 
-  // Filter students based on search and status
   const getFilteredStudents = () => {
     let filtered = students;
 
-    // Filter by search query
     if (searchQuery.trim()) {
       filtered = filtered.filter(student => 
         student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -552,7 +514,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
       );
     }
 
-    // Filter by status
     if (filterStatus !== 'all') {
       filtered = filtered.filter(student => {
         const record = attendanceRecords.find(r => r.studentId === student.id);
@@ -563,7 +524,6 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
     return filtered;
   };
 
-  // Get attendance statistics
   const getAttendanceStats = () => {
     const total = attendanceRecords.length;
     const present = attendanceRecords.filter(r => r.status === 'present').length;
@@ -574,125 +534,60 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
     return { total, present, absent, late, percentage };
   };
 
-  // Toggle header collapse
-  const toggleHeaderCollapse = () => {
-    setIsHeaderCollapsed(!isHeaderCollapsed);
-    Animated.timing(headerAnim, {
-      toValue: isHeaderCollapsed ? 0 : 1,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
-  };
-
-  // Render student item with enhanced visual feedback
-  const renderStudentItem = ({ item: student }: { item: Student }) => {
+  const renderStudentItem = (student: Student) => {
     const record = attendanceRecords.find(r => r.studentId === student.id);
     if (!record) return null;
 
-    const isModified = record.isModified;
+    const getStatusColor = () => {
+      switch (record.status) {
+        case 'present':
+          return '#E8F5E9';
+        case 'absent':
+          return '#FFEBEE';
+        case 'late':
+          return '#FFF8E1';
+        default:
+          return '#FFFFFF';
+      }
+    };
+
+    const getStatusBorder = () => {
+      switch (record.status) {
+        case 'present':
+          return '#4CAF50';
+        case 'absent':
+          return '#F44336';
+        case 'late':
+          return '#FFC107';
+        default:
+          return '#E0E0E0';
+      }
+    };
 
     return (
-      <Animated.View style={[
-        styles.studentCard,
-        isModified && styles.studentCardModified
-      ]}>
-        <View style={styles.studentInfo}>
-          <View style={[
-            styles.studentAvatar,
-            record.status === 'present' && styles.studentAvatarPresent,
-            record.status === 'absent' && styles.studentAvatarAbsent,
-            record.status === 'late' && styles.studentAvatarLate,
-          ]}>
-            <Text style={styles.studentInitial}>
-              {student.name.charAt(0).toUpperCase()}
-            </Text>
-          </View>
-          
-          <View style={styles.studentDetails}>
-            <View style={styles.studentNameRow}>
-              <Text style={styles.studentName}>{student.name}</Text>
-              {isModified && (
-                <View style={styles.modifiedIndicator}>
-                  <Text style={styles.modifiedText}>•</Text>
-                </View>
-              )}
-            </View>
+      <View
+        key={student.id}
+        style={[
+          styles.studentCard,
+          {
+            backgroundColor: getStatusColor(),
+            borderLeftWidth: 4,
+            borderLeftColor: getStatusBorder(),
+          }
+        ]}
+      >
+        <View style={styles.studentHeader}>
+          <View style={styles.studentTextInfo}>
+            <Text style={styles.studentName}>{student.name}</Text>
             <Text style={styles.studentId}>ID: {student.studentId}</Text>
             {record.remarks && (
-              <Text style={styles.remarksPreview} numberOfLines={1}>
-                Note: {record.remarks}
-              </Text>
+              <View style={styles.remarksPreviewContainer}>
+                <FontAwesome5 name="comment" size={10} color="#7F8C8D" />
+                <Text style={styles.remarksPreview} numberOfLines={1}>
+                  {record.remarks}
+                </Text>
+              </View>
             )}
-          </View>
-        </View>
-
-        <View style={styles.attendanceControls}>
-          <View style={styles.statusButtons}>
-            <TouchableOpacity
-              style={[
-                styles.statusButton,
-                styles.presentButton,
-                record.status === 'present' && styles.activeStatusButton
-              ]}
-              onPress={() => updateAttendanceStatus(student.id, 'present')}
-              activeOpacity={0.7}
-            >
-              <FontAwesome5 
-                name="check" 
-                size={14} 
-                color={record.status === 'present' ? '#FFFFFF' : '#48BB78'} 
-              />
-              <Text style={[
-                styles.statusButtonText,
-                record.status === 'present' && styles.activeStatusButtonText
-              ]}>
-                P
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.statusButton,
-                styles.absentButton,
-                record.status === 'absent' && styles.activeStatusButton
-              ]}
-              onPress={() => updateAttendanceStatus(student.id, 'absent')}
-              activeOpacity={0.7}
-            >
-              <FontAwesome5 
-                name="times" 
-                size={14} 
-                color={record.status === 'absent' ? '#FFFFFF' : '#F56565'} 
-              />
-              <Text style={[
-                styles.statusButtonText,
-                record.status === 'absent' && styles.activeStatusButtonText
-              ]}>
-                A
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.statusButton,
-                styles.lateButton,
-                record.status === 'late' && styles.activeStatusButton
-              ]}
-              onPress={() => updateAttendanceStatus(student.id, 'late')}
-              activeOpacity={0.7}
-            >
-              <FontAwesome5 
-                name="clock" 
-                size={14} 
-                color={record.status === 'late' ? '#FFFFFF' : '#ED8936'} 
-              />
-              <Text style={[
-                styles.statusButtonText,
-                record.status === 'late' && styles.activeStatusButtonText
-              ]}>
-                L
-              </Text>
-            </TouchableOpacity>
           </View>
 
           <TouchableOpacity
@@ -701,33 +596,99 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
             activeOpacity={0.7}
           >
             <FontAwesome5 
-              name="comment" 
-              size={16} 
-              color={record.remarks ? '#4299E1' : '#A0AEC0'} 
+              name="comment-dots" 
+              size={18} 
+              color={record.remarks ? '#3498DB' : '#BDC3C7'} 
             />
           </TouchableOpacity>
         </View>
-      </Animated.View>
+
+        <View style={styles.statusButtonsContainer}>
+          <TouchableOpacity
+            style={[
+              styles.statusButton,
+              styles.presentButton,
+              record.status === 'present' && styles.presentButtonActive
+            ]}
+            onPress={() => updateAttendanceStatus(student.id, 'present')}
+            activeOpacity={0.7}
+          >
+            <FontAwesome5 
+              name="check-circle" 
+              size={18} 
+              color={record.status === 'present' ? '#FFFFFF' : '#4CAF50'} 
+            />
+            <Text style={[
+              styles.statusButtonText,
+              record.status === 'present' && styles.statusButtonTextActive
+            ]}>
+              Present
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.statusButton,
+              styles.absentButton,
+              record.status === 'absent' && styles.absentButtonActive
+            ]}
+            onPress={() => updateAttendanceStatus(student.id, 'absent')}
+            activeOpacity={0.7}
+          >
+            <FontAwesome5 
+              name="times-circle" 
+              size={18} 
+              color={record.status === 'absent' ? '#FFFFFF' : '#F44336'} 
+            />
+            <Text style={[
+              styles.statusButtonText,
+              record.status === 'absent' && styles.statusButtonTextActive
+            ]}>
+              Absent
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.statusButton,
+              styles.lateButton,
+              record.status === 'late' && styles.lateButtonActive
+            ]}
+            onPress={() => updateAttendanceStatus(student.id, 'late')}
+            activeOpacity={0.7}
+          >
+            <FontAwesome5 
+              name="clock" 
+              size={18} 
+              color={record.status === 'late' ? '#FFFFFF' : '#FFC107'} 
+            />
+            <Text style={[
+              styles.statusButtonText,
+              record.status === 'late' && styles.statusButtonTextActive
+            ]}>
+              Late
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     );
   };
 
-  // Show loading indicator
   if (loading && !refreshing) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <StatusBar hidden={true} />
-        <ActivityIndicator size="large" color="#4299E1" />
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <ActivityIndicator size="large" color="#3498DB" />
         <Text style={styles.loadingText}>Loading students...</Text>
       </SafeAreaView>
     );
   }
 
-  // Show error message
   if (error) {
     return (
       <SafeAreaView style={styles.errorContainer}>
-        <StatusBar hidden={true} />
-        <FontAwesome5 name="exclamation-triangle" size={48} color="#F56565" />
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <FontAwesome5 name="exclamation-triangle" size={48} color="#E74C3C" />
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity 
           style={styles.retryButton}
@@ -744,13 +705,12 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar hidden={true} />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       
-      {/* Success Animation Overlay */}
       {showSuccessAnimation && (
         <Animated.View style={[styles.successOverlay, { opacity: fadeAnim }]}>
           <View style={styles.successContent}>
-            <FontAwesome5 name="check-circle" size={48} color="#48BB78" />
+            <FontAwesome5 name="check-circle" size={48} color="#4CAF50" />
             <Text style={styles.successText}>
               {existingAttendance ? 'Updated!' : 'Submitted!'}
             </Text>
@@ -758,181 +718,161 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
         </Animated.View>
       )}
       
-      {/* Collapsible Header Card */}
-      <Animated.View style={[
-        styles.headerCard,
-        {
-          height: headerAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [120, 60],
-          }),
-        },
-      ]}>
-        <LinearGradient
-          colors={existingAttendance ? ['#FEB2B2', '#F56565'] : ['#667EEA', '#764BA2']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerGradient}
-        >
-          <TouchableOpacity 
-            style={styles.headerContent}
-            onPress={toggleHeaderCollapse}
-            activeOpacity={0.8}
-          >
-            <View style={styles.headerLeft}>
-              <FontAwesome5 
-                name={existingAttendance ? "edit" : "clipboard-check"} 
-                size={20} 
-                color="#FFFFFF" 
-              />
-              <View style={styles.headerText}>
-                <Text style={styles.headerTitle}>{className}</Text>
-                <Animated.View style={{
-                  opacity: headerAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [1, 0],
-                  }),
-                }}>
-                  <Text style={styles.headerSubtitle}>
-                    {existingAttendance ? 'Update attendance for' : 'Take attendance for'} {selectedDate}
-                  </Text>
-                </Animated.View>
-              </View>
-            </View>
-            <FontAwesome5 
-              name={isHeaderCollapsed ? "chevron-down" : "chevron-up"} 
-              size={16} 
-              color="#FFFFFF" 
-            />
-          </TouchableOpacity>
-        </LinearGradient>
-      </Animated.View>
-
-      {/* Unsaved Changes Banner */}
-      {hasUnsavedChanges && (
-        <View style={styles.unsavedBanner}>
-          <FontAwesome5 name="exclamation-circle" size={16} color="#ED8936" />
-          <Text style={styles.unsavedText}>You have unsaved changes</Text>
-        </View>
-      )}
-
-      {/* Compact Statistics Card */}
-      <View style={styles.statsCard}>
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{stats.total}</Text>
-            <Text style={styles.statLabel}>Total</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={[styles.statNumber, { color: '#48BB78' }]}>{stats.present}</Text>
-            <Text style={styles.statLabel}>Present</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={[styles.statNumber, { color: '#F56565' }]}>{stats.absent}</Text>
-            <Text style={styles.statLabel}>Absent</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={[styles.statNumber, { color: '#ED8936' }]}>{stats.late}</Text>
-            <Text style={styles.statLabel}>Late</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={[styles.statNumber, { color: '#4299E1' }]}>{stats.percentage}%</Text>
-            <Text style={styles.statLabel}>Rate</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Compact Controls Row */}
-      <View style={styles.controlsRow}>
-        {/* Quick Actions */}
-        <View style={styles.quickActions}>
-          <TouchableOpacity style={styles.quickActionButton} onPress={markAllPresent}>
-            <FontAwesome5 name="check-circle" size={14} color="#48BB78" />
-            <Text style={styles.quickActionText}>All P</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.quickActionButton} onPress={markAllAbsent}>
-            <FontAwesome5 name="times-circle" size={14} color="#F56565" />
-            <Text style={styles.quickActionText}>All A</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Filter Buttons */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-          {['all', 'present', 'absent', 'late'].map((status) => (
-            <TouchableOpacity
-              key={status}
-              style={[
-                styles.filterButton,
-                filterStatus === status && styles.activeFilterButton
-              ]}
-              onPress={() => setFilterStatus(status as typeof filterStatus)}
-            >
-              <Text style={[
-                styles.filterButtonText,
-                filterStatus === status && styles.activeFilterButtonText
-              ]}>
-                {status === 'all' ? 'All' : status.charAt(0).toUpperCase()}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* Compact Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <FontAwesome5 name="search" size={14} color="#A0AEC0" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search students..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor="#A0AEC0"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <FontAwesome5 name="times" size={14} color="#A0AEC0" />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {/* Students List */}
-      <FlatList
-        data={filteredStudents}
-        renderItem={renderStudentItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={true}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={['#4299E1']}
-            tintColor="#4299E1"
+            colors={['#3498DB']}
+            tintColor="#3498DB"
           />
         }
-        ListEmptyComponent={() => (
-          <View style={styles.emptyContainer}>
-            <FontAwesome5 name="users" size={48} color="#CBD5E0" />
-            <Text style={styles.emptyText}>
-              {searchQuery || filterStatus !== 'all' ? 'No students match your filters' : 'No students found'}
-            </Text>
-            {(searchQuery || filterStatus !== 'all') && (
+      >
+        {/* Header Card */}
+        <View style={styles.headerCard}>
+          <LinearGradient
+            colors={existingAttendance ? ['#EF5350', '#E53935'] : ['#3498DB', '#2ECC71']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.headerGradient}
+          >
+            <View style={styles.headerContent}>
+              <View style={styles.headerLeft}>
+                <FontAwesome5 
+                  name={existingAttendance ? "edit" : "clipboard-check"} 
+                  size={24} 
+                  color="#FFFFFF" 
+                />
+                <View style={styles.headerText}>
+                  <Text style={styles.headerTitle}>{className}</Text>
+                  <Text style={styles.headerSubtitle}>
+                    {existingAttendance ? 'Update' : 'Take'} attendance • {selectedDate}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </LinearGradient>
+        </View>
+
+        {hasUnsavedChanges && (
+          <View style={styles.unsavedBanner}>
+            <FontAwesome5 name="exclamation-circle" size={16} color="#E67E22" />
+            <Text style={styles.unsavedText}>You have unsaved changes</Text>
+          </View>
+        )}
+
+        {/* Statistics Card */}
+        <View style={styles.statsCard}>
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{stats.total}</Text>
+              <Text style={styles.statLabel}>Total</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statNumber, { color: '#4CAF50' }]}>{stats.present}</Text>
+              <Text style={styles.statLabel}>Present</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statNumber, { color: '#F44336' }]}>{stats.absent}</Text>
+              <Text style={styles.statLabel}>Absent</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statNumber, { color: '#FFC107' }]}>{stats.late}</Text>
+              <Text style={styles.statLabel}>Late</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statNumber, { color: '#3498DB' }]}>{stats.percentage}%</Text>
+              <Text style={styles.statLabel}>Rate</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Controls */}
+        <View style={styles.controlsContainer}>
+          <View style={styles.quickActionsRow}>
+            <TouchableOpacity style={styles.quickActionBtn} onPress={markAllPresent}>
+              <FontAwesome5 name="check-circle" size={16} color="#4CAF50" />
+              <Text style={styles.quickActionText}>All Present</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.quickActionBtn} onPress={markAllAbsent}>
+              <FontAwesome5 name="times-circle" size={16} color="#F44336" />
+              <Text style={styles.quickActionText}>All Absent</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
+            {(['all', 'present', 'absent', 'late'] as const).map((status) => (
               <TouchableOpacity
-                style={styles.clearFiltersButton}
-                onPress={() => {
-                  setSearchQuery('');
-                  setFilterStatus('all');
-                }}
+                key={status}
+                style={[
+                  styles.filterChip,
+                  filterStatus === status && styles.activeFilterChip
+                ]}
+                onPress={() => setFilterStatus(status)}
               >
-                <Text style={styles.clearFiltersText}>Clear Filters</Text>
+                <Text style={[
+                  styles.filterChipText,
+                  filterStatus === status && styles.activeFilterChipText
+                ]}>
+                  {status === 'all' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <View style={styles.searchBar}>
+            <Feather name="search" size={18} color="#7F8C8D" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search students..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholderTextColor="#BDC3C7"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <FontAwesome5 name="times" size={16} color="#7F8C8D" />
               </TouchableOpacity>
             )}
           </View>
-        )}
-      />
+        </View>
+
+        {/* Students List */}
+        <View style={styles.studentsContainer}>
+          {filteredStudents.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <FontAwesome5 name="users" size={48} color="#BDC3C7" />
+              <Text style={styles.emptyText}>
+                {searchQuery || filterStatus !== 'all' ? 'No students match your filters' : 'No students found'}
+              </Text>
+              {(searchQuery || filterStatus !== 'all') && (
+                <TouchableOpacity
+                  style={styles.clearFiltersButton}
+                  onPress={() => {
+                    setSearchQuery('');
+                    setFilterStatus('all');
+                  }}
+                >
+                  <Text style={styles.clearFiltersText}>Clear Filters</Text>
+                </TouchableOpacity>
+              )}
+            </View>) : (
+            filteredStudents.map(student => renderStudentItem(student))
+          )}
+        </View>
+      </ScrollView>
 
       {/* Remarks Modal */}
       <Modal
@@ -949,7 +889,7 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
                 style={styles.modalCloseButton}
                 onPress={() => setShowRemarksModal(false)}
               >
-                <FontAwesome5 name="times" size={20} color="#718096" />
+                <FontAwesome5 name="times" size={20} color="#7F8C8D" />
               </TouchableOpacity>
             </View>
             
@@ -967,7 +907,7 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
               multiline={true}
               numberOfLines={4}
               maxLength={200}
-              placeholderTextColor="#A0AEC0"
+              placeholderTextColor="#BDC3C7"
             />
             
             <Text style={styles.charCount}>
@@ -999,40 +939,51 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F7FAFC',
+    backgroundColor: '#F8F9FC',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 100,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F7FAFC',
+    backgroundColor: '#F8F9FC',
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#4A5568',
+    color: '#7F8C8D',
     fontWeight: '500',
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F7FAFC',
+    backgroundColor: '#F8F9FC',
     paddingHorizontal: 32,
   },
   errorText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#4A5568',
+    color: '#7F8C8D',
     textAlign: 'center',
     lineHeight: 24,
   },
   retryButton: {
     marginTop: 24,
-    backgroundColor: '#4299E1',
+    backgroundColor: '#3498DB',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   retryButtonText: {
     color: '#FFFFFF',
@@ -1065,29 +1016,25 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 18,
     fontWeight: '600',
-    color: '#2D3748',
+    color: '#2C3E50',
   },
   headerCard: {
-    overflow: 'hidden',
-    marginHorizontal: 16,
-    marginTop: 8,
-    borderRadius: 12,
+    margin: 16,
+    borderRadius: 16,
+    elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 8,
   },
   headerGradient: {
-    flex: 1,
+    borderRadius: 16,
+    padding: 20,
   },
   headerContent: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -1099,50 +1046,45 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: '#FFFFFF',
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#FFFFFF',
-    opacity: 0.9,
-    marginTop: 2,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginTop: 4,
   },
   headerButton: {
-  paddingHorizontal: 16,
-  paddingVertical: 8,
-  borderRadius: 8,
-  backgroundColor: '#000000', // Solid black background
-},
-  headerButtonHighlight: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#1CB5E0',
   },
   headerButtonText: {
-  fontSize: 16,
-  fontWeight: '600',
-  color: '#FFFFFF', // White text
-},
-  headerButtonTextHighlight: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#FFFFFF',
   },
   headerButtonTextDisabled: {
-    color: '#A0AEC0',
+    color: '#BDC3C7',
   },
   unsavedBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FED7D7',
+    backgroundColor: '#FEF5E7',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 12,
     marginHorizontal: 16,
     marginTop: 8,
     borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#E67E22',
   },
   unsavedText: {
     marginLeft: 8,
     fontSize: 14,
-    color: '#C53030',
+    color: '#D68910',
     fontWeight: '500',
   },
   statsCard: {
@@ -1151,15 +1093,21 @@ const styles = StyleSheet.create({
     marginTop: 12,
     borderRadius: 12,
     paddingVertical: 16,
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  statDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: '#E8E8E8',
   },
   statItem: {
     alignItems: 'center',
@@ -1167,66 +1115,65 @@ const styles = StyleSheet.create({
   statNumber: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#2D3748',
+    color: '#2C3E50',
   },
   statLabel: {
     fontSize: 12,
-    color: '#718096',
-    marginTop: 2,
+    color: '#7F8C8D',
+    marginTop: 4,
     fontWeight: '500',
   },
-  controlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  controlsContainer: {
     paddingHorizontal: 16,
     marginTop: 12,
   },
-  quickActions: {
+  quickActionsRow: {
     flexDirection: 'row',
-    marginRight: 12,
+    marginBottom: 12,
   },
-  quickActionButton: {
+  quickActionBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderRadius: 8,
     marginRight: 8,
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.1,
     shadowRadius: 2,
-    elevation: 1,
   },
   quickActionText: {
-    marginLeft: 6,
-    fontSize: 12,
+    marginLeft: 8,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#4A5568',
+    color: '#2C3E50',
   },
-  filterScroll: {
-    flex: 1,
+  filterRow: {
+    marginTop: 4,
   },
-  filterButton: {
+  filterChip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
     marginRight: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E0E0E0',
   },
-  activeFilterButton: {
-    backgroundColor: '#4299E1',
-    borderColor: '#4299E1',
+  activeFilterChip: {
+    backgroundColor: '#3498DB',
+    borderColor: '#3498DB',
   },
-  filterButtonText: {
+  filterChipText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#718096',
+    color: '#7F8C8D',
   },
-  activeFilterButtonText: {
+  activeFilterChipText: {
     color: '#FFFFFF',
   },
   searchContainer: {
@@ -1240,143 +1187,128 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 12,
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.1,
     shadowRadius: 2,
-    elevation: 1,
   },
   searchInput: {
     flex: 1,
     marginLeft: 12,
     fontSize: 16,
-    color: '#2D3748',
+    color: '#2C3E50',
   },
-  listContainer: {
+  instructionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EBF4FF',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3498DB',
+  },
+  instructionText: {
+    marginLeft: 8,
+    fontSize: 13,
+    color: '#2874A6',
+    fontWeight: '500',
+    flex: 1,
+  },
+  studentsContainer: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 100,
   },
   studentCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  studentCardModified: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#4299E1',
-  },
-  studentInfo: {
+  studentHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 12,
   },
-  studentAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  studentAvatarPresent: {
-    backgroundColor: '#48BB78',
-  },
-  studentAvatarAbsent: {
-    backgroundColor: '#F56565',
-  },
-  studentAvatarLate: {
-    backgroundColor: '#ED8936',
-  },
-  studentInitial: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  studentDetails: {
+  studentTextInfo: {
     flex: 1,
-  },
-  studentNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    marginRight: 12,
   },
   studentName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2D3748',
-  },
-  modifiedIndicator: {
-    marginLeft: 8,
-  },
-  modifiedText: {
-    fontSize: 16,
-    color: '#4299E1',
-    fontWeight: '700',
+    color: '#2C3E50',
+    marginBottom: 4,
   },
   studentId: {
-    fontSize: 14,
-    color: '#718096',
-    marginTop: 2,
+    fontSize: 12,
+    color: '#7F8C8D',
+    marginBottom: 4,
+  },
+  remarksPreviewContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
   },
   remarksPreview: {
     fontSize: 12,
-    color: '#4299E1',
-    marginTop: 4,
+    color: '#7F8C8D',
     fontStyle: 'italic',
-  },
-  attendanceControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  statusButtons: {
-    flexDirection: 'row',
-  },
-  statusButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginRight: 8,
-    borderWidth: 1,
-  },
-  presentButton: {
-    backgroundColor: '#F0FFF4',
-    borderColor: '#48BB78',
-  },
-  absentButton: {
-    backgroundColor: '#FFF5F5',
-    borderColor: '#F56565',
-  },
-  lateButton: {
-    backgroundColor: '#FFFAF0',
-    borderColor: '#ED8936',
-  },
-  activeStatusButton: {
-    backgroundColor: '#4299E1',
-    borderColor: '#4299E1',
-  },
-  statusButtonText: {
-    marginLeft: 4,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#4A5568',
-  },
-  activeStatusButtonText: {
-    color: '#FFFFFF',
+    marginLeft: 6,
+    flex: 1,
   },
   remarksButton: {
     padding: 8,
     borderRadius: 8,
     backgroundColor: '#F7FAFC',
+  },
+  statusButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statusButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    marginHorizontal: 4,
+    borderWidth: 1.5,
+  },
+  presentButton: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#4CAF50',
+  },
+  absentButton: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#F44336',
+  },
+  lateButton: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFC107',
+  },
+  statusButtonActive: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  statusButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  statusButtonTextActive: {
+    color: '#FFFFFF',
   },
   emptyContainer: {
     alignItems: 'center',
@@ -1385,14 +1317,14 @@ const styles = StyleSheet.create({
   emptyText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#718096',
+    color: '#7F8C8D',
     textAlign: 'center',
   },
   clearFiltersButton: {
     marginTop: 16,
     paddingHorizontal: 20,
     paddingVertical: 10,
-    backgroundColor: '#4299E1',
+    backgroundColor: '#3498DB',
     borderRadius: 8,
   },
   clearFiltersText: {
@@ -1428,7 +1360,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#2D3748',
+    color: '#2C3E50',
   },
   modalCloseButton: {
     padding: 4,
@@ -1436,23 +1368,24 @@ const styles = StyleSheet.create({
   modalStudentName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#4299E1',
+    color: '#3498DB',
     marginBottom: 16,
   },
   remarksInput: {
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E0E0E0',
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    color: '#2D3748',
+    color: '#2C3E50',
     textAlignVertical: 'top',
     minHeight: 100,
+    backgroundColor: '#FAFAFA',
   },
   charCount: {
     textAlign: 'right',
     fontSize: 12,
-    color: '#718096',
+    color: '#7F8C8D',
     marginTop: 8,
   },
   modalButtons: {
@@ -1465,22 +1398,32 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 8,
     marginRight: 12,
+    backgroundColor: '#F7FAFC',
   },
   modalCancelText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#718096',
+    color: '#7F8C8D',
   },
   modalSaveButton: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: '#4299E1',
+    backgroundColor: '#3498DB',
     borderRadius: 8,
   },
   modalSaveText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  presentButtonActive: {
+    backgroundColor: '#4CAF50',
+  },
+  absentButtonActive: {
+    backgroundColor: '#F44336',
+  },
+  lateButtonActive: {
+    backgroundColor: '#FFC107',
   },
 });
 

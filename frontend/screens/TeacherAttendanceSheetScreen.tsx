@@ -23,7 +23,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { API_BASE_URL } from '../config/api';
@@ -76,6 +76,20 @@ interface ClassInfo {
   name: string;
   section: string;
 }
+
+// Helper function to format date as dd/mm/yyyy
+const formatDateDDMMYYYY = (date: Date): string => {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+// Helper function to parse dd/mm/yyyy string to Date
+const parseDateDDMMYYYY = (dateString: string): Date => {
+  const [day, month, year] = dateString.split('/').map(Number);
+  return new Date(year, month - 1, day);
+};
 
 const TeacherAttendanceSheetScreen: React.FC<Props> = ({ route, navigation }) => {
   const { classId, className } = route.params as unknown as TeacherAttendanceSheetParams;
@@ -346,64 +360,65 @@ const TeacherAttendanceSheetScreen: React.FC<Props> = ({ route, navigation }) =>
   };
 
   const downloadAllPDFs = async () => {
-  setDownloadingAll(true);
-  
-  try {
-    const downloadPromises = attendanceHistory.map(async (attendance) => {
-      try {
-        return await generateAttendancePDF(attendance);
-      } catch (error) {
-        console.error(`Error generating PDF for ${attendance.date}:`, error);
-        return null;
-      }
-    });
-
-    const pdfUris = await Promise.all(downloadPromises);
-    const successfulDownloads = pdfUris.filter(uri => uri !== null);
-
-    if (Platform.OS === 'ios') {
-      // Share PDFs one by one on iOS since shareAsync expects a single string
-      for (const uri of successfulDownloads) {
-        if (uri) {
-          await Sharing.shareAsync(uri, {
-            UTI: '.pdf',
-            mimeType: 'application/pdf',
-          });
+    setDownloadingAll(true);
+    
+    try {
+      const downloadPromises = attendanceHistory.map(async (attendance) => {
+        try {
+          return await generateAttendancePDF(attendance);
+        } catch (error) {
+          console.error(`Error generating PDF for ${attendance.date}:`, error);
+          return null;
         }
-      }
-    } else {
-      // Save all PDFs to Downloads folder on Android
-      const downloadDir = `${FileSystem.documentDirectory}Downloads/`;
-      await FileSystem.makeDirectoryAsync(downloadDir, { intermediates: true });
+      });
 
-      for (let i = 0; i < successfulDownloads.length; i++) {
-        const uri = successfulDownloads[i];
-        if (uri) {
-          const attendance = attendanceHistory[i];
-          const fileName = `attendance_${className}_${attendance.date}.pdf`;
-          const newUri = `${downloadDir}${fileName}`;
-          await FileSystem.moveAsync({ from: uri, to: newUri });
+      const pdfUris = await Promise.all(downloadPromises);
+      const successfulDownloads = pdfUris.filter(uri => uri !== null);
+
+      if (Platform.OS === 'ios') {
+        // Share PDFs one by one on iOS since shareAsync expects a single string
+        for (const uri of successfulDownloads) {
+          if (uri) {
+            await Sharing.shareAsync(uri, {
+              UTI: '.pdf',
+              mimeType: 'application/pdf',
+            });
+          }
         }
-      }
+      } else {
+        // Save all PDFs to Downloads folder on Android
+        const downloadDir = `${FileSystem.documentDirectory}Downloads/`;
+        await FileSystem.makeDirectoryAsync(downloadDir, { intermediates: true });
 
-      Alert.alert(
-        'Download Complete',
-        `Successfully downloaded ${successfulDownloads.length} PDF files`,
-        [{ text: 'OK' }]
-      );
+        for (let i = 0; i < successfulDownloads.length; i++) {
+          const uri = successfulDownloads[i];
+          if (uri) {
+            const attendance = attendanceHistory[i];
+            const fileName = `attendance_${className}_${attendance.date}.pdf`;
+            const newUri = `${downloadDir}${fileName}`;
+            await FileSystem.moveAsync({ from: uri, to: newUri });
+          }
+        }
+
+        Alert.alert(
+          'Download Complete',
+          `Successfully downloaded ${successfulDownloads.length} PDF files`,
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error downloading all PDFs:', error);
+      Alert.alert('Error', 'Failed to download some PDF files');
+    } finally {
+      setDownloadingAll(false);
     }
-  } catch (error) {
-    console.error('Error downloading all PDFs:', error);
-    Alert.alert('Error', 'Failed to download some PDF files');
-  } finally {
-    setDownloadingAll(false);
-  }
-};
+  };
 
   // Generate HTML content for PDF
   const generateHTMLContent = (attendance: AttendanceData): string => {
     const date = new Date(attendance.date);
-    const formattedDate = date.toLocaleDateString('en-US', {
+    const formattedDate = formatDateDDMMYYYY(date);
+    const fullDate = date.toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
@@ -522,7 +537,7 @@ const TeacherAttendanceSheetScreen: React.FC<Props> = ({ route, navigation }) =>
           <div class="header">
             <div class="title">Attendance Sheet</div>
             <div class="subtitle">${classInfo?.name || className} - ${classInfo?.section || ''}</div>
-            <div class="date">${formattedDate}</div>
+            <div class="date">${formattedDate} (${fullDate})</div>
           </div>
 
           <div class="stats">
@@ -563,7 +578,7 @@ const TeacherAttendanceSheetScreen: React.FC<Props> = ({ route, navigation }) =>
           </table>
 
           <div class="footer">
-            Generated on ${new Date().toLocaleString()} | Total Students: ${attendance.totalStudents}
+            Generated on ${formatDateDDMMYYYY(new Date())} at ${new Date().toLocaleTimeString()} | Total Students: ${attendance.totalStudents}
           </div>
         </body>
       </html>
@@ -642,11 +657,7 @@ const TeacherAttendanceSheetScreen: React.FC<Props> = ({ route, navigation }) =>
   // Render attendance row
   const renderAttendanceRow = (attendance: AttendanceSummary, index: number) => {
     const date = new Date(attendance.date);
-    const formattedDate = date.toLocaleDateString('en-US', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    });
+    const formattedDate = formatDateDDMMYYYY(date);
     const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
 
     return (
@@ -693,10 +704,10 @@ const TeacherAttendanceSheetScreen: React.FC<Props> = ({ route, navigation }) =>
             {downloadingPDF ? (
               <ActivityIndicator size="small" color="#4299E1" />
             ) : (
-              <FontAwesome5 name="download" size={14} color="#4299E1" />
+              <FontAwesome5 name="download" size={16} color="#4299E1" />
             )}
           </TouchableOpacity>
-          <FontAwesome5 name="eye" size={14} color="#718096" style={{ marginLeft: 8 }} />
+          <FontAwesome5 name="eye" size={16} color="#718096" style={{ marginLeft: 12 }} />
         </View>
       </TouchableOpacity>
     );
@@ -719,7 +730,7 @@ const TeacherAttendanceSheetScreen: React.FC<Props> = ({ route, navigation }) =>
             <FontAwesome5 name="times" size={20} color="#4A5568" />
           </TouchableOpacity>
           <Text style={styles.modalTitle}>
-            Attendance Details - {selectedAttendance?.date}
+            {selectedAttendance && formatDateDDMMYYYY(new Date(selectedAttendance.date))}
           </Text>
           <TouchableOpacity
             style={styles.modaldownloadButton}
@@ -817,133 +828,132 @@ const TeacherAttendanceSheetScreen: React.FC<Props> = ({ route, navigation }) =>
   }
 
   return (
-  <SafeAreaView style={styles.safeArea}>
-    <StatusBar hidden={true} />
-    
-    {/* Date Filter Section */}
-    <View style={styles.filterContainer}>
-      <View style={styles.dateFilters}>
-        <TouchableOpacity
-          style={styles.dateButton}
-          onPress={() => {
-            setDatePickerMode('start');
-            setShowDatePicker(true);
-          }}
-        >
-          <FontAwesome5 name="calendar-alt" size={14} color="#4299E1" />
-          <Text style={styles.dateButtonText}>
-            From: {startDate.toLocaleDateString()}
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={styles.dateButton}
-          onPress={() => {
-            setDatePickerMode('end');
-            setShowDatePicker(true);
-          }}
-        >
-          <FontAwesome5 name="calendar-alt" size={14} color="#4299E1" />
-          <Text style={styles.dateButtonText}>
-            To: {endDate.toLocaleDateString()}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-
-    {/* Date Picker */}
-    {showDatePicker && (
-      <DateTimePicker
-        value={datePickerMode === 'start' ? startDate : endDate}
-        mode="date"
-        display="default"
-        onChange={handleDateChange}
-        maximumDate={new Date()}
-        minimumDate={new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)} // 1 year ago
-      />
-    )}
-
-    {/* Main Content */}
-    {attendanceHistory.length === 0 ? (
-      <View style={styles.emptyContainer}>
-        <FontAwesome5 name="clipboard-list" size={64} color="#CBD5E0" />
-        <Text style={styles.emptyTitle}>No Attendance Records</Text>
-        <Text style={styles.emptySubtitle}>
-          No attendance sheets found for the selected date range.
-        </Text>
-        <TouchableOpacity 
-          style={styles.refreshButton}
-          onPress={onRefresh}
-        >
-          <Text style={styles.refreshButtonText}>Refresh</Text>
-        </TouchableOpacity>
-      </View>
-    ) : (
-      <>
-        {/* Header Row */}
-        <View style={styles.headerRow}>
-          <Text style={styles.headerCell}>Date</Text>
-          <Text style={styles.headerCell}>Statistics</Text>
-          <Text style={styles.headerCell}>Rate</Text>
-          <Text style={styles.headerCell}>Actions</Text>
-        </View>
-
-        {/* Attendance List */}
-        <ScrollView
-          style={styles.scrollView}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={['#4299E1']}
-              tintColor="#4299E1"
-            />
-          }
-          onMomentumScrollEnd={(event) => {
-            const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
-            const paddingToBottom = 20;
-            if (layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom) {
-              loadMore();
-            }
-          }}
-        >
-          {attendanceHistory.map((attendance, index) =>
-            renderAttendanceRow(attendance, index)
-          )}
-          
-          {/* Load More Button */}
-          {hasMore && (
-            <TouchableOpacity
-              style={styles.loadMoreButton}
-              onPress={loadMore}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator size="small" color="#4299E1" />
-              ) : (
-                <>
-                  <FontAwesome5 name="chevron-down" size={16} color="#4299E1" />
-                  <Text style={styles.loadMoreText}>Load More</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
-          
-          {/* Pagination Info */}
-          <View style={styles.paginationInfo}>
-            <Text style={styles.paginationText}>
-              Page {currentPage} of {totalPages} • {attendanceHistory.length} records
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar hidden={true} />
+      {/* Date Filter Section */}
+      <View style={styles.filterContainer}>
+        <View style={styles.dateFilters}>
+          <TouchableOpacity
+            style={styles.dateButton}
+            onPress={() => {
+              setDatePickerMode('start');
+              setShowDatePicker(true);
+            }}
+          >
+            <FontAwesome5 name="calendar-alt" size={14} color="#4299E1" />
+            <Text style={styles.dateButtonText}>
+              From: {formatDateDDMMYYYY(startDate)}
             </Text>
-          </View>
-        </ScrollView>
-      </>
-    )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.dateButton}
+            onPress={() => {
+              setDatePickerMode('end');
+              setShowDatePicker(true);
+            }}
+          >
+            <FontAwesome5 name="calendar-alt" size={14} color="#4299E1" />
+            <Text style={styles.dateButtonText}>
+              To: {formatDateDDMMYYYY(endDate)}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-    {/* Detailed Attendance Modal */}
-    {renderDetailedModal()}
-  </SafeAreaView>
-);
+      {/* Date Picker */}
+      {showDatePicker && (
+        <DateTimePicker
+          value={datePickerMode === 'start' ? startDate : endDate}
+          mode="date"
+          display="default"
+          onChange={handleDateChange}
+          maximumDate={new Date()}
+          minimumDate={new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)} // 1 year ago
+        />
+      )}
+
+      {/* Main Content */}
+      {attendanceHistory.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <FontAwesome5 name="clipboard-list" size={64} color="#CBD5E0" />
+          <Text style={styles.emptyTitle}>No Attendance Records</Text>
+          <Text style={styles.emptySubtitle}>
+            No attendance sheets found for the selected date range.
+          </Text>
+          <TouchableOpacity 
+            style={styles.refreshButton}
+            onPress={onRefresh}
+          >
+            <Text style={styles.refreshButtonText}>Refresh</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <>
+          {/* Header Row */}
+          <View style={styles.headerRow}>
+            <Text style={[styles.headerCell, { flex: 1.2 }]}>Date</Text>
+            <Text style={[styles.headerCell, { flex: 1.8 }]}>Statistics</Text>
+            <Text style={[styles.headerCell, { flex: 0.8 }]}>Rate</Text>
+            <Text style={[styles.headerCell, { flex: 1 }]}>Actions</Text>
+          </View>
+
+          {/* Attendance List */}
+          <ScrollView
+            style={styles.scrollView}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={['#4299E1']}
+                tintColor="#4299E1"
+              />
+            }
+            onMomentumScrollEnd={(event) => {
+              const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+              const paddingToBottom = 20;
+              if (layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom) {
+                loadMore();
+              }
+            }}
+          >
+            {attendanceHistory.map((attendance, index) =>
+              renderAttendanceRow(attendance, index)
+            )}
+            
+            {/* Load More Button */}
+            {hasMore && (
+              <TouchableOpacity
+                style={styles.loadMoreButton}
+                onPress={loadMore}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color="#4299E1" />
+                ) : (
+                  <>
+                    <FontAwesome5 name="chevron-down" size={16} color="#4299E1" />
+                    <Text style={styles.loadMoreText}>Load More</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+            
+            {/* Pagination Info */}
+            <View style={styles.paginationInfo}>
+              <Text style={styles.paginationText}>
+                Page {currentPage} of {totalPages} • {attendanceHistory.length} records
+              </Text>
+            </View>
+          </ScrollView>
+        </>
+      )}
+
+      {/* Detailed Attendance Modal */}
+      {renderDetailedModal()}
+    </SafeAreaView>
+  );
 };
 
 // Styles
@@ -998,7 +1008,7 @@ const styles = StyleSheet.create({
   filterContainer: {
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
     elevation: 2,
@@ -1017,14 +1027,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#EBF8FF',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#BEE3F8',
   },
   dateButtonText: {
-    marginLeft: 8,
+    marginLeft: 10,
     fontSize: 14,
     color: '#2B6CB0',
     fontWeight: '500',
@@ -1064,11 +1074,11 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     backgroundColor: '#4299E1',
-    paddingVertical: 16,
-    paddingHorizontal: 8,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    alignItems: 'center',
   },
   headerCell: {
-    flex: 1,
     fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
@@ -1080,23 +1090,26 @@ const styles = StyleSheet.create({
   attendanceRow: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
-    paddingVertical: 16,
-    paddingHorizontal: 8,
+    paddingVertical: 20,
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
+    alignItems: 'center',
   },
   evenRow: {
     backgroundColor: '#F8F9FA',
   },
   dateCell: {
-    flex: 1,
+    flex: 1.2,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 4,
   },
   dateText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
     color: '#2D3748',
+    marginBottom: -15,
   },
   dayText: {
     fontSize: 12,
@@ -1104,31 +1117,34 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   statsCell: {
-    flex: 1,
+    flex: 1.8,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
+    paddingHorizontal: 6,
   },
   statContainer: {
     alignItems: 'center',
+    minWidth: 45,
   },
   statNumber: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#2D3748',
   },
   statLabel: {
     fontSize: 10,
     color: '#718096',
-    marginTop: 2,
+    marginTop: 3,
   },
   percentageCell: {
-    flex: 1,
+    flex: 0.8,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 4,
   },
   percentage: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700',
   },
   actionCell: {
@@ -1136,9 +1152,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 4,
   },
   downloadButton: {
-    padding: 8,
+    padding: 10,
     borderRadius: 6,
     backgroundColor: '#EBF8FF',
   },
@@ -1162,8 +1179,9 @@ const styles = StyleSheet.create({
   },
   paginationInfo: {
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingVertical: 18,
     paddingHorizontal: 16,
+    marginBottom: 8,
   },
   paginationText: {
     fontSize: 12,
@@ -1179,7 +1197,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
@@ -1190,7 +1208,7 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
   },
   modalCloseButton: {
-    padding: 8,
+    padding: 10,
     borderRadius: 6,
     backgroundColor: '#F7FAFC',
   },
@@ -1203,7 +1221,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
   },
   modaldownloadButton: {
-    padding: 8,
+    padding: 10,
     borderRadius: 6,
     backgroundColor: '#EBF8FF',
   },
@@ -1221,7 +1239,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 16,
+    padding: 18,
     marginBottom: 16,
     elevation: 2,
     shadowColor: '#000',
@@ -1232,16 +1250,18 @@ const styles = StyleSheet.create({
   statItem: {
     flex: 1,
     alignItems: 'center',
+    paddingHorizontal: 4,
   },
   statValue: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
     color: '#2D3748',
+    marginBottom: 4,
   },
   studentsContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 16,
+    padding: 18,
     marginBottom: 16,
     elevation: 2,
     shadowColor: '#000',
@@ -1250,17 +1270,17 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
   },
   studentsTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
     color: '#2D3748',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   studentRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
@@ -1270,6 +1290,7 @@ const styles = StyleSheet.create({
   },
   studentInfo: {
     flex: 1,
+    paddingRight: 12,
   },
   studentName: {
     fontSize: 16,
@@ -1277,14 +1298,14 @@ const styles = StyleSheet.create({
     color: '#2D3748',
   },
   studentRemarks: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#718096',
     marginTop: 4,
     fontStyle: 'italic',
   },
   statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 16,
     marginLeft: 12,
   },

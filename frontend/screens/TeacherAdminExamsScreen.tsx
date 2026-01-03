@@ -19,7 +19,6 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
 import React, { useEffect, useState, useCallback } from 'react';
 import { Feather, FontAwesome5, Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
@@ -27,14 +26,11 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { API_BASE_URL} from '../config/api';
 
-// API URL with configurable timeout
-const API_URL = API_BASE_URL; // Change this to your server IP/domain
-const API_TIMEOUT = 15000; // 15 seconds timeout
-
+const API_URL = API_BASE_URL;
+const API_TIMEOUT = 15000;
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherAdminExams'>;
 
-// Interfaces
 interface ExamSubject {
   subjectId: string;
   subjectName: string;
@@ -91,7 +87,6 @@ interface ExamFormData {
 const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
   const { classId, className } = route.params;
 
-  // States
   const [exams, setExams] = useState<Exam[]>([]);
   const [availableSubjects, setAvailableSubjects] = useState<Subject[]>([]);
   const [classInfo, setClassInfo] = useState<ClassInfo | null>(null);
@@ -100,7 +95,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
   const [isConnected, setIsConnected] = useState(true);
   const [token, setToken] = useState<string | null>(null);
 
-  // Modal states
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [showEditModal, setShowEditModal] = useState<boolean>(false);
   const [showSubjectsModal, setShowSubjectsModal] = useState<boolean>(false);
@@ -108,7 +102,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
   const [editingExam, setEditingExam] = useState<Exam | null>(null);
   const [managingExam, setManagingExam] = useState<Exam | null>(null);
 
-  // Form states
   const [formData, setFormData] = useState<ExamFormData>({
     examName: '',
     examCode: '',
@@ -119,30 +112,27 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof ExamFormData, string>>>({});
   const [submitting, setSubmitting] = useState<boolean>(false);
 
-  // Set header options
   React.useLayoutEffect(() => {
     navigation.setOptions({
-      headerTitle: `${className} - Exams`,
+      title: `Exams - ${className}`,
+      headerShown: true,
       headerStyle: {
-        backgroundColor: '#1CB5E0',
+        backgroundColor: '#FFFFFF',
       },
-      headerTintColor: '#FFFFFF',
-      headerTitleStyle: {
-        fontWeight: '600',
-        fontSize: 18,
-      },
+      headerTintColor: '#2D3748',
+      headerShadowVisible: false,
+      headerBackTitle: 'Back',
       headerRight: () => (
         <TouchableOpacity
           onPress={handleAddExam}
           style={styles.headerButton}
         >
-          <FontAwesome5 name="plus" size={16} color="#FFFFFF" />
+          <FontAwesome5 name="plus" size={16} color="#4299E1" />
         </TouchableOpacity>
       ),
     });
   }, [navigation, className]);
 
-  // Network connectivity check
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
       setIsConnected(state.isConnected ?? false);
@@ -150,7 +140,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
     return () => unsubscribe();
   }, []);
 
-  // Initialize authentication and load data
   useEffect(() => {
     initializeScreen();
   }, []);
@@ -167,21 +156,16 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
       }
       
       setToken(storedToken);
-      
-      // Load exams and subjects
       await Promise.all([
         loadExams(storedToken),
         loadAvailableSubjects(storedToken)
       ]);
-      
-      console.log('Screen initialized successfully');
     } catch (error) {
       console.error('Initialization error:', error);
       Alert.alert('Error', 'Failed to initialize screen');
     }
   };
 
-  // Get authenticated API client
   const getAuthenticatedClient = (authToken = token) => {
     return axios.create({
       baseURL: API_URL,
@@ -194,22 +178,17 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
     });
   };
 
-  // Load exams for the class
   const loadExams = async (authToken = token) => {
     if (!authToken) return;
     
     try {
       setLoading(true);
       const apiClient = getAuthenticatedClient(authToken);
-      
       const response = await apiClient.get(`/exams/class/${classId}`);
       
       const { exams: fetchedExams, classInfo: fetchedClassInfo } = response.data;
-      
       setExams(fetchedExams || []);
       setClassInfo(fetchedClassInfo);
-      
-      console.log('Exams loaded:', fetchedExams?.length || 0);
     } catch (error) {
       console.error('Error loading exams:', error);
       if (axios.isAxiosError(error)) {
@@ -225,22 +204,18 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   };
 
-  // Load available subjects for the class
   const loadAvailableSubjects = async (authToken = token) => {
     if (!authToken) return;
     
     try {
       const apiClient = getAuthenticatedClient(authToken);
       const response = await apiClient.get(`/subjects/class/${classId}/get-or-init`);
-      
       setAvailableSubjects(response.data.subjects || []);
-      console.log('Subjects loaded:', response.data.subjects?.length || 0);
     } catch (error) {
       console.error('Error loading subjects:', error);
     }
   };
 
-  // Add new exam
   const addExam = async () => {
     if (!validateForm()) return;
     
@@ -262,8 +237,7 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
         }))
       };
       
-      const response = await apiClient.post(`/exams/class/${classId}`, examData);
-      
+      await apiClient.post(`/exams/class/${classId}`, examData);
       Alert.alert('Success', 'Exam created successfully');
       setShowAddModal(false);
       resetForm();
@@ -278,7 +252,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   };
 
-  // Update exam
   const updateExam = async () => {
     if (!validateBasicForm() || !editingExam) return;
     
@@ -294,7 +267,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
       };
       
       await apiClient.put(`/exams/class/${classId}/exam/${editingExam._id}`, updateData);
-      
       Alert.alert('Success', 'Exam updated successfully');
       setShowEditModal(false);
       setEditingExam(null);
@@ -310,7 +282,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   };
 
-  // Delete exam
   const deleteExam = (exam: Exam) => {
     Alert.alert(
       'Delete Exam',
@@ -324,7 +295,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
             try {
               const apiClient = getAuthenticatedClient();
               await apiClient.delete(`/exams/class/${classId}/exam/${exam._id}`);
-              
               Alert.alert('Success', 'Exam deleted successfully');
               await loadExams();
             } catch (error) {
@@ -339,7 +309,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
     );
   };
 
-  // Add subjects to exam
   const addSubjectsToExam = async (examId: string, subjects: ExamSubject[]) => {
     try {
       setSubmitting(true);
@@ -363,7 +332,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   };
 
-  // Remove subject from exam
   const removeSubjectFromExam = (examId: string, subjectId: string, subjectName: string) => {
     Alert.alert(
       'Remove Subject',
@@ -377,7 +345,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
             try {
               const apiClient = getAuthenticatedClient();
               await apiClient.delete(`/exams/class/${classId}/exam/${examId}/subject/${subjectId}`);
-              
               Alert.alert('Success', 'Subject removed successfully');
               await loadExams();
             } catch (error) {
@@ -392,7 +359,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
     );
   };
 
-  // Form validation
   const validateForm = (): boolean => {
     const errors: Partial<Record<keyof ExamFormData, string>> = {};
     
@@ -435,7 +401,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
     return Object.keys(errors).length === 0;
   };
 
-  // Reset form
   const resetForm = () => {
     setFormData({
       examName: '',
@@ -447,7 +412,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
     setFormErrors({});
   };
 
-  // Handle logout
   const handleLogout = async () => {
     await AsyncStorage.multiRemove(['teacherToken', 'teacherData', 'userRole']);
     navigation.reset({
@@ -456,13 +420,11 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
     });
   };
 
-  // Handle refresh
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     loadExams(token);
   }, [token]);
 
-  // Event handlers
   const handleAddExam = () => {
     resetForm();
     setShowAddModal(true);
@@ -493,7 +455,7 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
       teacherName: subject.teacherId?.name,
       teacherEmail: subject.teacherId?.email,
       credits: subject.credits,
-      fullMarks: 100, // Default value
+      fullMarks: 100,
     };
     
     setFormData(prev => ({
@@ -518,7 +480,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
     }));
   };
 
-  // Format date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-IN', {
@@ -528,7 +489,6 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
     });
   };
 
-  // Format duration for display
   const formatDuration = (minutes: number) => {
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
@@ -538,155 +498,153 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
     return `${mins}m`;
   };
 
-  // Render exam card
   const renderExamCard = ({ item }: { item: Exam }) => (
-    <View style={styles.examCard}>
-      <LinearGradient
-        colors={item.isActive ? ['#1CB5E0', '#38EF7D'] : ['#8A94A6', '#B0B7C3']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.examGradientBorder}
-      >
-        <View style={styles.examCardContent}>
-          <View style={styles.examHeader}>
-            <View style={styles.examTitleContainer}>
-              <Text style={styles.examName}>{item.examName}</Text>
-              <Text style={styles.examCode}>Code: {item.examCode}</Text>
-            </View>
-            <View style={styles.examActions}>
-              <TouchableOpacity
-                onPress={() => handleEditExam(item)}
-                style={styles.actionButton}
-              >
-                <Feather name="edit-2" size={16} color="#1CB5E0" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => deleteExam(item)}
-                style={styles.actionButton}
-              >
-                <Feather name="trash-2" size={16} color="#FF6B6B" />
-              </TouchableOpacity>
-            </View>
-          </View>
-          
-          <View style={styles.examDetails}>
-            <View style={styles.examDetailItem}>
-              <FontAwesome5 name="calendar-alt" size={12} color="#8A94A6" />
-              <Text style={styles.examDetailText}>{formatDate(item.examDate)}</Text>
-            </View>
-            
-            <View style={styles.examDetailItem}>
-              <FontAwesome5 name="clock" size={12} color="#8A94A6" />
-              <Text style={styles.examDetailText}>{formatDuration(item.duration)}</Text>
-            </View>
-            
-            <View style={styles.statusContainer}>
-              <View style={[styles.statusDot, { backgroundColor: item.isActive ? '#38EF7D' : '#FF6B6B' }]} />
-              <Text style={styles.statusText}>
-                {item.isActive ? 'Active' : 'Inactive'}
-              </Text>
-            </View>
-          </View>
-          
-          <View style={styles.subjectsSection}>
-            <View style={styles.subjectsSummary}>
-              <Text style={styles.subjectsCount}>
-                {item.subjects.length} Subject{item.subjects.length !== 1 ? 's' : ''}
-              </Text>
-              <TouchableOpacity
-                onPress={() => handleManageSubjects(item)}
-                style={styles.manageSubjectsButton}
-              >
-                <Text style={styles.manageSubjectsText}>Manage</Text>
-              </TouchableOpacity>
-            </View>
-            
-            {item.subjects.length > 0 && (
-              <View style={styles.subjectsList}>
-                {item.subjects.slice(0, 3).map((subject, index) => (
-                  <View key={subject.subjectId} style={styles.subjectChip}>
-                    <Text style={styles.subjectChipText}>{subject.subjectName}</Text>
-                  </View>
-                ))}
-                {item.subjects.length > 3 && (
-                  <View style={styles.subjectChip}>
-                    <Text style={styles.subjectChipText}>+{item.subjects.length - 3}</Text>
-                  </View>
-                )}
-              </View>
-            )}
-          </View>
+  <View style={styles.examCard}>
+    <View style={styles.examCardHeader}>
+      <View style={styles.examIconContainer}>
+        <FontAwesome5 name="clipboard-list" size={20} color="#4299E1" />
+      </View>
+      
+      <View style={styles.examHeaderInfo}>
+        <View style={styles.examTitleRow}>
+          <Text style={styles.examName}>{item.examName}</Text>
+          {item.examCode && (
+            <Text style={styles.examCode}>({item.examCode})</Text>
+          )}
         </View>
-      </LinearGradient>
-    </View>
-  );
+        
+        <View style={[styles.statusBadge, { 
+          backgroundColor: item.isActive ? '#C6F6D5' : '#FED7D7',
+          alignSelf: 'flex-start'
+        }]}>
+          <View style={[styles.statusDot, { 
+            backgroundColor: item.isActive ? '#38A169' : '#E53E3E' 
+          }]} />
+          <Text style={[styles.statusText, {
+            color: item.isActive ? '#22543D' : '#742A2A'
+          }]}>
+            {item.isActive ? 'Active' : 'Inactive'}
+          </Text>
+        </View>
+      </View>
 
-  // Loading screen
+      <View style={styles.examActions}>
+        <TouchableOpacity
+          onPress={() => handleEditExam(item)}
+          style={styles.iconButton}
+        >
+          <Feather name="edit-2" size={16} color="#4299E1" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => deleteExam(item)}
+          style={[styles.iconButton, { marginTop: 8 }]}
+        >
+          <Feather name="trash-2" size={16} color="#E53E3E" />
+        </TouchableOpacity>
+      </View>
+    </View>
+
+    <View style={styles.examMeta}>
+      <View style={styles.metaItem}>
+        <FontAwesome5 name="calendar-alt" size={11} color="#718096" />
+        <Text style={styles.metaText}>{formatDate(item.examDate)}</Text>
+      </View>
+      
+      <View style={styles.metaItem}>
+        <FontAwesome5 name="clock" size={11} color="#718096" />
+        <Text style={styles.metaText}>{formatDuration(item.duration)}</Text>
+      </View>
+    </View>
+    
+    <View style={styles.subjectsInfo}>
+      <View style={styles.subjectsSummary}>
+        <FontAwesome5 name="book" size={11} color="#4299E1" />
+        <Text style={styles.subjectsCountText}>
+          {item.subjects.length} Subject{item.subjects.length !== 1 ? 's' : ''}
+        </Text>
+      </View>
+      <TouchableOpacity
+        onPress={() => handleManageSubjects(item)}
+        style={styles.manageButton}
+      >
+        <Text style={styles.manageText}>Manage</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+);
+
   if (loading && !refreshing) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <StatusBar backgroundColor="#1CB5E0" barStyle="light-content" />
-        <ActivityIndicator size="large" color="#1CB5E0" />
-        <Text style={styles.loadingText}>Loading exams...</Text>
+      <SafeAreaView style={styles.container}>
+        <StatusBar hidden={true} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4299E1" />
+          <Text style={styles.loadingText}>Loading exams...</Text>
+        </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar backgroundColor="#1CB5E0" barStyle="light-content" />
+    <SafeAreaView style={styles.container}>
+      <StatusBar hidden={true} />
       
       <ScrollView
-        style={styles.container}
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={['#1CB5E0', '#38EF7D']}
+            colors={['#4299E1']}
+            tintColor="#4299E1"
           />
         }
       >
-        {/* Class Info Header */}
-        {classInfo && (
-          <View style={styles.classInfoContainer}>
-            <LinearGradient
-              colors={['#1CB5E0', '#38EF7D']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.classInfoGradient}
-            >
-              <View style={styles.classInfoContent}>
-                <FontAwesome5 name="clipboard-list" size={24} color="#FFFFFF" />
-                <View style={styles.classInfoDetails}>
-                  <Text style={styles.classInfoName}>{classInfo.name}</Text>
-                  <Text style={styles.classInfoSection}>Section {classInfo.section}</Text>
-                </View>
-                <View style={styles.examCount}>
-                  <Text style={styles.examCountNumber}>{exams.length}</Text>
-                  <Text style={styles.examCountLabel}>Exams</Text>
-                </View>
+        {/* Summary Card */}
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryTitle}>Class Overview</Text>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryItem}>
+              <View style={[styles.summaryIconContainer, { backgroundColor: '#EBF8FF' }]}>
+                <FontAwesome5 name="chalkboard-teacher" size={20} color="#4299E1" />
               </View>
-            </LinearGradient>
+              <Text style={styles.summaryNumber}>{classInfo?.name || className}</Text>
+              <Text style={styles.summaryLabel}>{classInfo?.section ? `Section ${classInfo.section}` : 'Class'}</Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <View style={[styles.summaryIconContainer, { backgroundColor: '#F0FFF4' }]}>
+                <FontAwesome5 name="clipboard-list" size={20} color="#38A169" />
+              </View>
+              <Text style={styles.summaryNumber}>{exams.length}</Text>
+              <Text style={styles.summaryLabel}>Total Exams</Text>
+            </View>
           </View>
-        )}
+        </View>
 
         {/* Exams List */}
         {exams.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <FontAwesome5 name="clipboard-list" size={48} color="#B0B7C3" />
+            <FontAwesome5 name="clipboard-list" size={64} color="#CBD5E0" />
             <Text style={styles.emptyTitle}>No Exams Yet</Text>
-            <Text style={styles.emptyText}>
-              Start by creating exams for your class. Click the + button in the header to create your first exam.
+            <Text style={styles.emptySubtitle}>
+              Start by creating exams for your class. Tap the + button in the header to create your first exam.
             </Text>
           </View>
         ) : (
-          <FlatList
-            data={exams}
-            renderItem={renderExamCard}
-            keyExtractor={(item) => item._id}
-            scrollEnabled={false}
-            contentContainerStyle={styles.examsList}
-          />
+          <View style={styles.examsSection}>
+            <Text style={styles.sectionTitle}>Exams</Text>
+            <Text style={styles.sectionSubtitle}>
+              Manage exams and their subjects
+            </Text>
+            <FlatList
+              data={exams}
+              renderItem={renderExamCard}
+              keyExtractor={(item) => item._id}
+              scrollEnabled={false}
+              contentContainerStyle={styles.examsList}
+            />
+          </View>
         )}
       </ScrollView>
 
@@ -697,51 +655,44 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
         presentationStyle="pageSheet"
       >
         <SafeAreaView style={styles.modalContainer}>
-          <LinearGradient
-            colors={['#1CB5E0', '#38EF7D']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.modalHeaderGradient}
-          >
-            <View style={styles.modalHeader}>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowAddModal(false);
-                  resetForm();
-                }}
-                style={styles.modalHeaderButton}
-              >
-                <Ionicons name="close" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Create Exam</Text>
-              <TouchableOpacity
-                onPress={addExam}
-                disabled={submitting}
-                style={styles.modalHeaderButton}
-              >
-                {submitting ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Ionicons name="checkmark" size={24} color="#FFFFFF" />
-                )}
-              </TouchableOpacity>
-            </View>
-          </LinearGradient>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              onPress={() => {
+                setShowAddModal(false);
+                resetForm();
+              }}
+              style={styles.modalCloseButton}
+            >
+              <Ionicons name="close" size={20} color="#2D3748" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Create Exam</Text>
+            <TouchableOpacity
+              onPress={addExam}
+              disabled={submitting}
+              style={styles.modalSaveButton}
+            >
+              {submitting ? (
+                <ActivityIndicator size="small" color="#4299E1" />
+              ) : (
+                <Ionicons name="checkmark" size={20} color="#4299E1" />
+              )}
+            </TouchableOpacity>
+          </View>
           
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
               <View style={styles.formContainer}>
                 <View style={styles.formGroup}>
                   <Text style={styles.formLabel}>Exam Name *</Text>
-                  <View style={[styles.inputContainer, formErrors.examName && styles.inputContainerError]}>
-                    <FontAwesome5 name="clipboard-list" size={16} color="#8A94A6" style={styles.inputIcon} />
+                  <View style={[styles.inputContainer, formErrors.examName && styles.inputError]}>
+                    <FontAwesome5 name="clipboard-list" size={14} color="#A0AEC0" style={styles.inputIcon} />
                     <TextInput
                       style={styles.formInput}
                       value={formData.examName}
                       onChangeText={(text) => setFormData(prev => ({ ...prev, examName: text }))}
                       placeholder="Enter exam name"
                       autoCapitalize="words"
-                      placeholderTextColor="#B0B7C3"
+                      placeholderTextColor="#A0AEC0"
                     />
                   </View>
                   {formErrors.examName && (
@@ -751,15 +702,15 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
 
                 <View style={styles.formGroup}>
                   <Text style={styles.formLabel}>Exam Code *</Text>
-                  <View style={[styles.inputContainer, formErrors.examCode && styles.inputContainerError]}>
-                    <FontAwesome5 name="tag" size={16} color="#8A94A6" style={styles.inputIcon} />
+                  <View style={[styles.inputContainer, formErrors.examCode && styles.inputError]}>
+                    <FontAwesome5 name="tag" size={14} color="#A0AEC0" style={styles.inputIcon} />
                     <TextInput
                       style={styles.formInput}
                       value={formData.examCode}
                       onChangeText={(text) => setFormData(prev => ({ ...prev, examCode: text }))}
                       placeholder="Enter exam code"
                       autoCapitalize="characters"
-                      placeholderTextColor="#B0B7C3"
+                      placeholderTextColor="#A0AEC0"
                     />
                   </View>
                   {formErrors.examCode && (
@@ -773,7 +724,7 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
                     style={styles.inputContainer}
                     onPress={() => setShowDatePicker(true)}
                   >
-                    <FontAwesome5 name="calendar-alt" size={16} color="#8A94A6" style={styles.inputIcon} />
+                    <FontAwesome5 name="calendar-alt" size={14} color="#A0AEC0" style={styles.inputIcon} />
                     <Text style={styles.dateText}>
                       {formData.examDate.toLocaleDateString('en-IN')}
                     </Text>
@@ -782,15 +733,15 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
 
                 <View style={styles.formGroup}>
                   <Text style={styles.formLabel}>Duration (minutes) *</Text>
-                  <View style={[styles.inputContainer, formErrors.duration && styles.inputContainerError]}>
-                    <FontAwesome5 name="clock" size={16} color="#8A94A6" style={styles.inputIcon} />
+                  <View style={[styles.inputContainer, formErrors.duration && styles.inputError]}>
+                    <FontAwesome5 name="clock" size={14} color="#A0AEC0" style={styles.inputIcon} />
                     <TextInput
                       style={styles.formInput}
                       value={formData.duration}
                       onChangeText={(text) => setFormData(prev => ({ ...prev, duration: text }))}
                       placeholder="Enter duration in minutes"
                       keyboardType="numeric"
-                      placeholderTextColor="#B0B7C3"
+                      placeholderTextColor="#A0AEC0"
                     />
                   </View>
                   {formErrors.duration && (
@@ -805,52 +756,54 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
                   )}
                   
                   <View style={styles.subjectsFormSection}>
-                    <View style={styles.availableSubjects}>
-                      <Text style={styles.sectionTitle}>Available Subjects</Text>
-                      {availableSubjects.filter(sub => !formData.subjects.find(s => s.subjectId === sub._id)).map(subject => (
-                        <TouchableOpacity
-                          key={subject._id}
-                          style={styles.availableSubjectItem}
-                          onPress={() => handleAddSubjectToForm(subject)}
-                        >
-                          <View style={styles.subjectInfo}>
-                            <Text style={styles.subjectName}>{subject.name}</Text>
-                            <Text style={styles.subjectCredits}>{subject.credits} credits</Text>
-                          </View>
-                          <FontAwesome5 name="plus" size={14} color="#1CB5E0" />
-                        </TouchableOpacity>
-                      ))}
-                    </View>
+                    {availableSubjects.filter(sub => !formData.subjects.find(s => s.subjectId === sub._id)).length > 0 && (
+                      <View style={styles.availableSubjectsSection}>
+                        <Text style={styles.subSectionTitle}>Available Subjects</Text>
+                        {availableSubjects.filter(sub => !formData.subjects.find(s => s.subjectId === sub._id)).map(subject => (
+                          <TouchableOpacity
+                            key={subject._id}
+                            style={styles.availableSubjectItem}
+                            onPress={() => handleAddSubjectToForm(subject)}
+                          >
+                            <View style={styles.subjectItemInfo}>
+                              <Text style={styles.subjectItemName}>{subject.name}</Text>
+                              <Text style={styles.subjectItemCredits}>{subject.credits} credits</Text>
+                            </View>
+                            <FontAwesome5 name="plus" size={14} color="#4299E1" />
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
 
                     {formData.subjects.length > 0 && (
-                      <View style={styles.selectedSubjects}>
-                        <Text style={styles.sectionTitle}>Selected Subjects</Text>
+                      <View style={styles.selectedSubjectsSection}>
+                        <Text style={styles.subSectionTitle}>Selected Subjects ({formData.subjects.length})</Text>
                         {formData.subjects.map(subject => (
                           <View key={subject.subjectId} style={styles.selectedSubjectItem}>
-                            <View style={styles.subjectItemContent}>
-                              <View style={styles.subjectInfo}>
-                                <Text style={styles.subjectName}>{subject.subjectName}</Text>
-                                <Text style={styles.subjectCredits}>{subject.credits} credits</Text>
+                            <View style={styles.selectedSubjectContent}>
+                              <View style={styles.subjectItemInfo}>
+                                <Text style={styles.subjectItemName}>{subject.subjectName}</Text>
+                                <Text style={styles.subjectItemCredits}>{subject.credits} credits</Text>
                                 {subject.teacherName && (
-                                  <Text style={styles.teacherName}>Teacher: {subject.teacherName}</Text>
+                                  <Text style={styles.subjectTeacher}>Teacher: {subject.teacherName}</Text>
                                 )}
                               </View>
-                              <View style={styles.marksInput}>
-                                <Text style={styles.marksLabel}>Full Marks:</Text>
+                              <View style={styles.marksInputContainer}>
+                                <Text style={styles.marksLabel}>Marks:</Text>
                                 <TextInput
-                                  style={styles.marksTextInput}
+                                  style={styles.marksInput}
                                   value={subject.fullMarks.toString()}
                                   onChangeText={(text) => handleUpdateSubjectMarks(subject.subjectId, parseInt(text) || 0)}
                                   keyboardType="numeric"
-                                  placeholderTextColor="#B0B7C3"
+                                  placeholderTextColor="#A0AEC0"
                                 />
                               </View>
                             </View>
                             <TouchableOpacity
                               onPress={() => handleRemoveSubjectFromForm(subject.subjectId)}
-                              style={styles.removeSubjectButton}
+                              style={styles.removeButton}
                             >
-                              <FontAwesome5 name="trash" size={14} color="#FF6B6B" />
+                              <FontAwesome5 name="trash" size={12} color="#742A2A" />
                             </TouchableOpacity>
                           </View>
                         ))}
@@ -871,52 +824,44 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
         presentationStyle="pageSheet"
       >
         <SafeAreaView style={styles.modalContainer}>
-          <LinearGradient
-            colors={['#1CB5E0', '#38EF7D']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.modalHeaderGradient}
-          >
-            <View style={styles.modalHeader}>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowEditModal(false);
-                  setEditingExam(null);
-                  resetForm();
-                }}
-                style={styles.modalHeaderButton}
-              >
-                <Ionicons name="close" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Edit Exam</Text>
-              <TouchableOpacity
-                onPress={updateExam}
-                disabled={submitting}
-                style={styles.modalHeaderButton}
-              >
-                {submitting ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Ionicons name="checkmark" size={24} color="#FFFFFF" />
-                )}
-              </TouchableOpacity>
-            </View>
-          </LinearGradient>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              onPress={() => {setShowEditModal(false);
+                setEditingExam(null);
+                resetForm();
+              }}
+              style={styles.modalCloseButton}
+            >
+              <Ionicons name="close" size={20} color="#2D3748" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Edit Exam</Text>
+            <TouchableOpacity
+              onPress={updateExam}
+              disabled={submitting}
+              style={styles.modalSaveButton}
+            >
+              {submitting ? (
+                <ActivityIndicator size="small" color="#4299E1" />
+              ) : (
+                <Ionicons name="checkmark" size={20} color="#4299E1" />
+              )}
+            </TouchableOpacity>
+          </View>
           
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
               <View style={styles.formContainer}>
                 <View style={styles.formGroup}>
                   <Text style={styles.formLabel}>Exam Name *</Text>
-                  <View style={[styles.inputContainer, formErrors.examName && styles.inputContainerError]}>
-                    <FontAwesome5 name="clipboard-list" size={16} color="#8A94A6" style={styles.inputIcon} />
+                  <View style={[styles.inputContainer, formErrors.examName && styles.inputError]}>
+                    <FontAwesome5 name="clipboard-list" size={14} color="#A0AEC0" style={styles.inputIcon} />
                     <TextInput
                       style={styles.formInput}
                       value={formData.examName}
                       onChangeText={(text) => setFormData(prev => ({ ...prev, examName: text }))}
                       placeholder="Enter exam name"
                       autoCapitalize="words"
-                      placeholderTextColor="#B0B7C3"
+                      placeholderTextColor="#A0AEC0"
                     />
                   </View>
                   {formErrors.examName && (
@@ -926,15 +871,15 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
 
                 <View style={styles.formGroup}>
                   <Text style={styles.formLabel}>Exam Code *</Text>
-                  <View style={[styles.inputContainer, formErrors.examCode && styles.inputContainerError]}>
-                    <FontAwesome5 name="tag" size={16} color="#8A94A6" style={styles.inputIcon} />
+                  <View style={[styles.inputContainer, formErrors.examCode && styles.inputError]}>
+                    <FontAwesome5 name="tag" size={14} color="#A0AEC0" style={styles.inputIcon} />
                     <TextInput
                       style={styles.formInput}
                       value={formData.examCode}
                       onChangeText={(text) => setFormData(prev => ({ ...prev, examCode: text }))}
                       placeholder="Enter exam code"
                       autoCapitalize="characters"
-                      placeholderTextColor="#B0B7C3"
+                      placeholderTextColor="#A0AEC0"
                     />
                   </View>
                   {formErrors.examCode && (
@@ -948,7 +893,7 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
                     style={styles.inputContainer}
                     onPress={() => setShowDatePicker(true)}
                   >
-                    <FontAwesome5 name="calendar-alt" size={16} color="#8A94A6" style={styles.inputIcon} />
+                    <FontAwesome5 name="calendar-alt" size={14} color="#A0AEC0" style={styles.inputIcon} />
                     <Text style={styles.dateText}>
                       {formData.examDate.toLocaleDateString('en-IN')}
                     </Text>
@@ -957,15 +902,15 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
 
                 <View style={styles.formGroup}>
                   <Text style={styles.formLabel}>Duration (minutes) *</Text>
-                  <View style={[styles.inputContainer, formErrors.duration && styles.inputContainerError]}>
-                    <FontAwesome5 name="clock" size={16} color="#8A94A6" style={styles.inputIcon} />
+                  <View style={[styles.inputContainer, formErrors.duration && styles.inputError]}>
+                    <FontAwesome5 name="clock" size={14} color="#A0AEC0" style={styles.inputIcon} />
                     <TextInput
                       style={styles.formInput}
                       value={formData.duration}
                       onChangeText={(text) => setFormData(prev => ({ ...prev, duration: text }))}
                       placeholder="Enter duration in minutes"
                       keyboardType="numeric"
-                      placeholderTextColor="#B0B7C3"
+                      placeholderTextColor="#A0AEC0"
                     />
                   </View>
                   {formErrors.duration && (
@@ -985,26 +930,18 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
         presentationStyle="pageSheet"
       >
         <SafeAreaView style={styles.modalContainer}>
-          <LinearGradient
-            colors={['#1CB5E0', '#38EF7D']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.modalHeaderGradient}
-          >
-            <View style={styles.modalHeader}>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowSubjectsModal(false);
-                  setManagingExam(null);
-                }}
-                style={styles.modalHeaderButton}
-              >
-                <Ionicons name="close" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Manage Subjects</Text>
-              <View style={styles.modalHeaderButton} />
-            </View>
-          </LinearGradient>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              onPress={() => {
+                setShowSubjectsModal(false);
+                setManagingExam(null);
+              }}
+              style={styles.modalCloseButton}
+            >
+              <Ionicons name="close" size={20} color="#2D3748" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Manage Subjects</Text>
+          </View>
           
           <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
             {managingExam && (
@@ -1016,28 +953,28 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
 
                 {/* Current Subjects */}
                 <View style={styles.currentSubjectsSection}>
-                  <Text style={styles.sectionTitle}>Current Subjects ({managingExam.subjects.length})</Text>
+                  <Text style={styles.subSectionTitle}>Current Subjects ({managingExam.subjects.length})</Text>
                   {managingExam.subjects.length === 0 ? (
                     <View style={styles.emptySubjectsContainer}>
+                      <FontAwesome5 name="book-open" size={32} color="#CBD5E0" />
                       <Text style={styles.emptySubjectsText}>No subjects added yet</Text>
                     </View>
                   ) : (
                     managingExam.subjects.map((subject) => (
                       <View key={subject.subjectId} style={styles.currentSubjectItem}>
                         <View style={styles.subjectItemContent}>
-                          <View style={styles.subjectInfo}>
-                            <Text style={styles.subjectName}>{subject.subjectName}</Text>
-                            <Text style={styles.subjectCredits}>{subject.credits} credits</Text>
-                            <Text style={styles.subjectMarks}>Full Marks: {subject.fullMarks}</Text>
+                          <View style={styles.subjectItemInfo}>
+                            <Text style={styles.subjectItemName}>{subject.subjectName}</Text>
+                            <Text style={styles.subjectItemCredits}>{subject.credits} credits • {subject.fullMarks} marks</Text>
                             {subject.teacherName && (
-                              <Text style={styles.teacherName}>Teacher: {subject.teacherName}</Text>
+                              <Text style={styles.subjectTeacher}>Teacher: {subject.teacherName}</Text>
                             )}
                           </View>
                           <TouchableOpacity
                             onPress={() => removeSubjectFromExam(managingExam._id, subject.subjectId, subject.subjectName)}
-                            style={styles.removeSubjectButton}
+                            style={styles.removeButton}
                           >
-                            <FontAwesome5 name="trash" size={14} color="#FF6B6B" />
+                            <FontAwesome5 name="trash" size={12} color="#742A2A" />
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -1047,9 +984,10 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
 
                 {/* Add More Subjects */}
                 <View style={styles.addSubjectsSection}>
-                  <Text style={styles.sectionTitle}>Add More Subjects</Text>
+                  <Text style={styles.subSectionTitle}>Add More Subjects</Text>
                   {availableSubjects.filter(sub => !managingExam.subjects.find(s => s.subjectId === sub._id)).length === 0 ? (
                     <View style={styles.emptySubjectsContainer}>
+                      <FontAwesome5 name="check-circle" size={32} color="#48BB78" />
                       <Text style={styles.emptySubjectsText}>All subjects have been added</Text>
                     </View>
                   ) : (
@@ -1070,14 +1008,14 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
                             addSubjectsToExam(managingExam._id, newSubjects);
                           }}
                         >
-                          <View style={styles.subjectInfo}>
-                            <Text style={styles.subjectName}>{subject.name}</Text>
-                            <Text style={styles.subjectCredits}>{subject.credits} credits</Text>
+                          <View style={styles.subjectItemInfo}>
+                            <Text style={styles.subjectItemName}>{subject.name}</Text>
+                            <Text style={styles.subjectItemCredits}>{subject.credits} credits</Text>
                             {subject.teacherId && (
-                              <Text style={styles.teacherName}>Teacher: {subject.teacherId.name}</Text>
+                              <Text style={styles.subjectTeacher}>Teacher: {subject.teacherId.name}</Text>
                             )}
                           </View>
-                          <FontAwesome5 name="plus" size={14} color="#1CB5E0" />
+                          <FontAwesome5 name="plus" size={14} color="#4299E1" />
                         </TouchableOpacity>
                       ))
                   )}
@@ -1107,7 +1045,7 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
       {/* Network Status */}
       {!isConnected && (
         <View style={styles.networkStatus}>
-          <MaterialIcons name="wifi-off" size={16} color="#FF6B6B" />
+          <MaterialIcons name="wifi-off" size={14} color="#E53E3E" />
           <Text style={styles.networkStatusText}>No internet connection</Text>
         </View>
       )}
@@ -1116,197 +1054,213 @@ const TeacherAdminExamsScreen: React.FC<Props> = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
   container: {
+    flex: 1,
+    backgroundColor: '#F7FAFC',
+  },
+  scrollView: {
     flex: 1,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F7FAFC',
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#8A94A6',
+    marginTop: 12,
+    fontSize: 14,
+    color: '#718096',
     fontWeight: '500',
   },
   headerButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 20,
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#EBF8FF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
   },
-  classInfoContainer: {
+  summaryCard: {
+    backgroundColor: '#FFFFFF',
     margin: 16,
     marginBottom: 8,
-  },
-  classInfoGradient: {
-    borderRadius: 16,
     padding: 20,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  classInfoContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  classInfoDetails: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  classInfoName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 4,
-  },
-  classInfoSection: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontWeight: '500',
-  },
-  examCount: {
-    alignItems: 'center',
-  },
-  examCountNumber: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  examCountLabel: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontWeight: '500',
-  },
-  examsList: {
-    paddingBottom: 20,
-  },
-  examCard: {
-    marginHorizontal: 16,
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2D3748',
     marginBottom: 16,
   },
-  examGradientBorder: {
-    borderRadius: 16,
-    padding: 2,
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
-  examCardContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 16,
+  summaryItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  summaryIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  summaryNumber: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#2D3748',
+    marginBottom: 4,
+  },
+  summaryLabel: {
+    fontSize: 12,
+    color: '#718096',
+    fontWeight: '500',
+  },
+  examsSection: {
+    marginTop: 8,
+    paddingHorizontal: 16,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#2D3748',
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#718096',
+    marginBottom: 16,
+  },
+  examsList: {
+    paddingBottom: 16,
+  },
+  examCard: {
+  backgroundColor: '#FFFFFF',
+  borderRadius: 16,
+  marginBottom: 12,
+  padding: 16,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.05,
+  shadowRadius: 8,
+  elevation: 2,
+},
+  examCardHeader: {
+  flexDirection: 'row',
+  alignItems: 'flex-start',
+  marginBottom: 12,
+},
+  examIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EBF8FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  examInfo: {
+    flex: 1,
   },
   examHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  examTitleContainer: {
-    flex: 1,
+    alignItems: 'center',
+    marginBottom: 8,
   },
   examName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 4,
+    color: '#2D3748',
+    marginRight: 8,
   },
   examCode: {
-    fontSize: 14,
-    color: '#64748B',
+    fontSize: 13,
+    color: '#718096',
     fontWeight: '500',
   },
-  examActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: 8,
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  examDetails: {
+  examMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    marginBottom: 16,
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 12,
   },
-  examDetailItem: {
+  metaItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  examDetailText: {
-    fontSize: 14,
-    color: '#64748B',
+  metaText: {
+    fontSize: 12,
+    color: '#718096',
     fontWeight: '500',
   },
-  statusContainer: {
+  statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   statusText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '600',
   },
-  subjectsSection: {
+  subjectsInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
-    paddingTop: 16,
   },
   subjectsSummary: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    gap: 6,
   },
-  subjectsCount: {
-    fontSize: 16,
+  subjectsCountText: {
+    fontSize: 13,
+    color: '#4299E1',
     fontWeight: '600',
-    color: '#1E293B',
   },
-  manageSubjectsButton: {
-    backgroundColor: '#1CB5E0',
+  manageButton: {
+    backgroundColor: '#EBF8FF',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
   },
-  manageSubjectsText: {
-    fontSize: 14,
-    color: '#FFFFFF',
+  manageText: {
+    fontSize: 13,
+    color: '#4299E1',
     fontWeight: '600',
   },
-  subjectsList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  subjectChip: {
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-  },
-  subjectChipText: {
-    fontSize: 12,
-    color: '#3730A3',
-    fontWeight: '500',
+ examActions: {
+  marginLeft: 12,
+},
+  iconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F7FAFC',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   emptyContainer: {
     flex: 1,
@@ -1316,57 +1270,66 @@ const styles = StyleSheet.create({
     paddingVertical: 64,
   },
   emptyTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#1E293B',
+    color: '#2D3748',
     marginTop: 16,
     marginBottom: 8,
-    textAlign: 'center',
   },
-  emptyText: {
-    fontSize: 16,
-    color: '#64748B',
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#718096',
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 20,
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  modalHeaderGradient: {
-    paddingTop: 8,
+    backgroundColor: '#F7FAFC',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
   },
-  modalHeaderButton: {
-    width: 40,
-    height: 40,
+  modalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F7FAFC',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#2D3748',
+  },
+  modalSaveButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EBF8FF',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalContent: {
     flex: 1,
   },
   formContainer: {
-    padding: 20,
+    padding: 16,
   },
   formGroup: {
     marginBottom: 20,
   },
   formLabel: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#1E293B',
+    color: '#2D3748',
     marginBottom: 8,
   },
   inputContainer: {
@@ -1376,44 +1339,41 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 12,
   },
-  inputContainerError: {
-    borderColor: '#EF4444',
+  inputError: {
+    borderColor: '#FC8181',
   },
   inputIcon: {
-    marginRight: 12,
+    marginRight: 10,
   },
   formInput: {
     flex: 1,
-    fontSize: 16,
-    color: '#1E293B',
+    fontSize: 15,
+    color: '#2D3748',
   },
   dateText: {
-    fontSize: 16,
-    color: '#1E293B',
     flex: 1,
+    fontSize: 15,
+    color: '#2D3748',
   },
   errorText: {
-    fontSize: 14,
-    color: '#EF4444',
+    fontSize: 12,
+    color: '#E53E3E',
     marginTop: 4,
     fontWeight: '500',
   },
   subjectsFormSection: {
     marginTop: 8,
   },
-  availableSubjects: {
+  availableSubjectsSection: {
     marginBottom: 20,
   },
-  selectedSubjects: {
-    marginTop: 20,
-  },
-  sectionTitle: {
-    fontSize: 16,
+  subSectionTitle: {
+    fontSize: 14,
     fontWeight: '600',
-    color: '#1E293B',
+    color: '#2D3748',
     marginBottom: 12,
   },
   availableSubjectItem: {
@@ -1421,78 +1381,80 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    padding: 16,
+    padding: 14,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginBottom: 8,
   },
+  subjectItemInfo: {
+    flex: 1,
+  },
+  subjectItemName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#2D3748',
+    marginBottom: 4,
+  },
+  subjectItemCredits: {
+    fontSize: 13,
+    color: '#718096',
+  },
+  subjectTeacher: {
+    fontSize: 12,
+    color: '#A0AEC0',
+    marginTop: 2,
+    fontStyle: 'italic',
+  },
+  selectedSubjectsSection: {
+    marginTop: 8,
+  },
   selectedSubjectItem: {
-    backgroundColor: '#F0F9FF',
+    backgroundColor: '#EBF8FF',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: '#BEE3F8',
     marginBottom: 12,
   },
-  subjectItemContent: {
+  selectedSubjectContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    padding: 14,
   },
-  subjectInfo: {
-    flex: 1,
-  },
-  subjectName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  subjectCredits: {
-    fontSize: 14,
-    color: '#64748B',
-    marginBottom: 2,
-  },
-  teacherName: {
-    fontSize: 13,
-    color: '#8A94A6',
-    fontStyle: 'italic',
-  },
-  marksInput: {
+  marksInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
     gap: 8,
   },
   marksLabel: {
-    fontSize: 14,
-    color: '#64748B',
+    fontSize: 13,
+    color: '#718096',
     fontWeight: '500',
   },
-  marksTextInput: {
+  marksInput: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     fontSize: 14,
-    color: '#1E293B',
+    color: '#2D3748',
     minWidth: 60,
     textAlign: 'center',
   },
-  removeSubjectButton: {
-    backgroundColor: '#FEE2E2',
-    borderRadius: 8,
+  removeButton: {
     width: 32,
     height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FED7D7',
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 12,
+    marginLeft: 8,
   },
   subjectsManagementContainer: {
-    padding: 20,
+    padding: 16,
   },
   examInfoHeader: {
     backgroundColor: '#FFFFFF',
@@ -1503,14 +1465,14 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   examInfoTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
-    color: '#1E293B',
+    color: '#2D3748',
     marginBottom: 4,
   },
   examInfoCode: {
-    fontSize: 14,
-    color: '#64748B',
+    fontSize: 13,
+    color: '#718096',
     fontWeight: '500',
   },
   currentSubjectsSection: {
@@ -1523,40 +1485,51 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     marginBottom: 8,
   },
+  subjectItemContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 14,
+  },
   addSubjectsSection: {
     marginTop: 8,
   },
   emptySubjectsContainer: {
-    backgroundColor: '#F8FAFC',
-    padding: 20,
+    backgroundColor: '#F7FAFC',
+    padding: 24,
     borderRadius: 12,
     alignItems: 'center',
   },
   emptySubjectsText: {
-    fontSize: 14,
-    color: '#8A94A6',
-    fontStyle: 'italic',
-  },
-  subjectMarks: {
-    fontSize: 14,
-    color: '#059669',
-    fontWeight: '600',
-    marginTop: 2,
+    fontSize: 13,
+    color: '#A0AEC0',
+    marginTop: 8,
+    textAlign: 'center',
   },
   networkStatus: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#FED7D7',
     paddingVertical: 8,
     paddingHorizontal: 16,
-    gap: 8,
+    gap: 6,
   },
   networkStatusText: {
-    fontSize: 14,
-    color: '#DC2626',
+    fontSize: 12,
+    color: '#742A2A',
     fontWeight: '500',
   },
+  examHeaderInfo: {
+  flex: 1,
+  marginLeft: 12,
+},
+examTitleRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  marginBottom: 8,
+},
 });
 
 export default TeacherAdminExamsScreen;

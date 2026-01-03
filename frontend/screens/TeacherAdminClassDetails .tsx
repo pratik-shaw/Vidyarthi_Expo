@@ -5,30 +5,28 @@ import {
   StyleSheet,
   StatusBar,
   SafeAreaView,
-  FlatList,
   ActivityIndicator,
   RefreshControl,
   Alert,
   ScrollView,
-  Modal,
+  Dimensions,
+  TextInput,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
 import React, { useEffect, useState } from 'react';
-import { Feather, FontAwesome5, Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 
-import { API_BASE_URL} from '../config/api';
+import { API_BASE_URL } from '../config/api';
 
-// API URL with configurable timeout
-const API_URL = API_BASE_URL; // Change this to your server IP/domain
-const API_TIMEOUT = 15000; // 15 seconds timeout
+const { width } = Dimensions.get('window');
+const API_URL = API_BASE_URL;
+const API_TIMEOUT = 15000;
 
-
-// Properly define the route params type
 type TeacherAdminClassDetailsParams = {
   classId: string;
   className: string;
@@ -36,7 +34,6 @@ type TeacherAdminClassDetailsParams = {
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherAdminClassDetails'>;
 
-// Define types
 interface Teacher {
   _id: string;
   name: string;
@@ -72,65 +69,46 @@ interface ClassDetails {
   description?: string;
 }
 
-interface QuickAction {
-  id: string;
-  title: string;
-  description: string;
-  icon: string;
-  color: string;
-  backgroundColor: string;
-}
-
 const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
-  // Get classId from route params with proper type assertion
   const { classId, className } = route.params as unknown as TeacherAdminClassDetailsParams;
   
-  // States
   const [classDetails, setClassDetails] = useState<ClassDetails | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [token, setToken] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'students' | 'teachers' | 'more'>('overview');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [filteredStudents, setFilteredStudents] = useState<Student[]>([]);
   
-  // Set header title with admin badge
   React.useLayoutEffect(() => {
     navigation.setOptions({
-      title: `${className || 'Admin Class'}`,
+      title: `Class Management`,
       headerShown: true,
       headerStyle: {
         backgroundColor: '#FFFFFF',
       },
-      headerTintColor: '#2D3748',
+      headerTintColor: '#2C3E50',
       headerShadowVisible: false,
       headerBackTitle: 'Back',
-      headerRight: () => (
-        <View style={styles.headerBadge}>
-          <FontAwesome5 name="crown" size={12} color="#4299E1" />
-          <Text style={styles.headerBadgeText}>ADMIN</Text>
-        </View>
-      ),
+      headerTitleStyle: {
+        fontWeight: '600',
+        fontSize: 18,
+      },
     });
   }, [navigation, className]);
 
-  // Check network connectivity
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
       setIsConnected(state.isConnected ?? false);
     });
-
-    return () => {
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, []);
 
-  // Load data on component mount
   useEffect(() => {
     const loadData = async () => {
       try {
         const storedToken = await AsyncStorage.getItem('teacherToken');
-        
         if (!storedToken) {
           navigation.reset({
             index: 0,
@@ -138,7 +116,6 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
           });
           return;
         }
-        
         setToken(storedToken);
         fetchClassDetails(storedToken);
       } catch (error) {
@@ -147,11 +124,33 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
         setLoading(false);
       }
     };
-    
     loadData();
   }, [classId]);
 
-  // Get authenticated API client
+  // Filter students based on search query
+  useEffect(() => {
+    if (!classDetails?.studentIds) {
+      setFilteredStudents([]);
+      return;
+    }
+
+    if (!searchQuery.trim()) {
+      setFilteredStudents(classDetails.studentIds);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase().trim();
+    const filtered = classDetails.studentIds.filter((student) => {
+      const nameMatch = student.name?.toLowerCase().includes(query);
+      const idMatch = student.studentId?.toLowerCase().includes(query);
+      const emailMatch = student.email?.toLowerCase().includes(query);
+      
+      return nameMatch || idMatch || emailMatch;
+    });
+
+    setFilteredStudents(filtered);
+  }, [searchQuery, classDetails?.studentIds]);
+
   const getAuthenticatedClient = (authToken = token) => {
     return axios.create({
       baseURL: API_URL,
@@ -164,7 +163,6 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
     });
   };
 
-  // Fetch class details from API
   const fetchClassDetails = async (authToken = token) => {
     setLoading(true);
     setError(null);
@@ -187,7 +185,6 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
       const apiClient = getAuthenticatedClient(authToken);
       const response = await apiClient.get(`/teacher/admin-class`);
       
-      // Transform data to match frontend expectations
       const transformedData = {
         _id: response.data.adminClass._id,
         name: response.data.adminClass.name,
@@ -201,7 +198,6 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
       };
       
       setClassDetails(transformedData);
-      console.log('Admin class details fetched:', transformedData);
     } catch (error) {
       console.error('Error fetching admin class details:', error);
       
@@ -222,13 +218,11 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
     }
   };
 
-  // Handle refresh
   const onRefresh = () => {
     setRefreshing(true);
     fetchClassDetails();
   };
 
-  // Handle session expired
   const handleSessionExpired = () => {
     Alert.alert(
       "Session Expired",
@@ -248,554 +242,438 @@ const TeacherAdminClassDetailsScreen: React.FC<Props> = ({ route, navigation }) 
     );
   };
 
-  // Generate random attendance data
-  const generateAttendanceData = (studentId: string) => {
-    const idToUse = studentId || `default-${Math.random()}`;
-    const seed = idToUse.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const present = 15 + (seed % 10); // Between 15-24 days present
-    const absent = Math.max(1, 2 + (seed % 4)); // Between 2-5 days absent
-    const total = present + absent;
-    const percentage = Math.round((present / total) * 100);
-    
-    return {
-      present,
-      absent,
-      percentage
-    };
+  const handleClearSearch = () => {
+    setSearchQuery('');
   };
 
-  // Quick actions configuration for overview
-  const getQuickActions = (): QuickAction[] => [
-  {
-    id: 'take_attendance',
-    title: 'Take Attendance',
-    description: 'Mark daily attendance',
-    icon: 'clipboard-check',
-    color: '#4299E1',
-    backgroundColor: 'rgba(66, 153, 225, 0.1)'
-  },
-  {
-    id: 'view_reports',
-    title: 'View Reports',
-    description: 'Student performance',
-    icon: 'chart-bar',
-    color: '#48BB78',
-    backgroundColor: 'rgba(72, 187, 120, 0.1)'
-  },
-  {
-    id: 'announcements',
-    title: 'Announcements',
-    description: 'Class notifications',
-    icon: 'bullhorn',
-    color: '#ED8936',
-    backgroundColor: 'rgba(237, 137, 54, 0.1)'
-  },
-  {
-    id: 'chat_room',
-    title: 'Chat Room',
-    description: 'Class discussions',
-    icon: 'comments',
-    color: '#9F7AEA',
-    backgroundColor: 'rgba(159, 122, 234, 0.1)'
-  },
-  {
-    id: 'add_materials',
-    title: 'Add Materials',
-    description: 'Upload resources & files',
-    icon: 'folder-plus',
-    color: '#38B2AC',
-    backgroundColor: 'rgba(56, 178, 172, 0.1)'
-  },
-  {
-    id: 'schedule_events_dates',
-    title: 'Schedule Events & Dates',
-    description: 'Manage calendar & deadlines',
-    icon: 'calendar-alt',
-    color: '#E53E3E',
-    backgroundColor: 'rgba(229, 62, 62, 0.1)'
-  }
-];
-
-  // Handle quick action press
   const handleQuickAction = (actionId: string) => {
-  switch (actionId) {
-    case 'take_attendance':
-navigation.navigate('TeacherAdminTakeAttendance', {
-      classId: classId,
-      className: className,
-    });      break;
-    case 'view_reports':
-  // If showing reports for all students in class
-  navigation.navigate('TeacherAdminStudentReport', {
-    classId: classDetails?._id || classId,
-    className: classDetails?.name || className,
-    studentId: '', // or undefined if made optional
-    studentName: '' // or undefined if made optional
-  });
-  break;
-    case 'announcements':
-      Alert.alert("Coming Soon", "Announcements feature is under development.");
-      break;
-    case 'chat_room':
-      Alert.alert("Coming Soon", "Chat room feature is under development.");
-      break;
-    case 'add_materials':
-      navigation.navigate('TeacherPostMaterial', {
-        subjectId: classDetails?._id || classId,
-        subjectName: classDetails?.name || className,
-        classId: classId,
-        className: className,
-      });
-      break;
-    case 'schedule_events_dates':
-      navigation.navigate('TeacherEventCalendar', {
-      classId: classId,
-      className: className,
-    });
-      break;
-    default:
-      Alert.alert("Coming Soon", "This feature is under development.");
-  }
-};
-
-  // Render tab navigation
-  const renderTabNavigation = () => (
-    <View style={styles.tabContainer}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScrollContent}>
-        {[
-          { key: 'overview', title: 'Overview', icon: 'home' },
-          { key: 'students', title: 'Students', icon: 'user-graduate' },
-          { key: 'teachers', title: 'Teachers', icon: 'chalkboard-teacher' },
-          { key: 'more', title: 'More Options', icon: 'ellipsis-h' }
-        ].map((tab) => (
-          <TouchableOpacity
-            key={tab.key}
-            style={[
-              styles.tabButton,
-              activeTab === tab.key && styles.activeTabButton
-            ]}
-            onPress={() => setActiveTab(tab.key as typeof activeTab)}
-          >
-            <FontAwesome5 
-              name={tab.icon} 
-              size={16} 
-              color={activeTab === tab.key ? '#FFFFFF' : '#718096'} 
-            />
-            <Text style={[
-              styles.tabText,
-              activeTab === tab.key && styles.activeTabText
-            ]}>
-              {tab.title}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
-  );
-
-  // Render overview tab
-  const renderOverviewTab = () => (
-    <View>
-      {/* Quick Actions */}
-      <View style={styles.sectionContainer}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-        
-        <View style={styles.actionsGrid}>
-          {getQuickActions().map((action) => (
-            <TouchableOpacity
-              key={action.id}
-              style={[styles.actionCard, { backgroundColor: action.backgroundColor }]}
-              onPress={() => handleQuickAction(action.id)}
-            >
-              <View style={[styles.actionIconContainer, { backgroundColor: action.color }]}>
-                <FontAwesome5 name={action.icon} size={20} color="#FFFFFF" />
-              </View>
-              <Text style={styles.actionTitle}>{action.title}</Text>
-              <Text style={styles.actionDescription}>{action.description}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      {/* Class Overview Stats */}
-      <View style={styles.sectionContainer}>
-        <Text style={styles.sectionTitle}>Class Overview</Text>
-        
-        <View style={styles.statsContainer}>
-          <View style={[styles.statCard, { borderLeftColor: '#4299E1' }]}>
-            <View style={styles.statHeader}>
-              <FontAwesome5 name="user-graduate" size={20} color="#4299E1" />
-              <Text style={styles.statNumber}>{classDetails?.studentIds?.length || 0}</Text>
-            </View>
-            <Text style={styles.statLabel}>Total Students</Text>
-          </View>
-          
-          <View style={[styles.statCard, { borderLeftColor: '#48BB78' }]}>
-            <View style={styles.statHeader}>
-              <FontAwesome5 name="chalkboard-teacher" size={20} color="#48BB78" />
-              <Text style={styles.statNumber}>{classDetails?.teacherIds?.length || 0}</Text>
-            </View>
-            <Text style={styles.statLabel}>Teachers</Text>
-          </View>
-          
-          <View style={[styles.statCard, { borderLeftColor: '#ED8936' }]}>
-            <View style={styles.statHeader}>
-              <FontAwesome5 name="percentage" size={20} color="#ED8936" />
-              <Text style={styles.statNumber}>87%</Text>
-            </View>
-            <Text style={styles.statLabel}>Avg Attendance</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Class Information */}
-      <View style={styles.sectionContainer}>
-        <Text style={styles.sectionTitle}>Class Information</Text>
-        
-        <View style={styles.infoContainer}>
-          <View style={styles.infoRow}>
-            <FontAwesome5 name="door-open" size={16} color="#718096" />
-            <Text style={styles.infoLabel}>Room:</Text>
-            <Text style={styles.infoValue}>{classDetails?.room || 'Not assigned'}</Text>
-          </View>
-          
-          <View style={styles.infoRow}>
-            <FontAwesome5 name="clock" size={16} color="#718096" />
-            <Text style={styles.infoLabel}>Schedule:</Text>
-            <Text style={styles.infoValue}>{classDetails?.schedule || 'Not set'}</Text>
-          </View>
-          
-          <View style={styles.infoRow}>
-            <FontAwesome5 name="info-circle" size={16} color="#718096" />
-            <Text style={styles.infoLabel}>Description:</Text>
-            <Text style={styles.infoValue}>{classDetails?.description || 'No description'}</Text>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-
-  // Render students tab
-const renderStudentsTab = () => (
-  <View style={styles.sectionContainer}>
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>Students ({classDetails?.studentIds?.length || 0})</Text>
-    </View>
-    
-    {classDetails?.studentIds && classDetails.studentIds.length > 0 ? (
-      <View style={styles.studentsContainer}>
-        {classDetails.studentIds.map((student, index) => (
-          <TouchableOpacity
-            key={student._id || index}
-            style={styles.studentCard}
-            onPress={() => {
-              navigation.navigate('TeacherStudentDetailsScreen', {
-                studentId: student._id,
-                studentName: student.name,
-                classId: classDetails._id || classId,
-                className: classDetails.name || className,
-              });
-            }}
-            activeOpacity={0.7}
-          >
-            <View style={styles.studentInfo}>
-              <View style={styles.studentAvatar}>
-                <Text style={styles.studentInitial}>
-                  {student.name.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-              
-              <View style={styles.studentDetails}>
-                <Text style={styles.studentName}>{student.name}</Text>
-                <Text style={styles.studentId}>ID: {student.studentId || `ST${index + 1001}`}</Text>
-                {student.email && (
-                  <Text style={styles.studentEmail}>{student.email}</Text>
-                )}
-              </View>
-            </View>
-            
-            <View style={styles.studentActions}>
-              <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-            </View>
-          </TouchableOpacity>
-        ))}
-      </View>
-    ) : (
-      <View style={styles.emptyStateContainer}>
-        <FontAwesome5 name="user-graduate" size={48} color="#CBD5E0" />
-        <Text style={styles.emptyStateText}>No students enrolled</Text>
-        <Text style={styles.emptyStateSubtext}>Students will appear here once enrolled</Text>
-      </View>
-    )}
-  </View>
-);
-
-  // Render teachers tab
-  const renderTeachersTab = () => (
-    <View style={styles.sectionContainer}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Teachers ({classDetails?.teacherIds?.length || 0})</Text>
-      </View>
-      
-      {classDetails?.teacherIds && classDetails.teacherIds.length > 0 ? (
-        <View style={styles.teachersContainer}>
-          {classDetails.teacherIds.map((teacher, index) => (
-            <View key={teacher._id || index} style={styles.teacherCard}>
-              <View style={styles.teacherIconContainer}>
-                <FontAwesome5 name="chalkboard-teacher" size={24} color="#FFFFFF" />
-              </View>
-              
-              <View style={styles.teacherDetails}>
-                <Text style={styles.teacherName}>{teacher.name}</Text>
-                <Text style={styles.teacherEmail}>{teacher.email}</Text>
-                {teacher.subject && (
-                  <View style={styles.subjectBadge}>
-                    <Text style={styles.subjectText}>{teacher.subject}</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          ))}
-        </View>
-      ) : (
-        <View style={styles.emptyStateContainer}>
-          <FontAwesome5 name="chalkboard-teacher" size={48} color="#CBD5E0" />
-          <Text style={styles.emptyStateText}>No teachers assigned</Text>
-          <Text style={styles.emptyStateSubtext}>Teachers will appear here once assigned</Text>
-        </View>
-      )}
-    </View>
-  );
-
-  // Render more options tab
-  // Updated renderMoreOptionsTab function for TeacherAdminClassDetailsScreen.tsx
-
-const renderMoreOptionsTab = () => (
-  <View style={styles.sectionContainer}>
-    <Text style={styles.sectionTitle}>More Options</Text>
-    
-    <View style={styles.optionsContainer}>
-      <TouchableOpacity 
-        style={styles.optionItem}
-        onPress={() => {
-          // Navigate to TeacherAdminStudentAcademicSheet
-          navigation.navigate('TeacherAttendanceSheet', {
-            classId: classDetails?._id || classId,
-            className: classDetails?.name || className,
-          });
-        }}      >
-        <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(66, 153, 225, 0.1)' }]}>
-          <FontAwesome5 name="clipboard-list" size={20} color="#4299E1" />
-        </View>
-        <View style={styles.optionContent}>
-          <Text style={styles.optionTitle}>Attendance Sheet</Text>
-          <Text style={styles.optionDescription}>View and manage attendance records</Text>
-        </View>
-        <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-      </TouchableOpacity>
-      
-      <TouchableOpacity 
-        style={styles.optionItem}
-        onPress={() => {
-          // Navigate to Student Report Cards
-          navigation.navigate('TeacherAdminStudentReportCard', {
-            classId: classDetails?._id || classId,
-            className: classDetails?.name || className,
-            studentId: '', // Empty for class-wide report cards
-            studentName: '' // Empty for class-wide report cards
-          });
-        }}
-      >
-        <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(72, 187, 120, 0.1)' }]}>
-          <FontAwesome5 name="file-alt" size={20} color="#48BB78" />
-        </View>
-        <View style={styles.optionContent}>
-          <Text style={styles.optionTitle}>Students Report Card</Text>
-          <Text style={styles.optionDescription}>Generate and view report cards</Text>
-        </View>
-        <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-      </TouchableOpacity>
-
-      <TouchableOpacity 
-        style={styles.optionItem}
-        onPress={() => {
-          // Navigate to Student Report Cards
-          navigation.navigate('TeacherSubjectReport', {
-          subjectId: classDetails?._id || classId, // Using classId as subjectId if not available
+    switch (actionId) {
+      case 'take_attendance':
+        navigation.navigate('TeacherAdminTakeAttendance', {
+          classId: classId,
+          className: className,
+        });
+        break;
+      case 'view_reports':
+        navigation.navigate('TeacherAdminStudentReportCard', {
+          classId: classDetails?._id || classId,
+          className: classDetails?.name || className,
+          studentId: '',
+          studentName: ''
+        });
+        break;
+      case 'add_materials':
+        navigation.navigate('TeacherPostMaterial', {
+          subjectId: classDetails?._id || classId,
           subjectName: classDetails?.name || className,
           classId: classId,
           className: className,
         });
-        }}
-      >
-        <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(103, 161, 161, 0.1)' }]}>
-          <FontAwesome5 name="file-alt" size={20} color="#71c5f6ff" />
-        </View>
-        <View style={styles.optionContent}>
-          <Text style={styles.optionTitle}>Your Subject-wise Report </Text>
-          <Text style={styles.optionDescription}>Report of your teaching subject in class</Text>
-        </View>
-        <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-      </TouchableOpacity>
-      
-      <TouchableOpacity 
-        style={styles.optionItem}
-        onPress={() => {
-          // Navigate to TeacherAdminStudentAcademicSheet
-          navigation.navigate('TeacherAdminStudentAcademicSheet', {
-            classId: classDetails?._id || classId,
-            className: classDetails?.name || className,
-            studentId: '', // Empty for class-wide academic records
-            studentName: '' // Empty for class-wide academic records
-          });
-        }}
-      >
-        <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(237, 137, 54, 0.1)' }]}>
-          <FontAwesome5 name="graduation-cap" size={20} color="#ED8936" />
-        </View>
-        <View style={styles.optionContent}>
-          <Text style={styles.optionTitle}>Students Academic Records</Text>
-          <Text style={styles.optionDescription}>Subject-wise academic performance</Text>
-        </View>
-        <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-      </TouchableOpacity>
+        break;
+      case 'schedule_events_dates':
+        navigation.navigate('TeacherEventCalendar', {
+          classId: classId,
+          className: className,
+        });
+        break;
+      case 'scoring':
+        navigation.navigate('TeacherScoring', {
+          classId: classId,
+          className: className
+        });
+        break;
+      case 'announcements':
+        Alert.alert("Coming Soon", "Announcements feature is under development.");
+        break;
+      case 'chat_room':
+        Alert.alert("Coming Soon", "Chat room feature is under development.");
+        break;
+      default:
+        Alert.alert("Coming Soon", "This feature is under development.");
+    }
+  };
 
-      <TouchableOpacity 
-        style={styles.optionItem}
-         onPress={() => navigation.navigate('TeacherAdminSubjects',{
-          classId: classDetails?._id || classId, // Use actual class ID from details or route params
-          className: classDetails?.name || className  // or whatever the class name is
-         })}
-      >
-        <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(236, 72, 153, 0.1)' }]}>
-          <FontAwesome5 name="book" size={20} color="#EC4899" />
-        </View>
-        <View style={styles.optionContent}>
-          <Text style={styles.optionTitle}>Subjects & Teachers</Text>
-          <Text style={styles.optionDescription}>Manage subjects and teacher assignment</Text>
-        </View>
-        <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-      </TouchableOpacity>
+  const navigateToMoreOption = (screen: string) => {
+    switch (screen) {
+      case 'attendance_sheet':
+        navigation.navigate('TeacherAttendanceSheet', {
+          classId: classDetails?._id || classId,
+          className: classDetails?.name || className,
+        });
+        break;
+      case 'subject_report':
+        navigation.navigate('TeacherSubjectReport', {
+          subjectId: classDetails?._id || classId,
+          subjectName: classDetails?.name || className,
+          classId: classId,
+          className: className,
+        });
+        break;
+      case 'academic_records':
+        navigation.navigate('TeacherAdminStudentAcademicSheet', {
+          classId: classDetails?._id || classId,
+          className: classDetails?.name || className,
+          studentId: '',
+          studentName: ''
+        });
+        break;
+      case 'subjects':
+        navigation.navigate('TeacherAdminSubjects', {
+          classId: classDetails?._id || classId,
+          className: classDetails?.name || className
+        });
+        break;
+      case 'exams':
+        navigation.navigate('TeacherAdminExams', {
+          classId: classId,
+          className: className
+        });
+        break;
+    }
+  };
 
-      <TouchableOpacity 
-        style={styles.optionItem}
-        onPress={() => navigation.navigate('TeacherAdminExams', {
-          classId: classId, // Use actual class ID from details or route params
-          className: className  // or whatever the class name is
-        })}
-      >
-        <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(245, 101, 101, 0.1)' }]}>
-          <FontAwesome5 name="book-open" size={20} color="#F56565" />
-        </View>
-        <View style={styles.optionContent}>
-          <Text style={styles.optionTitle}>Examinations & Assessments</Text>
-          <Text style={styles.optionDescription}>Manage examinations and school assessments</Text>
-        </View>
-        <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-      </TouchableOpacity>
+  const handleViewStudentDetails = (student: Student) => {
+    navigation.navigate('TeacherStudentDetailsScreen', {
+      studentId: student._id,
+      studentName: student.name,
+      classId: classDetails?._id || classId,
+      className: classDetails?.name || className,
+    });
+  };
 
-      <TouchableOpacity 
-        style={styles.optionItem}
-        onPress={() => navigation.navigate('TeacherScoring', {
-          classId: classId, // Use actual class ID from details or route params
-          className: className  // or whatever the class name is
-        })}
-      >
-        <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(99, 102, 241, 0.1)' }]}>
-          <FontAwesome5 name="poll" size={20} color="#6366F1" />
-        </View>
-        <View style={styles.optionContent}>
-          <Text style={styles.optionTitle}>Add Marks</Text>
-          <Text style={styles.optionDescription}>Add marks as a subject teacher to your own class students</Text>
-        </View>
-        <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
-      </TouchableOpacity>
-    </View>
-  </View>
-);
+  const renderActionButton = (
+    icon: string,
+    title: string,
+    onPress: () => void,
+    backgroundColor: string
+  ) => (
+    <TouchableOpacity
+      style={[styles.actionButton, { backgroundColor }]}
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
+      <FontAwesome5 name={icon} size={20} color="#FFFFFF" />
+      <Text style={styles.actionButtonText}>{title}</Text>
+    </TouchableOpacity>
+  );
 
-  // Show loading indicator
   if (loading && !refreshing) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <StatusBar hidden={true} />
-        <ActivityIndicator size="large" color="#4299E1" />
-        <Text style={styles.loadingText}>Loading admin class details...</Text>
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3498DB" />
+          <Text style={styles.loadingText}>Loading class details...</Text>
+        </View>
       </SafeAreaView>
     );
   }
 
-  // Show error message
   if (error) {
     return (
-      <SafeAreaView style={styles.errorContainer}>
-        <StatusBar hidden={true} />
-        <FontAwesome5 name="exclamation-triangle" size={48} color="#F56565" />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity 
-          style={styles.retryButton}
-          onPress={() => fetchClassDetails()}
-        >
-          <Text style={styles.retryButtonText}>Try Again</Text>
-        </TouchableOpacity>
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <View style={styles.errorContainer}>
+          <FontAwesome5 name="exclamation-triangle" size={48} color="#E74C3C" />
+          <Text style={styles.errorTitle}>Oops! Something went wrong</Text>
+          <Text style={styles.errorMessage}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={() => fetchClassDetails()}
+          >
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar hidden={true} />
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       
       <ScrollView
-        contentContainerStyle={styles.scrollContainer}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={['#4299E1', '#48BB78']}
+            colors={['#3498DB', '#2ECC71']}
+            tintColor="#3498DB"
           />
         }
+        showsVerticalScrollIndicator={false}
       >
         {/* Class Header Card */}
-        <View style={styles.classHeaderContainer}>
+        <View style={styles.headerCard}>
           <LinearGradient
-            colors={['#667EEA', '#764BA2']}
+            colors={['#3498DB', '#2ECC71']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.classHeaderGradient}
+            style={styles.headerGradient}
           >
-            <View style={styles.classHeaderContent}>
-              <View style={styles.classHeaderIcon}>
-                <FontAwesome5 name="shield-alt" size={28} color="#FFFFFF" />
+            <View style={styles.headerContent}>
+              <View style={styles.classIconContainer}>
+                <FontAwesome5 name="graduation-cap" size={28} color="#FFFFFF" />
               </View>
-              
-              <View style={styles.classHeaderDetails}>
-                <View style={styles.adminBadgeContainer}>
-                  <View style={styles.adminBadge}>
-                    <FontAwesome5 name="crown" size={10} color="#FFD700" />
-                    <Text style={styles.adminBadgeText}>ADMIN CLASS</Text>
-                  </View>
+              <View style={styles.classInfo}>
+                <Text style={styles.classTitle}>{classDetails?.name || className}</Text>
+                <Text style={styles.classSection}>Section {classDetails?.section}</Text>
+                <View style={styles.studentCountContainer}>
+                  <FontAwesome5 name="users" size={14} color="#FFFFFF" />
+                  <Text style={styles.studentCount}>
+                    {classDetails?.studentIds?.length || 0} Students
+                  </Text>
                 </View>
-                
-                <Text style={styles.classHeaderName}>{classDetails?.name || className}</Text>
-                <Text style={styles.classHeaderInfo}>
-                  {classDetails?.section && `Section ${classDetails.section}`}
-                  {classDetails?.grade && ` • Grade ${classDetails.grade}`}
-                </Text>
               </View>
+            </View>
+            <View style={styles.adminBadge}>
+              <FontAwesome5 name="crown" size={12} color="#FFD700" />
+              <Text style={styles.adminBadgeText}>CLASS ADMIN</Text>
             </View>
           </LinearGradient>
         </View>
 
-        {/* Tab Navigation */}
-        {renderTabNavigation()}
+        {/* Quick Actions - Daily Use */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Quick Actions</Text>
+            <View style={styles.priorityBadge}>
+              <Text style={styles.priorityText}>DAILY</Text>
+            </View>
+          </View>
+          
+          <View style={styles.actionsGrid}>
+            {renderActionButton('clipboard-check', 'Attendance', () => handleQuickAction('take_attendance'), '#3498DB')}
+            {renderActionButton('poll', 'Add Marks', () => handleQuickAction('scoring'), '#E74C3C')}
+            {renderActionButton('chart-line', 'Reports', () => handleQuickAction('view_reports'), '#E67E22')}
+            {renderActionButton('calendar-alt', 'Schedule', () => handleQuickAction('schedule_events_dates'), '#1ABC9C')}
+          </View>
+        </View>
 
-        {/* Tab Content */}
-        <View style={styles.tabContent}>
-          {activeTab === 'overview' && renderOverviewTab()}
-          {activeTab === 'students' && renderStudentsTab()}
-          {activeTab === 'teachers' && renderTeachersTab()}
-          {activeTab === 'more' && renderMoreOptionsTab()}
+        {/* Communication Tools */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Communication</Text>
+          
+          <View style={styles.communicationGrid}>
+            <TouchableOpacity
+              style={styles.communicationCard}
+              onPress={() => handleQuickAction('announcements')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.communicationIcon, { backgroundColor: '#F39C12' }]}>
+                <FontAwesome5 name="bullhorn" size={18} color="#FFFFFF" />
+              </View>
+              <Text style={styles.communicationTitle}>Announcements</Text>
+              <Text style={styles.communicationSubtitle}>Send class updates</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.communicationCard}
+              onPress={() => handleQuickAction('chat_room')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.communicationIcon, { backgroundColor: '#8E44AD' }]}>
+                <FontAwesome5 name="comments" size={18} color="#FFFFFF" />
+              </View>
+              <Text style={styles.communicationTitle}>Class Chat</Text>
+              <Text style={styles.communicationSubtitle}>Message students</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.communicationCard}
+              onPress={() => handleQuickAction('add_materials')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.communicationIcon, { backgroundColor: '#27AE60' }]}>
+                <FontAwesome5 name="folder-plus" size={18} color="#FFFFFF" />
+              </View>
+              <Text style={styles.communicationTitle}>Materials</Text>
+              <Text style={styles.communicationSubtitle}>Upload resources</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Academic Records */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Academic Records</Text>
+          
+          <TouchableOpacity
+            style={styles.recordCard}
+            onPress={() => navigateToMoreOption('attendance_sheet')}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.recordIcon, { backgroundColor: '#EBF4FF' }]}>
+              <FontAwesome5 name="clipboard-list" size={20} color="#3498DB" />
+            </View>
+            <View style={styles.recordContent}>
+              <Text style={styles.recordTitle}>Attendance Sheet</Text>
+              <Text style={styles.recordSubtitle}>View & manage attendance records</Text>
+            </View>
+            <FontAwesome5 name="chevron-right" size={16} color="#BDC3C7" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.recordCard}
+            onPress={() => navigateToMoreOption('academic_records')}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.recordIcon, { backgroundColor: '#FFFAF0' }]}>
+              <FontAwesome5 name="graduation-cap" size={20} color="#E67E22" />
+            </View>
+            <View style={styles.recordContent}>
+              <Text style={styles.recordTitle}>Academic Records</Text>
+              <Text style={styles.recordSubtitle}>Subject-wise performance</Text>
+            </View>
+            <FontAwesome5 name="chevron-right" size={16} color="#BDC3C7" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.recordCard}
+            onPress={() => navigateToMoreOption('subject_report')}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.recordIcon, { backgroundColor: '#F0FFF4' }]}>
+              <FontAwesome5 name="book-open" size={20} color="#2ECC71" />
+            </View>
+            <View style={styles.recordContent}>
+              <Text style={styles.recordTitle}>Your Subject Report</Text>
+              <Text style={styles.recordSubtitle}>Teaching subject analysis</Text>
+            </View>
+            <FontAwesome5 name="chevron-right" size={16} color="#BDC3C7" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Class Configuration */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Class Configuration</Text>
+          
+          <TouchableOpacity
+            style={styles.recordCard}
+            onPress={() => navigateToMoreOption('subjects')}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.recordIcon, { backgroundColor: '#FDF2F8' }]}>
+              <FontAwesome5 name="book" size={20} color="#EC4899" />
+            </View>
+            <View style={styles.recordContent}>
+              <Text style={styles.recordTitle}>Subjects & Teachers</Text>
+              <Text style={styles.recordSubtitle}>Manage subject assignments</Text>
+            </View>
+            <FontAwesome5 name="chevron-right" size={16} color="#BDC3C7" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.recordCard}
+            onPress={() => navigateToMoreOption('exams')}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.recordIcon, { backgroundColor: '#FEF2F2' }]}>
+              <FontAwesome5 name="clipboard" size={20} color="#EF4444" />
+            </View>
+            <View style={styles.recordContent}>
+              <Text style={styles.recordTitle}>Examinations</Text>
+              <Text style={styles.recordSubtitle}>Manage exams & assessments</Text>
+            </View>
+            <FontAwesome5 name="chevron-right" size={16} color="#BDC3C7" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Teachers Section */}
+        {classDetails?.teacherIds && classDetails.teacherIds.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Teaching Staff</Text>
+            
+            {classDetails.teacherIds.map((teacher, index) => (
+              <View key={teacher._id || index} style={styles.teacherCard}>
+                <View style={styles.teacherIcon}>
+                  <FontAwesome5 name="user-tie" size={18} color="#FFFFFF" />
+                </View>
+                <View style={styles.teacherInfo}>
+                  <Text style={styles.teacherName}>{teacher.name}</Text>
+                  <Text style={styles.teacherEmail}>{teacher.email}</Text>
+                </View>
+                {teacher.subject && (
+                  <View style={styles.subjectTag}>
+                    <Text style={styles.subjectTagText}>{teacher.subject}</Text>
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Search Bar */}
+        {classDetails?.studentIds && classDetails.studentIds.length > 0 && (
+          <View style={styles.searchContainer}>
+            <View style={styles.searchBar}>
+              <Feather name="search" size={20} color="#7F8C8D" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search students by name, ID, or email..."
+                placeholderTextColor="#BDC3C7"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity
+                  onPress={handleClearSearch}
+                  style={styles.clearButton}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="close-circle" size={20} color="#7F8C8D" />
+                </TouchableOpacity>
+              )}
+            </View>
+            {searchQuery.length > 0 && (
+              <Text style={styles.searchResultText}>
+                Found {filteredStudents.length} student{filteredStudents.length !== 1 ? 's' : ''}
+              </Text>
+            )}
+          </View>
+        )}
+
+        {/* Students Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Students</Text>
+          
+          {classDetails?.studentIds && classDetails.studentIds.length > 0 ? (
+            <View style={styles.studentsContainer}>
+              {filteredStudents.map((student, index) => (
+                <View key={student._id || index} style={[styles.studentRow, index % 2 === 0 ? styles.evenRow : styles.oddRow]}>
+                  <View style={styles.studentInfo}>
+                    <Text style={styles.studentName}>{student.name}</Text>
+                    <Text style={styles.studentId}>ID: {student.studentId || `ST${1000 + index + 1}`}</Text>
+                    <Text style={styles.studentEmail}>{student.email || 'No email provided'}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.viewButton}
+                    onPress={() => handleViewStudentDetails(student)}
+                    activeOpacity={0.7}
+                  >
+                    <Feather name="eye" size={16} color="#FFFFFF" />
+                    <Text style={styles.viewButtonText}>View</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <FontAwesome5 name="user-graduate" size={32} color="#BDC3C7" />
+              <Text style={styles.emptyStateText}>
+                {searchQuery ? 'No students found' : 'No students enrolled'}
+              </Text>
+              <Text style={styles.emptyStateSubtext}>
+                {searchQuery 
+                  ? 'Try adjusting your search terms'
+                  : 'Students will appear here once they enroll'
+                }
+              </Text>
+            </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -803,461 +681,428 @@ const renderMoreOptionsTab = () => (
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
+  // Container & Base Styles
+  container: {
     flex: 1,
-    backgroundColor: '#F7FAFC',
+    backgroundColor: '#F8F9FC',
   },
+  scrollContent: {
+    paddingBottom: 20,
+  },
+
+  // Loading & Error States
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F7FAFC',
+    backgroundColor: '#F8F9FC',
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#4A5568',
+    color: '#7F8C8D',
     fontWeight: '500',
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F7FAFC',
-    paddingHorizontal: 32,
+    paddingHorizontal: 20,
+    backgroundColor: '#F8F9FC',
   },
-  errorText: {
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#2C3E50',
     marginTop: 16,
-    fontSize: 16,
-    color: '#4A5568',
     textAlign: 'center',
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: '#7F8C8D',
+    textAlign: 'center',
+    marginTop: 8,
     lineHeight: 24,
   },
   retryButton: {
-    marginTop: 24,
-    backgroundColor: '#4299E1',
-    paddingHorizontal: 32,
-    paddingVertical: 12,
+    backgroundColor: '#3498DB',
     borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    marginTop: 20,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   retryButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  scrollContainer: {
-    flexGrow: 1,
-    paddingBottom: 24,
-  },
-  headerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(66, 153, 225, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  headerBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#4299E1',
-    marginLeft: 4,
-  },
-  classHeaderContainer: {
-    marginHorizontal: 16,
-    marginTop: 20,
+
+  // Header Card Styles
+  headerCard: {
+    margin: 16,
     borderRadius: 16,
-    overflow: 'hidden',
-    elevation: 8,
+    elevation: 4,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
   },
-  classHeaderGradient: {
-    padding: 24,
+  headerGradient: {
+    borderRadius: 16,
+    padding: 20,
   },
-  classHeaderContent: {
+  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 16,
   },
-  classHeaderIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+  classIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 16,
   },
-  classHeaderDetails: {
+  classInfo: {
     flex: 1,
-    marginLeft: 16,
   },
-  adminBadgeContainer: {
-    marginBottom: 8,
-  },
-  adminBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-  },
-  adminBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginLeft: 4,
-  },
-  classHeaderName: {
-    fontSize: 22,
+  classTitle: {
+    fontSize: 24,
     fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 4,
   },
-  classHeaderInfo: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-  },
-  tabContainer: {
-    marginTop: 20,
+  classSection: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
     marginBottom: 8,
   },
-  tabScrollContent: {
-    paddingHorizontal: 16,
-  },
-  tabButton: {
+  studentCountContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginRight: 12,
-    borderRadius: 24,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
   },
-  activeTabButton: {
-    backgroundColor: '#4299E1',
-    borderColor: '#4299E1',
-  },
-  tabText: {
+  studentCount: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#718096',
-    marginLeft: 8,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginLeft: 6,
   },
-  activeTabText: {
-    color: '#FFFFFF',
-  },
-  tabContent: {
+  adminBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
     paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
   },
-  sectionContainer: {
-    backgroundColor: '#FFFFFF',
-    marginBottom: 16,
-    borderRadius: 12,
-    padding: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+  adminBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 1,
+    marginLeft: 6,
+  },
+
+  // Section Styles
+  section: {
+    marginHorizontal: 16,
+    marginBottom: 24,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: -2,
+    marginTop: 10
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#2D3748',
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#2C3E50',
     marginBottom: 16,
   },
+  priorityBadge: {
+    backgroundColor: '#FEF5E7',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom : 15
+  },
+  priorityText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#F39C12',
+    letterSpacing: 0.5,
+  },
+
+  // Quick Actions Grid
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
   },
-  actionCard: {
-    width: '48%',
-    padding: 16,
+  actionButton: {
+    width: (width - 48) / 2,
     borderRadius: 12,
-    marginBottom: 12,
-    alignItems: 'center',
-  },
-  actionIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
+    padding: 16,
     alignItems: 'center',
     marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  actionTitle: {
+  actionButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2D3748',
-    textAlign: 'center',
-    marginBottom: 4,
+    color: '#FFFFFF',
+    marginTop: 8,
   },
-  actionDescription: {
-    fontSize: 12,
-    color: '#718096',
-    textAlign: 'center',
-    lineHeight: 16,
-  },
-  statsContainer: {
+
+  // Communication Grid
+  communicationGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#F7FAFC',
-    padding: 16,
-    borderRadius: 8,
-    marginHorizontal: 4,
-    borderLeftWidth: 4,
-  },
-  statHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#2D3748',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#718096',
-    fontWeight: '500',
-  },
-  infoContainer: {
-    backgroundColor: '#F7FAFC',
-    borderRadius: 8,
-    padding: 16,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  infoLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4A5568',
-    marginLeft: 12,
-    minWidth: 80,
-  },
-  infoValue: {
-    fontSize: 14,
-    color: '#2D3748',
-    marginLeft: 8,
-    flex: 1,
-  },
-  studentsContainer: {
-    marginTop: 8,
-  },
-  studentCard: {
-  backgroundColor: '#FFFFFF',
-  borderRadius: 12,
-  padding: 16,
-  marginBottom: 12,
-  borderWidth: 1,
-  borderColor: '#E2E8F0',
-  shadowColor: '#000000',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.1,
-  shadowRadius: 4,
-  elevation: 3,
-  flexDirection: 'row', // Add this line
-  alignItems: 'center', // Add this line
-  justifyContent: 'space-between', // Add this line
-},
-  studentInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  studentAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#4299E1',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  studentInitial: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  studentDetails: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  studentName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2D3748',
-    marginBottom: 2,
-  },
-  studentId: {
-    fontSize: 12,
-    color: '#718096',
-    marginBottom: 2,
-  },
-  studentEmail: {
-    fontSize: 12,
-    color: '#4299E1',
-  },
-  attendanceContainer: {
-    marginTop: 8,
-  },
-  attendanceLabel: {
-    fontSize: 12,
-    color: '#718096',
-    marginBottom: 6,
-    fontWeight: '500',
-  },
-  attendanceBarContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  attendanceBar: {
-    flex: 1,
-    height: 8,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginRight: 8,
-  },
-  attendanceProgress: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  attendancePercentage: {
-    fontSize: 12,
-    fontWeight: '600',
-    minWidth: 32,
-    textAlign: 'right',
-  },
-  teachersContainer: {
-    marginTop: 8,
-  },
-  teacherCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F7FAFC',
+  communicationCard: {
+    width: (width - 48) / 3,
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  teacherIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#48BB78',
-    justifyContent: 'center',
     alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  teacherDetails: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  teacherName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2D3748',
-    marginBottom: 2,
-  },
-  teacherEmail: {
-    fontSize: 12,
-    color: '#718096',
-    marginBottom: 4,
-  },
-  subjectBadge: {
-    backgroundColor: '#4299E1',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    alignSelf: 'flex-start',
-  },
-  subjectText: {
-    fontSize: 10,
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  emptyStateContainer: {
-    alignItems: 'center',
-    paddingVertical: 48,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#718096',
-    marginTop: 16,
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#A0AEC0',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  optionsContainer: {
-    marginTop: 8,
-  },
-  optionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F7FAFC',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  optionIconContainer: {
+  communicationIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 8,
   },
-  optionContent: {
+  communicationTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2C3E50',
+    textAlign: 'center',
+  },
+  communicationSubtitle: {
+    fontSize: 12,
+    color: '#7F8C8D',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+
+  // Record Card Styles
+  recordCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  recordIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  recordContent: {
     flex: 1,
     marginLeft: 12,
   },
-  optionTitle: {
-    fontSize: 16,
+  recordTitle: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#2D3748',
+    color: '#2C3E50',
     marginBottom: 2,
   },
-  optionDescription: {
+  recordSubtitle: {
     fontSize: 12,
-    color: '#718096',
-    lineHeight: 16,
+    color: '#7F8C8D',
   },
-  studentActions: {
-  justifyContent: 'center',
-  alignItems: 'center',
-  paddingLeft: 12,
-},
+
+  // Teacher Card Styles
+  teacherCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  teacherIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#3498DB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  teacherInfo: {
+    flex: 1,
+  },
+  teacherName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2C3E50',
+  },
+  teacherEmail: {
+    fontSize: 14,
+    color: '#7F8C8D',
+    marginTop: 2,
+  },
+  subjectTag: {
+    backgroundColor: '#3498DB',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  subjectTagText: {
+    fontSize: 11,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+
+  // Search Bar Styles
+  searchContainer: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#2C3E50',
+    paddingVertical: 12,
+  },
+  clearButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  searchResultText: {
+    fontSize: 14,
+    color: '#7F8C8D',
+    marginTop: 8,
+    marginLeft: 4,
+  },
+
+  // Student List Styles
+  studentsContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  studentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  evenRow: {
+    backgroundColor: '#FFFFFF',
+  },
+  oddRow: {
+    backgroundColor: '#F8F9FC',
+  },
+  studentInfo: {
+    flex: 1,
+  },
+  studentName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2C3E50',
+  },
+  studentId: {
+    fontSize: 14,
+    color: '#7F8C8D',
+    marginTop: 2,
+  },
+  studentEmail: {
+    fontSize: 14,
+    color: '#7F8C8D',
+    marginTop: 2,
+  },
+  viewButton: {
+    backgroundColor: '#3498DB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  viewButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+
+  // Empty State Styles
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#7F8C8D',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: '#BDC3C7',
+    textAlign: 'center',
+    marginTop: 4,
+  },
 });
 
-export default TeacherAdminClassDetailsScreen;
+export default TeacherAdminClassDetailsScreen ;
