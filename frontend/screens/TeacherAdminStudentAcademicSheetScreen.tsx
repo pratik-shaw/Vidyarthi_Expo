@@ -428,9 +428,6 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
 
     <div class="download-section">
         <button class="download-btn" onclick="downloadAsPDF()">Download PDF</button>
-        <button class="download-btn" id="excelBtn" onclick="downloadAsExcel()" disabled>
-            <span id="excelBtnText">Loading...</span>
-        </button>
         <button class="download-btn" id="csvBtn" onclick="downloadAsCSV()" disabled>
             <span id="csvBtnText">Loading...</span>
         </button>
@@ -499,85 +496,22 @@ const TeacherAdminStudentAcademicSheetScreen: React.FC<{ route: any; navigation:
         let isLibraryLoaded = false;
 
         function updateButtonStates(loaded) {
-            const excelBtn = document.getElementById('excelBtn');
-            const csvBtn = document.getElementById('csvBtn');
-            const excelBtnText = document.getElementById('excelBtnText');
-            const csvBtnText = document.getElementById('csvBtnText');
-            const loadingMessage = document.getElementById('loadingMessage');
+    const csvBtn = document.getElementById('csvBtn');
+    const csvBtnText = document.getElementById('csvBtnText');
+    const loadingMessage = document.getElementById('loadingMessage');
 
-            if (loaded) {
-                excelBtn.disabled = false;
-                csvBtn.disabled = false;
-                excelBtnText.textContent = 'Download Excel';
-                csvBtnText.textContent = 'Download CSV';
-                loadingMessage.style.display = 'none';
-                isLibraryLoaded = true;
-            } else {
-                excelBtn.disabled = true;
-                csvBtn.disabled = true;
-                excelBtnText.textContent = 'Loading...';
-                csvBtnText.textContent = 'Loading...';
-                loadingMessage.style.display = 'block';
-            }
-        }
+    if (loaded) {
+        csvBtn.disabled = false;
+        csvBtnText.textContent = 'Download CSV';
+        loadingMessage.style.display = 'none';
+        isLibraryLoaded = true;
+    } else {
+        csvBtn.disabled = true;
+        csvBtnText.textContent = 'Loading...';
+        loadingMessage.style.display = 'block';
+    }
+}
 
-        function downloadAsExcel() {
-            if (!isLibraryLoaded) {
-                alert('Excel library is still loading. Please wait.');
-                return;
-            }
-
-            try {
-                const table = document.getElementById('academicTable');
-                const rows = table.querySelectorAll('tr');
-                const data = [];
-                
-                rows.forEach(row => {
-                    const cells = row.querySelectorAll('th, td');
-                    const rowData = [];
-                    cells.forEach(cell => {
-                        let cellText = cell.textContent.trim();
-                        cellText = cellText.replace(/<[^>]*>/g, '');
-                        rowData.push(cellText);
-                    });
-                    if (rowData.length > 0) {
-                        data.push(rowData);
-                    }
-                });
-                
-                if (data.length === 0) {
-                    alert('No data found in table');
-                    return;
-                }
-                
-                const ws = XLSX.utils.aoa_to_sheet(data);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "Academic Report");
-                const wbout = XLSX.write(wb, {bookType: 'xlsx', type: 'array'});
-                const base64 = btoa(String.fromCharCode.apply(null, wbout));
-                const filename = '${examName.replace(/[^a-zA-Z0-9]/g, '_')}_${examCode}_Academic_Report.xlsx';
-                
-                if (window.ReactNativeWebView) {
-                    window.ReactNativeWebView.postMessage(JSON.stringify({
-                        type: 'download',
-                        format: 'excel',
-                        data: base64,
-                        filename: filename
-                    }));
-                } else {
-                    const blob = new Blob([wbout], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = filename;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                }
-            } catch (error) {
-                console.error('Excel download error:', error);
-                alert('Error downloading Excel file: ' + error.message);
-            }
-        }
 
         function downloadAsCSV() {
             if (!isLibraryLoaded) {

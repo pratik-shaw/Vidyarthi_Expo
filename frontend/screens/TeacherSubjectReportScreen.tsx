@@ -12,7 +12,6 @@ import {
   ScrollView,
   Modal,
   Dimensions,
-  FlatList,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
@@ -1012,6 +1011,8 @@ const getGradeMarksRange = (gradeData: number | GradeDistributionItem): string |
       
       <ScrollView
         style={styles.container}
+        showsVerticalScrollIndicator={false}  // ADD THIS LINE
+
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

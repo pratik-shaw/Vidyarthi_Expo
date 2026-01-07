@@ -722,7 +722,7 @@ const TeacherAdminTakeAttendanceScreen: React.FC<Props> = ({ route, navigation }
         ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={true}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

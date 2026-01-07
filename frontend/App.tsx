@@ -171,7 +171,7 @@ export default function App() {
         <Stack.Screen name="TeacherLogin" component={TeacherLoginScreen} />
         <Stack.Screen name="Teacher" component={TeacherScreen} />
         <Stack.Screen name="TeacherHome" component={TeacherHomeScreen} />
-        <Stack.Screen name="TeacherProfile" component={TeacherProfileScreen} />
+        <Stack.Screen name="TeacherProfile" component={TeacherProfileScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TeacherClassDetails" component={TeacherClassDetailsScreen} />
         <Stack.Screen name="TeacherAdminClassDetails" component={TeacherAdminClassDetailsScreen} />
         <Stack.Screen name="TeacherAdminSubjects" component={TeacherAdminSubjectsScreen} />

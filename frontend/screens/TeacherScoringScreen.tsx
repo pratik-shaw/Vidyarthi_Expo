@@ -691,6 +691,7 @@ const submitBulkMarks = async () => {
       {/* Students List */}
       <FlatList
         data={filteredStudents}
+        showsVerticalScrollIndicator={false}
         renderItem={renderStudentItem}
         keyExtractor={(item) => item.studentId}
         refreshControl={

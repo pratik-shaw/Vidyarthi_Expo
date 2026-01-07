@@ -664,6 +664,8 @@ const TeacherStudentDetailsScreen: React.FC<Props> = ({ route, navigation }) => 
       
       <ScrollView
         contentContainerStyle={styles.scrollContainer}
+        showsVerticalScrollIndicator={false}  // ADD THIS LINE
+
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

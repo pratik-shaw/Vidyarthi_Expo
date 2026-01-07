@@ -56,8 +56,9 @@ exports.initializeExamMarks = async (examId) => {
   }
 };
 
-// Get students and their marks for subjects taught by the teacher
-// Fixed getStudentsForScoring function
+// Fixed getStudentsForScoring function in controllers/markController.js
+// Replace the existing function with this updated version
+
 exports.getStudentsForScoring = async (req, res) => {
   try {
     const { classId } = req.params;
@@ -102,12 +103,16 @@ exports.getStudentsForScoring = async (req, res) => {
       });
     }
 
-    // Get all exams for this class
-    const exams = await Exam.find({ classId: classId });
-    console.log('Exams found for class:', exams.length);
+    // 🔥 FIX: Get all ACTIVE exams for this class (not deleted ones)
+    const exams = await Exam.find({ 
+      classId: classId,
+      isActive: true  // Only get active exams
+    });
+    
+    console.log('Active exams found for class:', exams.length);
 
     if (exams.length === 0) {
-      console.log('No exams found for class');
+      console.log('No active exams found for class');
       return res.json({
         students: [],
         classInfo: {
@@ -120,9 +125,12 @@ exports.getStudentsForScoring = async (req, res) => {
           name: authCheck.teacher.name
         },
         totalStudents: 0,
-        message: 'No exams created for this class yet'
+        message: 'No active exams found for this class'
       });
     }
+
+    // 🔥 FIX: Create a Set of valid exam IDs for quick lookup
+    const validExamIds = new Set(exams.map(exam => exam._id.toString()));
 
     // Filter exams to only include subjects this teacher can score (with sync validation)
     const filteredExams = exams.map(exam => {
@@ -161,7 +169,7 @@ exports.getStudentsForScoring = async (req, res) => {
           name: authCheck.teacher.name
         },
         totalStudents: 0,
-        message: 'No subjects assigned to you in any exams for this class'
+        message: 'No subjects assigned to you in any active exams for this class'
       });
     }
 
@@ -202,25 +210,28 @@ exports.getStudentsForScoring = async (req, res) => {
           exams: studentExams
         });
       } else {
-        // Use existing mark record data but validate against current assignments
-        const filteredExamData = markRecord.exams.map(exam => {
-          const teacherSubjects = exam.subjects.filter(subject => {
-            const currentTeacherId = activeSubjectTeacherMap.get(subject.subjectId.toString());
-            return currentTeacherId === teacherId;
-          });
-          
-          if (teacherSubjects.length === 0) {
-            return null;
-          }
+        // 🔥 FIX: Filter mark record to only include ACTIVE exams
+        const filteredExamData = markRecord.exams
+          .filter(exam => validExamIds.has(exam.examId.toString())) // Only include active exams
+          .map(exam => {
+            const teacherSubjects = exam.subjects.filter(subject => {
+              const currentTeacherId = activeSubjectTeacherMap.get(subject.subjectId.toString());
+              return currentTeacherId === teacherId;
+            });
+            
+            if (teacherSubjects.length === 0) {
+              return null;
+            }
 
-          return {
-            examId: exam.examId,
-            examName: exam.examName,
-            examCode: exam.examCode,
-            examDate: exam.examDate,
-            subjects: teacherSubjects
-          };
-        }).filter(exam => exam !== null);
+            return {
+              examId: exam.examId,
+              examName: exam.examName,
+              examCode: exam.examCode,
+              examDate: exam.examDate,
+              subjects: teacherSubjects
+            };
+          })
+          .filter(exam => exam !== null);
 
         if (filteredExamData.length > 0) {
           studentsData.push({
