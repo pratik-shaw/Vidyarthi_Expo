@@ -24,6 +24,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { STUDENT_API } from '../config/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import LineChart from 'react-native-chart-kit/dist/line-chart';
 
 const { width } = Dimensions.get('window');
 const PRIMARY_COLOR = '#4F46E5'; // Consistent with home screen
@@ -75,6 +76,7 @@ interface OverallStats {
   latePercentage: number;
   punctualityScore: number;
 }
+
 
 interface Streaks {
   currentStreak: {
@@ -146,21 +148,18 @@ const StudentAttendanceScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTimeframe, setSelectedTimeframe] = useState('all');
+  const [selectedTimeframe, setSelectedTimeframe] = useState('week');
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const headerOpacity = useRef(new Animated.Value(0)).current;
 
-  // Timeframe options
-  const timeframes = [
-    { key: 'week', label: 'This Week' },
-    { key: 'month', label: 'This Month' },
-    { key: 'semester', label: 'Semester' },
-    { key: 'year', label: 'This Year' },
-    { key: 'all', label: 'All Time' }
-  ];
+ const timeframes = [
+  { key: 'week', label: 'This Week' },
+  { key: 'month', label: 'This Month' },
+  { key: 'all', label: 'All Time' }
+];
 
   useEffect(() => {
     // Set header options to hide the default header
@@ -378,6 +377,255 @@ const StudentAttendanceScreen: React.FC = () => {
       </ScrollView>
     </Animated.View>
   );
+  const renderWeeklyCalendar = () => {
+  if (!attendanceData?.recentAttendance) return null;
+
+  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const today = new Date();
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - today.getDay());
+
+  const weekData = Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(weekStart);
+    date.setDate(weekStart.getDate() + i);
+    const dateStr = date.toISOString().split('T')[0];
+    
+    const record = attendanceData.recentAttendance.find(r => 
+      r.fullDate.split('T')[0] === dateStr
+    );
+    
+    return {
+      day: weekDays[i],
+      date: date.getDate(),
+      status: record?.status || null,
+      isToday: date.toDateString() === today.toDateString()
+    };
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.section,
+        {
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }]
+        }
+      ]}
+    >
+      <View style={styles.sectionHeaderContainer}>
+        <Text style={styles.sectionTitle}>This Week</Text>
+      </View>
+      
+      <View style={styles.weeklyCalendar}>
+        {weekData.map((day, index) => (
+          <View key={index} style={styles.weekDayContainer}>
+            <Text style={styles.weekDayLabel}>{day.day}</Text>
+            <View style={[
+              styles.weekDayCircle,
+              day.isToday && styles.weekDayToday,
+              day.status && { backgroundColor: `${getStatusColor(day.status)}15` }
+            ]}>
+              {day.status ? (
+                <Feather 
+                  name={getStatusIcon(day.status)} 
+                  size={20} 
+                  color={getStatusColor(day.status)} 
+                />
+              ) : (
+                <Text style={styles.weekDayDate}>{day.date}</Text>
+              )}
+            </View>
+            {day.isToday && <Text style={styles.todayLabel}>Today</Text>}
+          </View>
+        ))}
+      </View>
+    </Animated.View>
+  );
+};
+
+const renderMonthlyChart = () => {
+  if (!attendanceData?.monthlyBreakdown || attendanceData.monthlyBreakdown.length === 0) return null;
+
+  const currentMonthData = attendanceData.monthlyBreakdown[0];
+  
+  return (
+    <Animated.View
+      style={[
+        styles.section,
+        {
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }]
+        }
+      ]}
+    >
+      <View style={styles.sectionHeaderContainer}>
+        <Text style={styles.sectionTitle}>This Month</Text>
+      </View>
+      
+      <View style={styles.monthChartCard}>
+        <View style={styles.monthChartHeader}>
+          <Text style={styles.monthChartTitle}>{currentMonthData.month}</Text>
+          <Text style={styles.monthChartPercentage}>{currentMonthData.attendancePercentage}%</Text>
+        </View>
+        
+        <View style={styles.monthBarsContainer}>
+          <View style={styles.monthBar}>
+            <View style={styles.monthBarLabel}>
+              <View style={[styles.monthBarDot, { backgroundColor: '#22C55E' }]} />
+              <Text style={styles.monthBarText}>Present</Text>
+            </View>
+            <View style={styles.monthBarTrack}>
+              <View 
+                style={[
+                  styles.monthBarFill, 
+                  { 
+                    width: `${(currentMonthData.present / currentMonthData.total) * 100}%`,
+                    backgroundColor: '#22C55E'
+                  }
+                ]} 
+              />
+            </View>
+            <Text style={styles.monthBarValue}>{currentMonthData.present}</Text>
+          </View>
+          
+          <View style={styles.monthBar}>
+            <View style={styles.monthBarLabel}>
+              <View style={[styles.monthBarDot, { backgroundColor: '#EF4444' }]} />
+              <Text style={styles.monthBarText}>Absent</Text>
+            </View>
+            <View style={styles.monthBarTrack}>
+              <View 
+                style={[
+                  styles.monthBarFill, 
+                  { 
+                    width: `${(currentMonthData.absent / currentMonthData.total) * 100}%`,
+                    backgroundColor: '#EF4444'
+                  }
+                ]} 
+              />
+            </View>
+            <Text style={styles.monthBarValue}>{currentMonthData.absent}</Text>
+          </View>
+          
+          {currentMonthData.late > 0 && (
+            <View style={styles.monthBar}>
+              <View style={styles.monthBarLabel}>
+                <View style={[styles.monthBarDot, { backgroundColor: '#F59E0B' }]} />
+                <Text style={styles.monthBarText}>Late</Text>
+              </View>
+              <View style={styles.monthBarTrack}>
+                <View 
+                  style={[
+                    styles.monthBarFill, 
+                    { 
+                      width: `${(currentMonthData.late / currentMonthData.total) * 100}%`,
+                      backgroundColor: '#F59E0B'
+                    }
+                  ]} 
+                />
+              </View>
+              <Text style={styles.monthBarValue}>{currentMonthData.late}</Text>
+            </View>
+          )}
+          
+          {currentMonthData.excused > 0 && (
+            <View style={styles.monthBar}>
+              <View style={styles.monthBarLabel}>
+                <View style={[styles.monthBarDot, { backgroundColor: '#8B5CF6' }]} />
+                <Text style={styles.monthBarText}>Excused</Text>
+              </View>
+              <View style={styles.monthBarTrack}>
+                <View 
+                  style={[
+                    styles.monthBarFill, 
+                    { 
+                      width: `${(currentMonthData.excused / currentMonthData.total) * 100}%`,
+                      backgroundColor: '#8B5CF6'
+                    }
+                  ]} 
+                />
+              </View>
+              <Text style={styles.monthBarValue}>{currentMonthData.excused}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </Animated.View>
+  );
+};
+
+const renderAllTimeChart = () => {
+  if (!attendanceData?.monthlyBreakdown || attendanceData.monthlyBreakdown.length === 0) return null;
+
+  const chartData = {
+    labels: attendanceData.monthlyBreakdown.map(month => 
+      month.month.substring(0, 3)
+    ).reverse(),
+    datasets: [{
+      data: attendanceData.monthlyBreakdown.map(month => 
+        typeof month.attendancePercentage === 'string' 
+          ? parseFloat(month.attendancePercentage) 
+          : month.attendancePercentage
+      ).reverse()
+    }]
+  };
+
+  return (
+    <Animated.View
+      style={[
+        styles.section,
+        {
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }]
+        }
+      ]}
+    >
+      <View style={styles.sectionHeaderContainer}>
+        <Text style={styles.sectionTitle}>Attendance Trend</Text>
+        <Text style={styles.sectionSubtitle}>Month by month</Text>
+      </View>
+      
+      <View style={styles.chartContainer}>
+        <LineChart
+          data={chartData}
+          width={width - 48}
+          height={220}
+          chartConfig={{
+            backgroundColor: '#FFFFFF',
+            backgroundGradientFrom: '#FFFFFF',
+            backgroundGradientTo: '#FFFFFF',
+            decimalPlaces: 0,
+            color: (opacity = 1) => `rgba(79, 70, 229, ${opacity})`,
+            labelColor: (opacity = 1) => `rgba(138, 148, 166, ${opacity})`,
+            style: {
+              borderRadius: 16,
+            },
+            propsForDots: {
+              r: '6',
+              strokeWidth: '2',
+              stroke: PRIMARY_COLOR,
+              fill: '#FFFFFF'
+            },
+            propsForBackgroundLines: {
+              strokeDasharray: '',
+              stroke: '#F0F1F6',
+              strokeWidth: 1
+            }
+          }}
+          bezier
+          style={styles.lineChart}
+          withVerticalLabels={true}
+          withHorizontalLabels={true}
+          withDots={true}
+          withShadow={false}
+          withVerticalLines={false}
+          withHorizontalLines={true}
+          yAxisSuffix="%"
+        />
+      </View>
+    </Animated.View>
+  );
+};
 
   const renderOverallStats = () => {
     if (!attendanceData?.overallStats) return null;
@@ -671,7 +919,6 @@ const StudentAttendanceScreen: React.FC = () => {
     );
   };
 
-  // Loading state
   if (isLoading && !attendanceData) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -711,42 +958,187 @@ const StudentAttendanceScreen: React.FC = () => {
       <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
       {renderHeader()}
       
-      <ScrollView 
-        style={styles.container}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
-            onRefresh={onRefresh} 
-            colors={[PRIMARY_COLOR]}
-            tintColor={PRIMARY_COLOR}
-          />
-        }
-      >
-        {renderTimeframeSelector()}
-        {renderOverallStats()}
-        {renderStreaks()}
-        {renderTrends()}
-        {renderMonthlyBreakdown()}
-        {renderRecentAttendance()}
-        {renderInsights()}
-        
-        {/* Date Range Info */}
-        {attendanceData?.dateRange && (
-          <View style={styles.dateRangeInfo}>
-            <Text style={styles.dateRangeText}>
-              Data from {new Date(attendanceData.dateRange.startDate).toLocaleDateString()} to{' '}
-              {new Date(attendanceData.dateRange.endDate).toLocaleDateString()}
-            </Text>
-          </View>
-        )}
-      </ScrollView>
+<ScrollView 
+  style={styles.container}
+  showsVerticalScrollIndicator={false}
+  contentContainerStyle={styles.scrollContent}
+  refreshControl={
+    <RefreshControl 
+      refreshing={refreshing} 
+      onRefresh={onRefresh} 
+      colors={[PRIMARY_COLOR]}
+      tintColor={PRIMARY_COLOR}
+    />
+  }
+>
+  {renderTimeframeSelector()}
+  {renderOverallStats()}
+  
+  {/* Conditional rendering based on selected timeframe */}
+  {selectedTimeframe === 'week' && renderWeeklyCalendar()}
+  {selectedTimeframe === 'month' && renderMonthlyChart()}
+  {selectedTimeframe === 'all' && renderAllTimeChart()}
+  
+  {renderStreaks()}
+  {renderTrends()}
+  
+  {/* Always show monthly breakdown */}
+  {renderMonthlyBreakdown()}
+  
+  {renderRecentAttendance()}
+  {renderInsights()}
+  
+  {/* Date Range Info */}
+  {/* {attendanceData?.dateRange && (
+    <View style={styles.dateRangeInfo}>
+      <Text style={styles.dateRangeText}>
+        Data from {new Date(attendanceData.dateRange.startDate).toLocaleDateString()} to{' '}
+        {new Date(attendanceData.dateRange.endDate).toLocaleDateString()}
+      </Text>
+    </View>
+  )} */}
+</ScrollView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  // ADD THESE NEW STYLES BEFORE THE CLOSING }); of StyleSheet.create:
+
+weeklyCalendar: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  backgroundColor: '#FFFFFF',
+  borderRadius: 16,
+  padding: 16,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.05,
+  shadowRadius: 8,
+  elevation: 2,
+},
+weekDayContainer: {
+  alignItems: 'center',
+  flex: 1,
+},
+weekDayLabel: {
+  fontSize: 12,
+  fontWeight: '600',
+  color: '#8A94A6',
+  marginBottom: 8,
+},
+weekDayCircle: {
+  width: 44,
+  height: 44,
+  borderRadius: 22,
+  backgroundColor: '#F8F9FC',
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginBottom: 4,
+},
+weekDayToday: {
+  borderWidth: 2,
+  borderColor: PRIMARY_COLOR,
+},
+weekDayDate: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#3A4276',
+},
+todayLabel: {
+  fontSize: 10,
+  fontWeight: '600',
+  color: PRIMARY_COLOR,
+  marginTop: 2,
+},
+monthChartCard: {
+  backgroundColor: '#FFFFFF',
+  borderRadius: 16,
+  padding: 20,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.05,
+  shadowRadius: 8,
+  elevation: 2,
+},
+monthChartHeader: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  marginBottom: 20,
+},
+monthChartTitle: {
+  fontSize: 18,
+  fontWeight: '600',
+  color: '#3A4276',
+},
+monthChartPercentage: {
+  fontSize: 24,
+  fontWeight: '700',
+  color: PRIMARY_COLOR,
+},
+monthBarsContainer: {
+  gap: 16,
+},
+monthBar: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 12,
+},
+monthBarLabel: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  width: 80,
+  gap: 6,
+},
+monthBarDot: {
+  width: 10,
+  height: 10,
+  borderRadius: 5,
+},
+monthBarText: {
+  fontSize: 13,
+  fontWeight: '500',
+  color: '#3A4276',
+},
+monthBarTrack: {
+  flex: 1,
+  height: 24,
+  backgroundColor: '#F8F9FC',
+  borderRadius: 12,
+  overflow: 'hidden',
+},
+monthBarFill: {
+  height: '100%',
+  borderRadius: 12,
+},
+monthBarValue: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#3A4276',
+  width: 30,
+  textAlign: 'right',
+},
+chartContainer: {
+  backgroundColor: '#FFFFFF',
+  borderRadius: 16,
+  padding: 16,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.05,
+  shadowRadius: 8,
+  elevation: 2,
+},
+lineChart: {
+  borderRadius: 16,
+  marginVertical: 8,
+},
+sectionSubtitle: {
+  fontSize: 13,
+  fontWeight: '500',
+  color: '#8A94A6',
+  marginTop: 2,
+},
   safeArea: {
     flex: 1,
     backgroundColor: '#F8F9FC',

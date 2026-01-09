@@ -854,6 +854,7 @@ exports.getTeacherSubjectReport = async (req, res) => {
 };
 
 // Get comprehensive academic data for a student
+// Get comprehensive academic data for a student
 exports.getStudentAcademicReport = async (req, res) => {
   try {
     const studentId = req.user.id; // Get student ID from JWT token
@@ -867,6 +868,18 @@ exports.getStudentAcademicReport = async (req, res) => {
     }
 
     const classId = student.classId._id;
+
+    // 🔥 FIX: Get only ACTIVE exams for validation
+    const activeExams = await Exam.find({ 
+      classId: classId,
+      isActive: true  // Only get active exams
+    });
+
+    // Create a Set of valid exam IDs for quick lookup
+    const validExamIds = new Set(activeExams.map(exam => exam._id.toString()));
+
+    console.log('Active exams found:', activeExams.length);
+    console.log('Valid exam IDs:', Array.from(validExamIds));
 
     // Get student's mark record
     const markRecord = await Mark.findOne({
@@ -892,7 +905,31 @@ exports.getStudentAcademicReport = async (req, res) => {
       });
     }
 
-    // Process academic data
+    // 🔥 FIX: Filter out deleted exams from mark record
+    const activeMarkExams = markRecord.exams.filter(exam => 
+      validExamIds.has(exam.examId.toString())
+    );
+
+    console.log('Total exams in mark record:', markRecord.exams.length);
+    console.log('Active exams in mark record:', activeMarkExams.length);
+
+    if (activeMarkExams.length === 0) {
+      return res.json({
+        studentInfo: {
+          id: student._id,
+          name: student.name,
+          studentId: student.studentId,
+          className: student.classId.name,
+          section: student.classId.section
+        },
+        hasData: false,
+        message: 'No active academic records found',
+        exams: [],
+        summary: null
+      });
+    }
+
+    // Process academic data using only active exams
     const processedExams = [];
     const subjectPerformance = new Map();
     const examPerformance = [];
@@ -904,8 +941,8 @@ exports.getStudentAcademicReport = async (req, res) => {
     let overallMarksScored = 0;
     let overallFullMarks = 0;
 
-    // Process each exam
-    markRecord.exams.forEach(exam => {
+    // Process each ACTIVE exam
+    activeMarkExams.forEach(exam => {
       let examMarksScored = 0;
       let examFullMarks = 0;
       let examCompletedSubjects = 0;

@@ -78,9 +78,6 @@ const ProfileBanner: React.FC<ProfileBannerProps> = ({
               source={{ uri: student.imageUrl }}
             />
           </View>
-          <View style={styles.editProfileButton}>
-            <Feather name="edit-2" size={14} color="#4E54C8" />
-          </View>
         </View>
       </TouchableOpacity>
     </Animated.View>
@@ -153,6 +150,7 @@ const styles = StyleSheet.create({
   },
   profileImageContainer: {
     position: 'relative',
+    marginTop: 25
   },
   profileImage: {
     width: 80,

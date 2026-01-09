@@ -13,7 +13,6 @@ import {
   Modal,
   TextInput,
   Platform,
-  Linking,
   Share,
   Dimensions,
   Animated,
@@ -21,13 +20,14 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
-import { FontAwesome5, Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { API_BASE_URL } from '../config/api';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 
@@ -127,10 +127,9 @@ const CATEGORIES = [
 
 const PRIMARY_COLOR = '#4F46E5';
 const SECONDARY_COLOR = '#10B981';
-const WARNING_COLOR = '#F59E0B';
-const DANGER_COLOR = '#EF4444';
 
 const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const [materialsData, setMaterialsData] = useState<MaterialsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -156,7 +155,6 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
     return token;
   }, [navigation]);
 
-  // Memoize the fetch function to prevent infinite loops
   const fetchMaterials = useCallback(async (
     loadMore = false,
     category = selectedCategory,
@@ -190,15 +188,12 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
         params.search = search.trim();
       }
 
-      console.log('Fetching materials with params:', params);
-
       const response = await axios.get(`${API_BASE_URL}/materials/student-class-materials`, {
         headers: { Authorization: `Bearer ${token}` },
         params,
       });
 
       if (loadMore && materialsData) {
-        // Ensure unique keys by filtering out duplicates
         const existingIds = new Set(materialsData.materials.map(m => m._id));
         const newMaterials = response.data.materials.filter((m: Material) => !existingIds.has(m._id));
         
@@ -223,7 +218,7 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
       setLoadingMore(false);
       setRefreshing(false);
     }
-  }, [getAuthToken]); // Remove dependencies that cause infinite loops
+  }, [getAuthToken]);
 
   const startAnimations = useCallback(() => {
     Animated.parallel([
@@ -240,43 +235,22 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
     ]).start();
   }, [fadeAnim, slideAnim]);
 
-  // Initial setup
   useEffect(() => {
     navigation.setOptions({
-      title: 'Study Materials',
-      headerStyle: {
-        backgroundColor: '#F8F9FC',
-      },
-      headerTitleStyle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#3A4276',
-      },
-      headerRight: () => (
-        <TouchableOpacity onPress={() => setSearchModalVisible(true)} style={styles.searchIconButton}>
-          <Feather name="search" size={20} color={PRIMARY_COLOR} />
-        </TouchableOpacity>
-      ),
+      headerShown: false,
     });
     
-    // Only fetch on initial mount
     if (isInitialMount.current) {
       fetchMaterials(false, 'all', 'all', '');
       startAnimations();
       isInitialMount.current = false;
     }
-  }, [navigation, startAnimations]); // Remove fetchMaterials from dependencies
+  }, [navigation, startAnimations]);
 
-  // Handle filter changes - use separate effect with stable dependencies
   useEffect(() => {
-    // Skip if it's the initial mount
     if (isInitialMount.current) return;
-    
-    console.log('Filter changed:', { selectedCategory, selectedSubject, appliedSearchQuery });
-    
-    // Reset to first page when filters change
     fetchMaterials(false, selectedCategory, selectedSubject, appliedSearchQuery);
-  }, [selectedCategory, selectedSubject, appliedSearchQuery]); // Keep only the state values
+  }, [selectedCategory, selectedSubject, appliedSearchQuery]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -289,11 +263,6 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
     }
   }, [materialsData?.pagination.hasMore, loadingMore, loading, fetchMaterials, selectedCategory, selectedSubject, appliedSearchQuery]);
 
-  // Handle search with proper state management
-  const handleSearch = useCallback(() => {
-    setSearchModalVisible(false);
-    setAppliedSearchQuery(searchQuery); // This will trigger the useEffect above
-  }, [searchQuery]);
 
   const clearSearch = useCallback(() => {
     setSearchQuery('');
@@ -405,13 +374,72 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
     });
   }, []);
 
+  const renderHeader = () => (
+    <Animated.View 
+      style={[
+        styles.header, 
+        { 
+          opacity: fadeAnim,
+          paddingTop: insets.top > 0 ? 0 : 20 
+        }
+      ]}
+    >
+      <TouchableOpacity 
+        onPress={() => navigation.goBack()} 
+        style={styles.headerButton}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="arrow-back" size={24} color={PRIMARY_COLOR} />
+      </TouchableOpacity>
+      
+      <View style={styles.headerTitleContainer}>
+        <Text style={styles.headerTitle}>Study Materials</Text>
+      </View>
+    
+    </Animated.View>
+  );
+
+  const renderSummaryCard = () => {
+    if (!materialsData) return null;
+
+    return (
+      <LinearGradient
+        colors={[PRIMARY_COLOR, '#6366F1']}
+        style={styles.summaryCard}
+      >
+        <View style={styles.summaryHeader}>
+          <View>
+            <Text style={styles.summaryTitle}>Total Materials</Text>
+            <Text style={styles.summaryCount}>{materialsData.pagination.total}</Text>
+          </View>
+          <View style={styles.summaryIconContainer}>
+            <Ionicons name="documents" size={32} color="#FFFFFF" />
+          </View>
+        </View>
+        <View style={styles.summaryStats}>
+          <View style={styles.summaryStatItem}>
+            <Ionicons name="folder-open" size={16} color="#FFFFFF" />
+            <Text style={styles.summaryStatText}>
+              {materialsData.summary.categoriesBreakdown.length} Categories
+            </Text>
+          </View>
+          <View style={styles.summaryStatItem}>
+            <Ionicons name="book" size={16} color="#FFFFFF" />
+            <Text style={styles.summaryStatText}>
+              {materialsData.summary.subjectsBreakdown.length} Subjects
+            </Text>
+          </View>
+        </View>
+      </LinearGradient>
+    );
+  };
+
   const renderFilters = useCallback(() => {
     if (!materialsData) return null;
 
     return (
       <View style={styles.filtersContainer}>
-        {/* Category Filter */}
-        <Text style={styles.filterSectionTitle}>Categories</Text>
+        {/* <Text style={styles.filterSectionTitle}>Categories</Text> */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScrollView}>
           <TouchableOpacity
             style={[
@@ -456,7 +484,6 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
           })}
         </ScrollView>
 
-        {/* Subject Filter */}
         {materialsData.summary.subjectsBreakdown.length > 0 && (
           <>
             <Text style={styles.filterSectionTitle}>Subjects</Text>
@@ -496,7 +523,6 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
           </>
         )}
 
-        {/* Active Filters Summary */}
         {(selectedCategory !== 'all' || selectedSubject !== 'all' || appliedSearchQuery) && (
           <TouchableOpacity
             style={styles.clearFiltersButton}
@@ -543,8 +569,53 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
                   {categoryInfo.label}
                 </Text>
               </View>
-              <Text style={styles.materialDetails}>
-                {item.originalFileName} • {formatFileSize(item.fileSize)}
+            </View>
+          </View>
+
+          <View style={styles.materialDetails}>
+            <View style={styles.materialDetailRow}>
+              <View style={styles.detailItem}>
+                <Ionicons name="person-outline" size={14} color="#8A94A6" />
+                <Text style={styles.detailText} numberOfLines={1}>
+                  {item.teacherId.name}
+                </Text>
+              </View>
+              {item.subjectId && (
+                <View style={styles.detailItem}>
+                  <Ionicons name="book-outline" size={14} color="#8A94A6" />
+                  <Text style={styles.detailText} numberOfLines={1}>
+                    {item.subjectId.name}
+                  </Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.materialDetailRow}>
+              <View style={styles.detailItem}>
+                <Ionicons name="document-outline" size={14} color="#8A94A6" />
+                <Text style={styles.detailText} numberOfLines={1}>
+                  {formatFileSize(item.fileSize)}
+                </Text>
+              </View>
+              <View style={styles.detailItem}>
+                <Ionicons name="calendar-outline" size={14} color="#8A94A6" />
+                <Text style={styles.detailText}>
+                  {formatDate(item.createdAt)}
+                </Text>
+              </View>
+              <View style={styles.detailItem}>
+                <Ionicons name="download-outline" size={14} color="#8A94A6" />
+                <Text style={styles.detailText}>
+                  {item.downloadCount}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.materialFooter}>
+            <View style={styles.downloadButton}>
+              <Ionicons name="download" size={16} color={PRIMARY_COLOR} />
+              <Text style={styles.downloadButtonText}>
+                {downloading === item._id ? 'Downloading...' : 'Tap to Download'}
               </Text>
             </View>
             <TouchableOpacity
@@ -554,92 +625,19 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
               }}
               style={styles.shareButton}
             >
-              <Feather name="share" size={16} color="#8A94A6" />
+              <Feather name="share-2" size={16} color="#8A94A6" />
             </TouchableOpacity>
-          </View>
-
-          <View style={styles.materialFooter}>
-            <View style={styles.infoItem}>
-              <Feather name="user" size={12} color="#8A94A6" />
-              <Text style={styles.infoText}>{item.teacherId.name}</Text>
-            </View>
-            {item.subjectId && (
-              <View style={styles.infoItem}>
-                <Feather name="book" size={12} color="#8A94A6" />
-                <Text style={styles.infoText}>{item.subjectId.name}</Text>
-              </View>
-            )}
-            <View style={styles.infoItem}>
-              <Feather name="calendar" size={12} color="#8A94A6" />
-              <Text style={styles.infoText}>{formatDate(item.createdAt)}</Text>
-            </View>
-            <View style={styles.infoItem}>
-              <Feather name="download" size={12} color="#8A94A6" />
-              <Text style={styles.infoText}>{item.downloadCount}</Text>
-            </View>
-          </View>
-
-          <View style={styles.tapHint}>
-            <Text style={styles.tapHintText}>Tap to download and view</Text>
           </View>
         </TouchableOpacity>
       </Animated.View>
     );
   }, [fadeAnim, downloading, getCategoryInfo, getFileIcon, formatFileSize, formatDate, openMaterial, shareMaterial]);
 
-  const renderSearchModal = useCallback(() => (
-    <Modal visible={searchModalVisible} animationType="slide" transparent>
-      <View style={styles.modalOverlay}>
-        <View style={styles.searchModalContainer}>
-          <View style={styles.searchModalHeader}>
-            <Text style={styles.searchModalTitle}>Search Materials</Text>
-            <TouchableOpacity onPress={() => setSearchModalVisible(false)}>
-              <Feather name="x" size={20} color="#8A94A6" />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.searchInputContainer}>
-            <Feather name="search" size={16} color="#8A94A6" style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search by title, category, or teacher..."
-              placeholderTextColor="#B0B7C3"
-              autoFocus
-              returnKeyType="search"
-              onSubmitEditing={handleSearch}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity 
-                onPress={clearSearch}
-                style={styles.clearSearch}
-              >
-                <Feather name="x-circle" size={16} color="#8A94A6" />
-              </TouchableOpacity>
-            )}
-          </View>
-          <View style={styles.searchActions}>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => setSearchModalVisible(false)}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.searchButton}
-              onPress={handleSearch}
-            >
-              <Text style={styles.searchButtonText}>Search</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  ), [searchModalVisible, searchQuery, handleSearch, clearSearch]);
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={PRIMARY_COLOR} />
           <Text style={styles.loadingText}>Loading study materials...</Text>
@@ -652,9 +650,10 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
+        {renderHeader()}
         <View style={styles.emptyState}>
           <View style={styles.emptyStateIconContainer}>
-            <Feather name="folder-minus" size={48} color="#8A94A6" />
+            <Ionicons name="folder-open-outline" size={64} color="#8A94A6" />
           </View>
           <Text style={styles.emptyTitle}>No Study Materials</Text>
           <Text style={styles.emptyDescription}>
@@ -671,7 +670,6 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
             </TouchableOpacity>
           )}
         </View>
-        {renderSearchModal()}
       </SafeAreaView>
     );
   }
@@ -680,48 +678,53 @@ const StudentStudyMaterialScreen: React.FC<Props> = ({ navigation }) => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8F9FC" />
       
+      {renderHeader()}
+      
       <Animated.View style={[
         styles.contentContainer, 
         { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
       ]}>
-        {renderFilters()}
-        
-        <View style={styles.materialsContainer}>
-          <View style={styles.materialsHeader}>
-            <Text style={styles.materialsCount}>
-              {materialsData.materials.length} of {materialsData.pagination.total} materials
-            </Text>
-          </View>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={PRIMARY_COLOR}
+              colors={[PRIMARY_COLOR]}
+            />
+          }
+        >
+          {/* {renderSummaryCard()} */}
+          {renderFilters()}
           
-          <FlatList
-            data={materialsData.materials}
-            keyExtractor={(item, index) => `${item._id}-${index}`}
-            renderItem={renderMaterial}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={PRIMARY_COLOR}
-                colors={[PRIMARY_COLOR]}
-              />
-            }
-            onEndReached={loadMoreMaterials}
-            onEndReachedThreshold={0.1}
-            ListFooterComponent={
-              loadingMore ? (
-                <View style={styles.loadingMore}>
-                  <ActivityIndicator size="small" color={PRIMARY_COLOR} />
-                  <Text style={styles.loadingMoreText}>Loading more materials...</Text>
-                </View>
-              ) : null
-            }
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
-        </View>
+          <View style={styles.materialsContainer}>
+            <View style={styles.materialsHeader}>
+              <Text style={styles.materialsCount}>
+                Showing {materialsData.materials.length} of {materialsData.pagination.total} materials
+              </Text>
+            </View>
+            
+            <FlatList
+              data={materialsData.materials}
+              keyExtractor={(item, index) => `${item._id}-${index}`}
+              renderItem={renderMaterial}
+              onEndReached={loadMoreMaterials}
+              onEndReachedThreshold={0.1}
+              scrollEnabled={false}
+              ListFooterComponent={
+                loadingMore ? (
+                  <View style={styles.loadingMore}>
+                    <ActivityIndicator size="small" color={PRIMARY_COLOR} />
+                    <Text style={styles.loadingMoreText}>Loading more materials...</Text>
+                  </View>
+                ) : null
+              }
+              contentContainerStyle={styles.listContent}
+            />
+          </View>
+        </ScrollView>
       </Animated.View>
-
-      {renderSearchModal()}
     </SafeAreaView>
   );
 };
@@ -743,32 +746,121 @@ const styles = StyleSheet.create({
     color: '#3A4276',
     fontWeight: '500',
   },
-  searchIconButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(79, 70, 229, 0.1)',
-    marginRight: 16,
-  },
-  contentContainer: {
-    flex: 1,
-  },
-  filtersContainer: {
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 20,
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 24,
-    marginBottom: 8,
+    paddingTop: 20,
+    paddingBottom: 16,
+    backgroundColor: '#F8F9FC',
+    zIndex: 10,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
   },
+  headerSearchButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: PRIMARY_COLOR,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  headerTitleContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#3A4276',
+    textAlign: 'center',
+    marginRight: 38
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  contentContainer: {
+    flex: 1,
+  },
+  summaryCard: {
+    marginHorizontal: 24,
+    marginTop: 16,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  summaryTitle: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    opacity: 0.9,
+    fontWeight: '500',
+  },
+  summaryCount: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: 4,
+  },
+  summaryIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  summaryStats: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  summaryStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  summaryStatText: {
+    fontSize: 13,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  filtersContainer: {
+    marginTop: 0,
+    paddingHorizontal: 24,
+  },
   filterSectionTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#3A4276',
+    color: '#1F2937',
     marginBottom: 12,
-    opacity: 0.8,
   },
   filterScrollView: {
     marginBottom: 16,
@@ -778,11 +870,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    marginRight: 12,
-    backgroundColor: '#F8F9FC',
-    borderRadius: 24,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    marginRight: 8,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    gap: 8,
   },
   filterChipActive: {
     backgroundColor: PRIMARY_COLOR,
@@ -794,22 +887,21 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
   },
   filterChipText: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#3A4276',
+    color: '#374151',
   },
   filterChipTextActive: {
     color: '#FFFFFF',
   },
   subjectChip: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 12,
-    backgroundColor: '#F8F9FC',
+    paddingVertical: 10,
     borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    marginRight: 8,
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
@@ -818,9 +910,9 @@ const styles = StyleSheet.create({
     borderColor: SECONDARY_COLOR,
   },
   subjectChipText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '500',
-    color: '#3A4276',
+    color: '#374151',
   },
   subjectChipTextActive: {
     color: '#FFFFFF',
@@ -829,33 +921,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 16,
-    backgroundColor: 'rgba(79, 70, 229, 0.1)',
-    borderRadius: 20,
-    alignSelf: 'center',
     marginTop: 8,
+    gap: 6,
   },
   clearFiltersText: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
     color: PRIMARY_COLOR,
-    marginLeft: 6,
   },
   materialsContainer: {
-    flex: 1,
+    marginTop: 6,
     paddingHorizontal: 24,
+    paddingBottom: 24,
   },
   materialsHeader: {
     marginBottom: 16,
   },
   materialsCount: {
     fontSize: 14,
-    color: '#8A94A6',
+    color: '#6B7280',
     fontWeight: '500',
-  },
-  listContent: {
-    paddingBottom: 100,
   },
   materialCard: {
     backgroundColor: '#FFFFFF',
@@ -863,156 +950,111 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   materialTouchable: {
-    padding: 20,
+    padding: 16,
   },
   materialHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   materialIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+    width: 48,
+    height: 48,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
-    position: 'relative',
+    marginRight: 12,
   },
   downloadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 16,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 12,
   },
   materialInfo: {
     flex: 1,
-    marginRight: 12,
   },
   materialTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#1F2937',
-    marginBottom: 8,
-    lineHeight: 22,
+    marginBottom: 6,
   },
   categoryBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(79, 70, 229, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginBottom: 8,
+    gap: 4,
   },
   categoryText: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginLeft: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  materialDetails: {
     fontSize: 12,
-    color: '#8A94A6',
     fontWeight: '500',
   },
-  shareButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#F8F9FC',
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
+  materialDetails: {
+    marginBottom: 12,
+  },
+  materialDetailRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 6,
+    gap: 12,
+  },
+  detailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+  },
+  detailText: {
+    fontSize: 12,
+    color: '#6B7280',
+    flex: 1,
   },
   materialFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  infoText: {
-    fontSize: 11,
-    color: '#8A94A6',
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-  tapHint: {
-    alignItems: 'center',
-    marginTop: 8,
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
   },
-  tapHintText: {
-    fontSize: 12,
-    color: PRIMARY_COLOR,
-    fontWeight: '500',
-  },
-  loadingMore: {
+  downloadButton: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 20,
+    gap: 6,
   },
-  loadingMoreText: {
-    marginLeft: 12,
-    fontSize: 14,
-    color: '#8A94A6',
-    fontWeight: '500',
+  downloadButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: PRIMARY_COLOR,
   },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  emptyStateIconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+  shareButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
   },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 12,
-    textAlign: 'center',
+  listContent: {
+    paddingBottom: 16,
   },
-  emptyDescription: {
-    fontSize: 14,
-    color: '#8A94A6',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
+  loadingMore: {
+    paddingVertical: 20,
+    alignItems: 'center',
+    gap: 8,
   },
-  emptyActionButton: {
-    backgroundColor: PRIMARY_COLOR,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-  },
-  emptyActionButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
+  loadingMoreText: {
+    fontSize: 13,
+    color: '#6B7280',
   },
   modalOverlay: {
     flex: 1,
@@ -1023,72 +1065,105 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
+    paddingTop: 20,
+    paddingBottom: 40,
+    paddingHorizontal: 24,
   },
   searchModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    marginBottom: 20,
   },
   searchModalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
     color: '#1F2937',
   },
   searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    margin: 24,
-    marginBottom: 16,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#F8F9FC',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    marginBottom: 20,
   },
   searchIcon: {
-    marginRight: 12,
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
+    paddingVertical: 14,
+    fontSize: 15,
     color: '#1F2937',
-    fontWeight: '500',
   },
-  clearSearch: {
+  clearSearchButton: {
     padding: 4,
-    marginLeft: 8,
   },
   searchActions: {
     flexDirection: 'row',
-    paddingHorizontal: 24,
     gap: 12,
   },
   cancelButton: {
     flex: 1,
-    paddingVertical: 16,
-    backgroundColor: '#F8F9FC',
-    borderRadius: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
     alignItems: 'center',
   },
   cancelButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#8A94A6',
+    color: '#6B7280',
   },
   searchButton: {
     flex: 1,
-    paddingVertical: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
     backgroundColor: PRIMARY_COLOR,
-    borderRadius: 16,
     alignItems: 'center',
   },
   searchButtonText: {
-    fontSize: 16,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  emptyStateIconContainer: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 8,
+  },
+  emptyDescription: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  emptyActionButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: PRIMARY_COLOR,
+  },
+  emptyActionButtonText: {
+    fontSize: 15,
     fontWeight: '600',
     color: '#FFFFFF',
   },

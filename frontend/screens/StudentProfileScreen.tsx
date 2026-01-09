@@ -125,14 +125,14 @@ const StudentProfileScreen: React.FC = () => {
           <Ionicons name="chevron-back" size={24} color="#3A4276" />
         </TouchableOpacity>
       ),
-      headerRight: () => (
-        <TouchableOpacity 
-          style={styles.headerButton}
-          onPress={handleEditProfile}
-        >
-          <Feather name="edit-2" size={20} color={PRIMARY_COLOR} />
-        </TouchableOpacity>
-      ),
+      // headerRight: () => (
+      //   <TouchableOpacity 
+      //     style={styles.headerButton}
+      //     onPress={handleEditProfile}
+      //   >
+      //     <Feather name="edit-2" size={20} color={PRIMARY_COLOR} />
+      //   </TouchableOpacity>
+      // ),
     });
 
     // Check network connectivity
@@ -726,7 +726,6 @@ const InfoRow: React.FC<InfoRowProps> = ({ icon, label, value, isLast, isEditabl
     <View style={styles.infoContent}>
       <View style={styles.infoLabelContainer}>
         <Text style={styles.infoLabel}>{label}</Text>
-        {isEditable && <Feather name="edit-3" size={12} color="#8A94A6" />}
       </View>
       <Text style={styles.infoValue}>{value}</Text>
     </View>

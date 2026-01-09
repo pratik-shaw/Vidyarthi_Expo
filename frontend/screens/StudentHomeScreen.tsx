@@ -707,7 +707,7 @@ const fetchStudentData = async () => {
         navigation.navigate('StudentConduct');
         break;
       case 'StudentChatroom':
-        navigation.navigate('StudentChatroom');
+        alert("The feature will be available soon !")
         break;
       case 'StudentQuery':
         navigation.navigate('StudentQuery');
@@ -869,7 +869,7 @@ const fetchStudentData = async () => {
         </View>
         
         <View style={styles.headerRightSection}>
-          <TouchableOpacity 
+          {/* <TouchableOpacity 
             style={styles.iconButton}
             onPress={handleNotificationPress}
             activeOpacity={0.7}
@@ -878,7 +878,7 @@ const fetchStudentData = async () => {
             {notifications > 0 && (
               <NotificationBadge count={notifications} />
             )}
-          </TouchableOpacity>
+          </TouchableOpacity> */}
           
           <TouchableOpacity 
             style={styles.iconButton}
@@ -944,9 +944,6 @@ const fetchStudentData = async () => {
         <View style={styles.featuresSection}>
           <View style={styles.sectionHeaderContainer}>
             <Text style={styles.sectionTitle}>Student Portal</Text>
-            <TouchableOpacity onPress={() => {}} activeOpacity={0.7}>
-              <Text style={styles.seeAllText}>See All</Text>
-            </TouchableOpacity>
           </View>
           
           <View style={styles.featuresGrid}>
@@ -957,7 +954,7 @@ const fetchStudentData = async () => {
         {/* Upcoming Section */}
         <View style={styles.upcomingSection}>
           <View style={styles.sectionHeaderContainer}>
-            <Text style={styles.sectionTitle}>Upcoming</Text>
+            <Text style={styles.sectionTitle}>Upcoming Import Dates</Text>
             <TouchableOpacity onPress={() => navigation.navigate('StudentCalendar')} activeOpacity={0.7}>
               <Text style={styles.seeAllText}>View All</Text>
             </TouchableOpacity>
@@ -994,16 +991,7 @@ const fetchStudentData = async () => {
                     <Text style={styles.eventTime}>{event.startTime} - {event.endTime}</Text>
                   </View>
                 </View>
-                <TouchableOpacity 
-                  style={[
-                    styles.eventReminderButton,
-                    event.hasReminder && styles.eventReminderActive
-                  ]}
-                  onPress={() => toggleEventReminder(event.id)}
-                  activeOpacity={0.7}
-                >
-                  <Feather name="bell" size={16} color={event.hasReminder ? "#FFFFFF" : PRIMARY_COLOR} />
-                </TouchableOpacity>
+                
               </View>
             ))
           ) : !calendarData?.message && (
@@ -1058,7 +1046,7 @@ const fetchStudentData = async () => {
 </View>
 
 {/* Enhanced Footer */}
-<View style={styles.footer}>
+{/* <View style={styles.footer}>
   <TouchableOpacity 
     style={styles.logoutButton} 
     onPress={handleLogout}
@@ -1069,7 +1057,7 @@ const fetchStudentData = async () => {
   </TouchableOpacity>
   
   <Text style={styles.version}>Student Portal v2.4.1</Text>
-</View>
+</View> */}
       </ScrollView>
     </SafeAreaView>
   );

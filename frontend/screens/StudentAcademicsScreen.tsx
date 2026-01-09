@@ -142,7 +142,7 @@ const StudentAcademicsScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTab, setSelectedTab] = useState<'overview' | 'subjects' | 'exams' | 'progress'>('overview');
+  const [selectedTab, setSelectedTab] = useState<'overview' | 'subjects' | 'exams' | 'progress'>('exams');
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -704,11 +704,11 @@ useEffect(() => {
         </View>
         
         <TouchableOpacity 
-          style={styles.headerButton}
+          style={styles.headerButtonRefresh}
           onPress={onRefresh}
           activeOpacity={0.7}
         >
-          <Ionicons name="refresh" size={22} color={PRIMARY_COLOR} />
+          <Ionicons name="refresh" size={22} color="#ffff" />
         </TouchableOpacity>
       </Animated.View>
 
@@ -716,10 +716,12 @@ useEffect(() => {
       <Animated.View style={[styles.tabContainer, { opacity: fadeAnim }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScrollView}>
           {[
-            { key: 'overview', label: 'Overview', icon: 'analytics' },
-            { key: 'subjects', label: 'Subjects', icon: 'book' },
             { key: 'exams', label: 'Exams', icon: 'document' },
-            { key: 'progress', label: 'Progress', icon: 'trending-up' }
+            { key: 'subjects', label: 'Subjects', icon: 'book' },
+            { key: 'overview', label: 'Overview', icon: 'analytics' },
+            { key: 'progress', label: 'Progress', icon: 'trending-up' },
+            
+            
           ].map((tab) => (
             <TouchableOpacity
               key={tab.key}
@@ -761,9 +763,10 @@ useEffect(() => {
             />
           }
         >
-          {selectedTab === 'overview' && renderOverviewTab()}
-          {selectedTab === 'subjects' && renderSubjectsTab()}
+
           {selectedTab === 'exams' && renderExamsTab()}
+          {selectedTab === 'subjects' && renderSubjectsTab()}
+          {selectedTab === 'overview' && renderOverviewTab()}
           {selectedTab === 'progress' && renderProgressTab()}
         </ScrollView>
       </Animated.View>
@@ -836,6 +839,19 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 12,
     backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  headerButtonRefresh: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#4F46E5',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',

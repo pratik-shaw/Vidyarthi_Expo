@@ -19,6 +19,7 @@ import {
   Animated,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import * as WebBrowser from 'expo-web-browser';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -388,10 +389,9 @@ const StudentQueryScreen: React.FC = () => {
       <TouchableOpacity
         key={query._id}
         style={styles.queryCard}
-        onPress={() => {
-          // Navigate to query details screen (you can implement this)
-          Alert.alert('Query Details', `Query ID: ${query._id}\nStatus: ${query.status}`);
-        }}
+       onPress={() => {
+  navigation.navigate('StudentQueryDetail', { queryId: query._id });
+}}
         activeOpacity={0.7}
       >
         <View style={styles.queryHeader}>

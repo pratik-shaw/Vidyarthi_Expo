@@ -22,12 +22,13 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { RootStackParamList } from '../App';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { STUDENT_API } from '../config/api';
+import * as Sharing from 'expo-sharing';
 
 const { width } = Dimensions.get('window');
 const PRIMARY_COLOR = '#4F46E5';
@@ -98,7 +99,8 @@ const StudentSubmissionScreen: React.FC = () => {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [classInfo, setClassInfo] = useState<ClassInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
   // Upload form state
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -344,29 +346,101 @@ const StudentSubmissionScreen: React.FC = () => {
   };
 
   // Handle submission item press
-  const handleSubmissionPress = (submission: Submission) => {
-    // Navigate to submission details or show options
-    Alert.alert(
-      submission.title,
-      `Status: ${submission.status.charAt(0).toUpperCase() + submission.status.slice(1)}\nSubject: ${submission.subjectName}\nUploaded: ${new Date(submission.createdAt).toLocaleDateString()}${submission.teacherFeedback ? `\n\nFeedback: ${submission.teacherFeedback}` : ''}${submission.grade ? `\nGrade: ${submission.grade}` : ''}`,
-      [
-        { text: 'Close', style: 'cancel' },
-        { text: 'Download', onPress: () => handleDownload(submission._id) }
-      ]
-    );
-  };
+  // Handle submission item press
+const handleSubmissionPress = (submission: Submission) => {
+  const isDownloading = downloadingId === submission._id;
+  
+  if (isDownloading) {
+    Alert.alert('Please wait', 'Download in progress...');
+    return;
+  }
+  
+  Alert.alert(
+    submission.title,
+    `Status: ${submission.status.charAt(0).toUpperCase() + submission.status.slice(1)}\nSubject: ${submission.subjectName}\nUploaded: ${new Date(submission.createdAt).toLocaleDateString()}${submission.teacherFeedback ? `\n\nFeedback: ${submission.teacherFeedback}` : ''}${submission.grade ? `\nGrade: ${submission.grade}` : ''}`,
+    [
+      { text: 'Close', style: 'cancel' },
+      { 
+        text: 'Download', 
+        onPress: () => handleDownload(submission._id) 
+      }
+    ]
+  );
+};
 
   // Handle download
-  const handleDownload = async (submissionId: string) => {
-    try {
-      // For now, just show an info message
-      // In a real implementation, you would handle the file download
-      Alert.alert('Download', 'Download functionality will be implemented based on your file handling requirements.');
-    } catch (err) {
-      console.error('Error downloading file:', err);
-      Alert.alert('Error', 'Failed to download file.');
+  // Handle download
+const handleDownload = async (submissionId: string) => {
+  setDownloadingId(submissionId);
+  
+  try {
+    // Get the token for authorization
+    const token = await AsyncStorage.getItem('studentToken');
+    
+    if (!token) {
+      Alert.alert('Error', 'Authentication token not found. Please log in again.');
+      setDownloadingId(null);
+      return;
     }
-  };
+
+    // Find the submission to get filename
+    const submission = submissions.find(s => s._id === submissionId);
+    const fileName = submission?.originalFileName || `submission_${submissionId}.pdf`;
+    
+    // Create download path
+    const downloadPath = `${FileSystem.documentDirectory}${fileName}`;
+    
+    // Download the file
+    const downloadResumable = FileSystem.createDownloadResumable(
+      `${STUDENT_API}/api/submissions/${submissionId}/download`,
+      downloadPath,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const result = await downloadResumable.downloadAsync();
+    
+    if (result && result.uri) {
+      // Check if sharing is available
+      const isSharingAvailable = await Sharing.isAvailableAsync();
+      
+      if (isSharingAvailable) {
+        // Share/open the file
+        await Sharing.shareAsync(result.uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Open PDF',
+          UTI: 'com.adobe.pdf'
+        });
+        
+        Alert.alert('Success', 'File downloaded successfully!');
+      } else {
+        Alert.alert(
+          'Download Complete', 
+          `File saved to: ${result.uri}\n\nNote: File sharing is not available on this device.`
+        );
+      }
+    }
+  } catch (err) {
+    console.error('Error downloading file:', err);
+    
+    if (axios.isAxiosError(err)) {
+      if (err.response?.status === 404) {
+        Alert.alert('Error', 'File not found on server.');
+      } else if (err.response?.status === 401) {
+        Alert.alert('Error', 'Unauthorized. Please log in again.');
+      } else {
+        Alert.alert('Error', err.response?.data?.msg || 'Failed to download file.');
+      }
+    } else {
+      Alert.alert('Error', 'Failed to download file. Please try again.');
+    }
+  } finally {
+    setDownloadingId(null);
+  }
+};
 
   // Get status color
   const getStatusColor = (status: string) => {
@@ -439,7 +513,7 @@ const StudentSubmissionScreen: React.FC = () => {
         }
       ]}
     >
-      <LinearGradient
+      {/* <LinearGradient
         colors={[PRIMARY_COLOR, '#6366F1']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -452,7 +526,7 @@ const StudentSubmissionScreen: React.FC = () => {
         <Text style={styles.mainStatsSubtitle}>
           {classInfo ? `${classInfo.name} ${classInfo.section}` : 'My Submissions'}
         </Text>
-      </LinearGradient>
+      </LinearGradient> */}
 
       <View style={styles.subStatsContainer}>
         <View style={styles.subStatsCard}>

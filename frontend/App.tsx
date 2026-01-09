@@ -22,6 +22,7 @@ import StudentChatroomScreen from './screens/StudentChatroomScreen';
 import StudentQueryScreen from './screens/StudentQueryScreen';
 import StudentSubmissionScreen from './screens/StudentSubmissionScreen';
 import StudentStudyMaterialScreen from './screens/StudentStudyMaterialScreen';
+import StudentQueryDetailScreen from './screens/StudentQueryDetailScreen';
 
 // Teacher Screens
 import TeacherLoginScreen from './screens/TeacherLoginScreen';
@@ -76,7 +77,7 @@ export type RootStackParamList = {
   StudentQuery: undefined;
   StudentSubmission: undefined;
   StudentStudyMaterial: undefined;
-  
+  StudentQueryDetail: { queryId: string }  
   // Teacher Screens
   TeacherLogin: undefined;
   Teacher: undefined;
@@ -154,18 +155,19 @@ export default function App() {
         {/* Student Screens */}
         <Stack.Screen name="StudentLogin" component={StudentLoginScreen} />
         <Stack.Screen name="Student" component={StudentScreen} />
-        <Stack.Screen name="StudentHome" component={StudentHomeScreen} />
-        <Stack.Screen name="StudentProfile" component={StudentProfileScreen} />
-        <Stack.Screen name="StudentSettings" component={StudentSettingsScreen} />
-        <Stack.Screen name="StudentNotifications" component={StudentNotificationsScreen} />
-        <Stack.Screen name="StudentAttendance" component={StudentAttendanceScreen} />
-        <Stack.Screen name="StudentAcademics" component={StudentAcademicsScreen} />
-        <Stack.Screen name="StudentCalendar" component={StudentCalendarScreen} />
-        <Stack.Screen name="StudentConduct" component={StudentConductScreen} />
-        <Stack.Screen name="StudentChatroom" component={StudentChatroomScreen} />
-        <Stack.Screen name="StudentQuery" component={StudentQueryScreen} />
-        <Stack.Screen name="StudentSubmission" component={StudentSubmissionScreen} />
-        <Stack.Screen name="StudentStudyMaterial" component={StudentStudyMaterialScreen} />
+        <Stack.Screen name="StudentHome" component={StudentHomeScreen} options={{ headerShown: false }}/>
+        <Stack.Screen name="StudentProfile" component={StudentProfileScreen} options={{ headerShown: false }}/>
+        <Stack.Screen name="StudentSettings" component={StudentSettingsScreen} options={{ headerShown: false }}/>
+        <Stack.Screen name="StudentNotifications" component={StudentNotificationsScreen} options={{ headerShown: false }}/>
+        <Stack.Screen name="StudentAttendance" component={StudentAttendanceScreen} options={{ headerShown: false }}/>
+        <Stack.Screen name="StudentAcademics" component={StudentAcademicsScreen} options={{ headerShown: false }}/>
+        <Stack.Screen name="StudentCalendar" component={StudentCalendarScreen} options={{ headerShown: false }}/>
+        <Stack.Screen name="StudentConduct" component={StudentConductScreen} options={{ headerShown: false }}/>
+        <Stack.Screen name="StudentChatroom" component={StudentChatroomScreen} options={{ headerShown: false }}/>
+        <Stack.Screen name="StudentQuery" component={StudentQueryScreen} options={{ headerShown: false }}/>
+        <Stack.Screen name="StudentSubmission" component={StudentSubmissionScreen} options={{ headerShown: false }}/>
+        <Stack.Screen name="StudentStudyMaterial" component={StudentStudyMaterialScreen} options={{ headerShown: false }}/>
+        <Stack.Screen name="StudentQueryDetail" component={StudentQueryDetailScreen} options={{ headerShown: false }}/>
         
         {/* Teacher Screens */}
         <Stack.Screen name="TeacherLogin" component={TeacherLoginScreen} />

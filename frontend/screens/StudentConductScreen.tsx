@@ -926,7 +926,7 @@ const StudentConductScreen: React.FC = () => {
         {selectedTab === 'trends' && renderTrendsTab()}
         
         {/* Date Range Info */}
-        {conductData && (
+        {/* {conductData && (
           <View style={styles.dateRangeInfo}>
             <Text style={styles.dateRangeText}>
               Last updated: {new Date(conductData.lastUpdated).toLocaleDateString('en-US', {
@@ -938,7 +938,7 @@ const StudentConductScreen: React.FC = () => {
               })}
             </Text>
           </View>
-        )}
+        )} */}
       </ScrollView>
     </SafeAreaView>
   );
